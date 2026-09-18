@@ -76,6 +76,45 @@ strips anything matching a known secret shape, and writes one fixture per event+
 it cannot recognise a secret that does not match a known shape, and your command history
 is your own.
 
-## 5. Uninstall
+## 5. Probing deny under bypass
+
+`--dangerously-skip-permissions` is the mode Bouncer is most useful in, and `seatbelt`
+mode (ADR-004) assumes a hook `deny` is still honoured there. The captured payloads prove
+the *first* half of that — six of the seven `PreToolUse` fixtures carry
+`"permission_mode": "bypassPermissions"`, so the hook demonstrably fires under the flag —
+and can never prove the second, because the recorder is inert. That is the same reason
+ADR-001 still lists `permissionDecision: "defer"` as unverified.
+
+`scripts/deny-probe-hook.mjs` answers it. It denies exactly one thing: a `Bash` command
+containing the string `BOUNCER_DENY_PROBE`. Every other tool call gets empty stdout and
+exit 0, so it cannot interfere with anything else in the session.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node /ABSOLUTE/PATH/TO/bouncer/scripts/deny-probe-hook.mjs", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+In a scratch directory, start Claude Code with `--dangerously-skip-permissions` and ask it
+to run `echo BOUNCER_DENY_PROBE`. Then, as a control, ask it to run `echo hello`, which the
+probe ignores.
+
+- **The command is blocked and Claude reports the reason** → deny is honoured under bypass.
+  `seatbelt` is viable. Record it in ADR-004 with the date.
+- **The command runs and prints `BOUNCER_DENY_PROBE`** → deny is ignored under bypass, and
+  `seatbelt` is a mode that cannot do anything. Stop and say so before it gets built.
+
+Remove the hook entry afterwards.
+
+## 6. Uninstall
 
 Remove the hook entries from settings. The capture directory can be deleted freely.

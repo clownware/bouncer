@@ -252,6 +252,30 @@ describe("the state handed to the classifier", () => {
     expect(state.action.replaces_existing_file).toBe(false);
   });
 
+  it("records a hard-rule hit with its source, its state and no classifier answers", async () => {
+    // The log's three jobs — explain a prompt, seed a fixture, re-score after a policy
+    // change — all need the command, and this is the one kind of line the classifier never
+    // saw. `source` is what lets a query over the log exclude these when it is asking a
+    // question about the classifier rather than about the gate.
+    await runPreToolUse(payload({ tool_input: { command: "cat .env" } }), { adapter: harmless });
+
+    const record = logLines()[0];
+    expect(record.source).toBe("hard_rule");
+    expect(record.reason.kind).toBe("hard-rule");
+    expect(record.reason.name).toBe("reads-a-credential-file");
+    expect(record.verdict).toBe("ask");
+    expect(record.answers).toBeUndefined();
+    expect(JSON.parse(record.state).action.command).toBe("cat .env");
+    expect(record.latency_ms.adapter).toBeUndefined();
+  });
+
+  it("records a judged decision as source judge", async () => {
+    await runPreToolUse(payload({ tool_input: { command: "npm run something" } }), { adapter: harmless });
+    const record = logLines()[0];
+    expect(record.source).toBe("judge");
+    expect(record.answers).toBeDefined();
+  });
+
   it("records what was redacted without recording the value", async () => {
     await runPreToolUse(
       payload({ tool_input: { command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123'" } }),
