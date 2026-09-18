@@ -8091,7 +8091,7 @@ function describeSensitivity(path) {
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
   if (/^\.env(\..+)?$/.test(name)) return "environment_file";
   if (/^(\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.dockercfg)$/.test(name)) return "credentials_file";
-  if (parts.includes(".aws") && /^(credentials|config)$/.test(name)) return "credentials_file";
+  if (parts.includes(".aws")) return "credentials_file";
   if (parts.includes(".kube") && name === "config") return "credentials_file";
   if (parts.includes(".docker") && name === "config.json") return "credentials_file";
   if (parts.includes(".gnupg")) return "credentials_file";

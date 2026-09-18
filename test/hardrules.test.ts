@@ -52,6 +52,16 @@ describe("the shipped hard rules", () => {
     ["reads-a-credential-file", "cat ~/.ssh/id_ed25519", "ssh-keygen -y -f ~/.ssh/id_ed25519"],
     ["reads-a-credential-file", "head -5 ~/.aws/credentials", "head -5 src/index.ts"],
     ["reads-a-credential-file", "base64 .npmrc", "cat /etc/passwd"],
+    // The gap that search verbs left. The near-miss is fixture `grep-for-key-name`, which
+    // is labelled false on `secrets` and must stay unjudged-by-rule: searching the project
+    // for where a credential is referenced finds the name, not the value. `path_labelled`
+    // is what separates them, not the verb.
+    ["reads-a-credential-file", "grep -r aws_secret_access_key ~/.aws/", "grep -rn 'OPENAI_API_KEY' src/"],
+    ["reads-a-credential-file", "rg secret ~/.aws/sso/cache", "rg secret src/"],
+    ["reads-a-credential-file", "sed -n 1,5p .env", "sed -n 1,5p src/index.ts"],
+    ["reads-a-credential-file", "awk '{print}' ~/.ssh/id_ed25519", "awk '{print}' package.json"],
+    // Summarising is not reading out, and every verb on that list denies in seatbelt.
+    ["reads-a-credential-file", "cat .env", "wc -l .env"],
     ["git-log-patch-of-a-credential-file", "git log -p -- .env", "git log --oneline -20"],
     ["git-show-of-a-credential-file", "git show HEAD:.env", "git show HEAD:src/index.ts"],
     [
@@ -319,6 +329,7 @@ describe("the whole fixture set", () => {
       "git-clean-force",
       "git-log-patch-dotenv",
       "git-stash-clear",
+      "grep-aws-credentials",
       "reset-hard-five",
     ]);
   });

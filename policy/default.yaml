@@ -117,9 +117,16 @@ gate:
   # that promotion is the mode's doing, not the entry's.
   hard_rules:
     - name: reads-a-credential-file
-      because: "Prints the contents of a file that holds credentials."
+      because: "Reads out a file that holds credentials."
+      # Two classes of verb, and the second was missing until a search found it: the ones
+      # that print a file, and the ones that search or stream it. `grep -r
+      # aws_secret_access_key ~/.aws/` prints exactly what `cat ~/.aws/credentials` does.
+      # Deliberately not here: `wc`, `sort`, `uniq`, `cut`, `diff`. They summarise or
+      # transform rather than read out, and every token on this list is a `deny` in
+      # `seatbelt`, so the list earns its entries rather than collecting them.
       when:
-        first_token: [cat, bat, head, tail, less, more, nl, tac, od, xxd, strings, hexdump, base64, view]
+        first_token: [cat, bat, head, tail, less, more, nl, tac, od, xxd, strings, hexdump, base64, view,
+                      grep, egrep, fgrep, rg, ag, ack, awk, sed]
         path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
 
     # `first_token` exists so this does not catch `ssh-keygen -y -f ~/.ssh/id_ed25519`,

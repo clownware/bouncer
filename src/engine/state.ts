@@ -279,7 +279,11 @@ export function describeSensitivity(path: string): string | undefined {
   // The canonical credential files of the tools an agent actually drives. Added for the
   // hard rules rather than for the state: no fixture's Write or Edit targets any of these,
   // so no fixture's state changes and run 8 stays comparable to run 7 on every `p`.
-  if (parts.includes(".aws") && /^(credentials|config)$/.test(name)) return "credentials_file";
+  // The whole directory, the way `.ssh` and `.gnupg` are handled, and not just
+  // `credentials` and `config`: `.aws/sso/cache` and `.aws/cli/cache` hold live session
+  // tokens, and a recursive read of `~/.aws/` was reaching none of them because only the
+  // last path segment was ever tested.
+  if (parts.includes(".aws")) return "credentials_file";
   if (parts.includes(".kube") && name === "config") return "credentials_file";
   if (parts.includes(".docker") && name === "config.json") return "credentials_file";
   if (parts.includes(".gnupg")) return "credentials_file";
