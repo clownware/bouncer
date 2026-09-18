@@ -1,6 +1,6 @@
 # ADR-004: Hard rules before the judge
 
-- **Status:** proposed — blocked on one capture, see "What is verified, and what is not"
+- **Status:** accepted — the deny probe confirmed the one open capture on 2026-09-18, see "What is verified, and what is not"
 - **Date:** 2026-09-18
 - **Context for:** v0.1, and `seatbelt` for v0.2
 
@@ -172,9 +172,20 @@ stdout, not what Claude Code does with it.
 permission mode where `deny` is ignored, is a mode that does nothing at all. So
 `scripts/deny-probe-hook.mjs` and section 5 of `scripts/CAPTURE.md` exist: a hook that
 denies exactly one sentinel `Bash` command and passes everything else, run under the flag,
-answers it in about two minutes. **This ADR is not accepted until that result is recorded
-here with its date.** Reading it off the documentation instead would be the precise mistake
-CLAUDE.md warns about: the fixtures are recorded reality, the docs are a description of it.
+answers it in about two minutes. Reading it off the documentation instead would be the
+precise mistake CLAUDE.md warns about: the fixtures are recorded reality, the docs are a
+description of it.
+
+**Confirmed on 2026-09-18: a hook `deny` is honoured under
+`--dangerously-skip-permissions`.** The probe was installed as a `Bash` `PreToolUse` hook
+in a session running under the flag, on Claude Code 2.1.x, macOS. The sentinel command
+`echo BOUNCER_DENY_PROBE` was blocked: the tool call did not run, and the caller received
+the hook's `permissionDecisionReason` in place of any output. The control command
+`echo hello` ran normally through the same installed hook, so the block was the `deny`
+verdict and not the hook merely failing. `seatbelt` is therefore viable: in the permission
+mode it is built for, a `deny` stops the tool call. What remains unverified is
+`permissionDecision: "defer"`, which the probe did not exercise and which no mode here
+depends on.
 
 ## `seatbelt`: a fourth mode
 
