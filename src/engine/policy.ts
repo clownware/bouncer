@@ -118,8 +118,22 @@ export function loadPolicy(source: string): LoadResult {
 
   const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
 
-  const questions = readQuestions(gateRaw["questions"], error);
-  const rules = readRules(gateRaw["rules"], questions, error, warn);
+  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
+  // Probes are optional and, unlike `questions`, an empty block is fine: most policies
+  // will not have any, and a policy with none must behave exactly as it did before they
+  // existed.
+  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
+
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `gate.probe_questions.${name}`,
+        `"${name}" is already a question in gate.questions — answers come back keyed by name, so the two would collide`,
+      );
+    }
+  }
+
+  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
 
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
@@ -132,26 +146,35 @@ export function loadPolicy(source: string): LoadResult {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, questions, rules },
+    gate: { tools, fastPath, questions, probeQuestions, rules },
     calibration: { confidenceFloor, accuracyBar },
   };
 
   return { policy, diagnostics };
 }
 
+/**
+ * Reads a block of questions. Shared by `gate.questions` and `gate.probe_questions`,
+ * which are validated identically: a probe is asked over the same wire as a judgment, so
+ * a probe the classifier would reject is worth catching at load time too.
+ */
 function readQuestions(
   raw: unknown,
+  basePath: string,
+  required: boolean,
   error: (path: string, message: string) => void,
 ): Record<string, Question> {
   const questions: Record<string, Question> = {};
 
+  if (raw === undefined && !required) return questions;
+
   if (!isRecord(raw)) {
-    error("gate.questions", "missing or not a mapping");
+    error(basePath, "missing or not a mapping");
     return questions;
   }
 
   for (const [name, value] of Object.entries(raw)) {
-    const path = `gate.questions.${name}`;
+    const path = `${basePath}.${name}`;
 
     if (name === ANY_QUESTION) {
       error(path, `"${ANY_QUESTION}" is reserved for rules that match any question`);
@@ -194,8 +217,8 @@ function readQuestions(
     questions[name] = question;
   }
 
-  if (Object.keys(questions).length === 0) {
-    error("gate.questions", "at least one question is required");
+  if (required && Object.keys(questions).length === 0) {
+    error(basePath, "at least one question is required");
   }
 
   return questions;
@@ -204,6 +227,7 @@ function readQuestions(
 function readRules(
   raw: unknown,
   questions: Readonly<Record<string, Question>>,
+  probeQuestions: Readonly<Record<string, Question>>,
   error: (path: string, message: string) => void,
   warn: (path: string, message: string) => void,
 ): Rule[] {
@@ -264,7 +288,16 @@ function readRules(
 
     const [question, conditionRaw] = entries[0] as [string, unknown];
     if (question !== ANY_QUESTION && !(question in questions)) {
-      error(`${path}.when.${question}`, `no question named "${question}" is defined in gate.questions`);
+      // Naming a probe is the mistake worth a message of its own: the rule looks correct,
+      // the question exists, and it would simply never fire. Rejecting it here is what
+      // makes "a probe never affects a verdict" a property of the policy rather than of
+      // whoever wrote the rules.
+      error(
+        `${path}.when.${question}`,
+        question in probeQuestions
+          ? `"${question}" is a probe question, and probes are never read by rules — move it to gate.questions to act on it`
+          : `no question named "${question}" is defined in gate.questions`,
+      );
       return;
     }
 

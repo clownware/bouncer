@@ -5,18 +5,41 @@
 // stays tested.
 //
 //   bouncer calibrate [--fixtures path] [--backend jev|mock] [--json]
+//   bouncer calibrate --from-log [path] [--labels path] [--json]
+//
+// `--from-log` answers a different question and makes no network call at all. Probes are
+// answered on every real gated call and land in `decisions.jsonl`, so the log accumulates
+// candidate-question data as a by-product of ordinary use. This reads it back. Labels come
+// from a separate file a human writes, keyed by `tool_use_id`; a probe answer with no
+// label is counted and skipped rather than guessed at.
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { JevAdapter } from "../adapters/jev.js";
 import { MockAdapter } from "../adapters/mock.js";
 import type { Adapter } from "../adapters/types.js";
-import { formatReport, loadFixtures, report, score } from "../calibrate.js";
-import { apiKey, errorsIn, pluginRoot, resolvePolicy } from "../io/config.js";
+import {
+  formatLoggedProbes,
+  formatReport,
+  loadFixtures,
+  parseLoggedLabels,
+  report,
+  score,
+  scoreLoggedProbes,
+} from "../calibrate.js";
+import { apiKey, dataDir, errorsIn, pluginRoot, resolvePolicy } from "../io/config.js";
+import { LOG_FILE, parseLog } from "../io/log.js";
+
+/** The labels file looked for next to the log when `--labels` is not given. */
+const DEFAULT_LABELS_FILE = "probe-labels.jsonl";
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
   readonly backend?: string;
   readonly json?: boolean;
+  /** Present for `--from-log`; an empty string means "the log in the data directory". */
+  readonly fromLog?: string;
+  readonly labels?: string;
 }
 
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
@@ -24,14 +47,72 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     const i = argv.indexOf(`--${name}`);
     return i === -1 ? undefined : argv[i + 1];
   };
+  // `--from-log` takes an optional path, so the next token is only its value if it is not
+  // itself a flag. Without this, `bouncer calibrate --from-log --json` would look for a
+  // log named "--json".
+  const optional = (name: string): string | undefined => {
+    const i = argv.indexOf(`--${name}`);
+    if (i === -1) return undefined;
+    const next = argv[i + 1];
+    return next !== undefined && !next.startsWith("--") ? next : "";
+  };
+
   return {
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
+    ...(optional("from-log") !== undefined ? { fromLog: optional("from-log") as string } : {}),
+    ...(value("labels") !== undefined ? { labels: value("labels") as string } : {}),
     json: argv.includes("--json"),
   };
 }
 
+/**
+ * `--from-log`: score the probe answers already in the decision log.
+ *
+ * Reads no policy and calls no adapter. A missing labels file is the normal case rather
+ * than an error — the log fills up on its own, and labelling it is a thing someone does
+ * later, if ever.
+ */
+function calibrateFromLog(args: CalibrateArgs, write: (s: string) => void): number {
+  const logPath = args.fromLog !== undefined && args.fromLog.length > 0
+    ? args.fromLog
+    : join(dataDir(), LOG_FILE);
+
+  let records;
+  try {
+    records = parseLog(readFileSync(logPath, "utf8"));
+  } catch (err) {
+    write(`Cannot read the decision log at ${logPath}: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+
+  const labelsPath = args.labels ?? join(dirname(logPath), DEFAULT_LABELS_FILE);
+  let labels = new Map<string, Record<string, boolean>>();
+  try {
+    labels = parseLoggedLabels(readFileSync(labelsPath, "utf8"));
+  } catch (err) {
+    // An explicitly named labels file that cannot be read is a mistake worth reporting.
+    // The default one being absent is not: most logs have never been labelled.
+    if (args.labels !== undefined) {
+      write(`Cannot read labels at ${labelsPath}: ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+  }
+
+  const reports = scoreLoggedProbes(records, labels);
+
+  if (args.json === true) {
+    write(`${JSON.stringify({ log: logPath, records: records.length, reports }, null, 2)}\n`);
+    return 0;
+  }
+
+  write(formatLoggedProbes(reports, logPath));
+  return 0;
+}
+
 export async function calibrate(args: CalibrateArgs, write: (s: string) => void): Promise<number> {
+  if (args.fromLog !== undefined) return calibrateFromLog(args, write);
+
   const root = pluginRoot() ?? process.cwd();
   const resolved = resolvePolicy(process.cwd(), root);
 

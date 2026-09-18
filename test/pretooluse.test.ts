@@ -277,3 +277,80 @@ describe("malformed payloads", () => {
     await expect(runPreToolUse(malformed, { adapter: harmless })).resolves.not.toThrow();
   });
 });
+
+describe("probe questions", () => {
+  // Every gate question answered well below any threshold, and both probes parked in the
+  // middle of the `any` uncertainty rule's 0.40–0.60 band. If a probe answer ever reached
+  // `evaluate`, that band is what would catch it, and the verdict would be `ask`.
+  const withProbes = new MockAdapter({
+    answers: {
+      destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01,
+      prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01,
+      outside_repo_v2: 0.5, home_dir_tool_cache: 0.5,
+    },
+  });
+
+  /** Wraps an adapter and keeps the question names it was handed, in order. */
+  function spyOn(inner: MockAdapter) {
+    const asked: string[][] = [];
+    return {
+      asked,
+      adapter: {
+        name: "spy",
+        decide: async (request: Parameters<MockAdapter["decide"]>[0]) => {
+          asked.push(Object.keys(request.questions));
+          return inner.decide(request);
+        },
+      },
+    };
+  }
+
+  beforeEach(() => usePolicy("guard"));
+
+  it("asks them in the same call as the gate questions", async () => {
+    const spy = spyOn(withProbes);
+    await runPreToolUse(payload(), { adapter: spy.adapter });
+
+    expect(spy.asked).toHaveLength(1);
+    expect(spy.asked[0]).toEqual([
+      "destructive", "secrets", "outside_repo", "egress", "prod",
+      "sensitive_target", "unreviewed_execution",
+      "outside_repo_v2", "home_dir_tool_cache",
+    ]);
+  });
+
+  // The whole guarantee, at the boundary that matters: an answer no rule can read.
+  it("keeps them out of the verdict even when they land in the uncertainty band", async () => {
+    const output = await runPreToolUse(payload(), { adapter: withProbes });
+
+    expect(output?.hookSpecificOutput).toBeUndefined();
+    const [record] = logLines();
+    expect(record.verdict).toBe("allow");
+    // Answered, not merely absent — otherwise this passes for the wrong reason.
+    expect(record.probes.outside_repo_v2).toEqual({ p: 0.5, source: "probe" });
+    expect(record.probes.home_dir_tool_cache).toEqual({ p: 0.5, source: "probe" });
+  });
+
+  it("logs them apart from the judgments rather than among them", async () => {
+    await runPreToolUse(payload(), { adapter: withProbes });
+    const [record] = logLines();
+
+    expect(Object.keys(record.answers)).not.toContain("outside_repo_v2");
+    expect(record.answers.destructive).toBe(0.01);
+  });
+
+  it("behaves exactly as before on a policy with no probes", async () => {
+    writeFileSync(policyPath, POLICY.replace(/^mode: observe$/m, "mode: guard").replace(/\n  probe_questions:[\s\S]*$/, "\n"), "utf8");
+
+    const spy = spyOn(withProbes);
+    const output = await runPreToolUse(payload(), { adapter: spy.adapter });
+
+    expect(spy.asked[0]).toEqual([
+      "destructive", "secrets", "outside_repo", "egress", "prod",
+      "sensitive_target", "unreviewed_execution",
+    ]);
+    expect(output?.hookSpecificOutput).toBeUndefined();
+    // Absent, not empty: a policy without probes writes the record it always wrote.
+    expect(logLines()[0]).not.toHaveProperty("probes");
+  });
+});

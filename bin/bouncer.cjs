@@ -7679,8 +7679,17 @@ function loadPolicy(source) {
     warn("gate.tools", "no tools listed, so the gate will never run");
   }
   const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
-  const questions = readQuestions(gateRaw["questions"], error);
-  const rules = readRules(gateRaw["rules"], questions, error, warn);
+  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
+  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `gate.probe_questions.${name}`,
+        `"${name}" is already a question in gate.questions \u2014 answers come back keyed by name, so the two would collide`
+      );
+    }
+  }
+  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
   }
@@ -7691,19 +7700,20 @@ function loadPolicy(source) {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, questions, rules },
+    gate: { tools, fastPath, questions, probeQuestions, rules },
     calibration: { confidenceFloor, accuracyBar }
   };
   return { policy, diagnostics };
 }
-function readQuestions(raw, error) {
+function readQuestions(raw, basePath, required, error) {
   const questions = {};
+  if (raw === void 0 && !required) return questions;
   if (!isRecord(raw)) {
-    error("gate.questions", "missing or not a mapping");
+    error(basePath, "missing or not a mapping");
     return questions;
   }
   for (const [name, value] of Object.entries(raw)) {
-    const path = `gate.questions.${name}`;
+    const path = `${basePath}.${name}`;
     if (name === ANY_QUESTION) {
       error(path, `"${ANY_QUESTION}" is reserved for rules that match any question`);
       continue;
@@ -7738,12 +7748,12 @@ function readQuestions(raw, error) {
     }
     questions[name] = question;
   }
-  if (Object.keys(questions).length === 0) {
-    error("gate.questions", "at least one question is required");
+  if (required && Object.keys(questions).length === 0) {
+    error(basePath, "at least one question is required");
   }
   return questions;
 }
-function readRules(raw, questions, error, warn) {
+function readRules(raw, questions, probeQuestions, error, warn) {
   const rules = [];
   if (!Array.isArray(raw)) {
     error("gate.rules", "missing or not a list");
@@ -7791,7 +7801,10 @@ function readRules(raw, questions, error, warn) {
     }
     const [question, conditionRaw] = entries[0];
     if (question !== ANY_QUESTION && !(question in questions)) {
-      error(`${path}.when.${question}`, `no question named "${question}" is defined in gate.questions`);
+      error(
+        `${path}.when.${question}`,
+        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to gate.questions to act on it` : `no question named "${question}" is defined in gate.questions`
+      );
       return;
     }
     if (!isRecord(conditionRaw) || typeof conditionRaw["p"] !== "string") {
@@ -8340,6 +8353,17 @@ function rotateIfOversized(file) {
   if (size < MAX_LOG_BYTES) return;
   (0, import_node_fs3.renameSync)(file, `${file}.1`);
 }
+function parseLog(source) {
+  const records = [];
+  for (const line of source.split("\n")) {
+    if (line.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return records;
+}
 function tail(dir, count) {
   let raw;
   try {
@@ -8438,9 +8462,12 @@ async function runPreToolUse(payload, options = {}) {
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: policy.timeoutMs });
     const adapterMs = now() - adapterStarted;
     const answers = {};
+    const probes = {};
     for (const [name, answer] of Object.entries(response.answers)) {
       const p = noulProbability(answer);
-      if (p !== void 0) answers[name] = p;
+      if (p === void 0) continue;
+      if (name in policy.gate.probeQuestions) probes[name] = { p, source: "probe" };
+      else answers[name] = p;
     }
     const decision = evaluate(policy, answers);
     const next = record(breakerState, {
@@ -8453,6 +8480,7 @@ async function runPreToolUse(payload, options = {}) {
       ...base,
       ...verdictFields(decision),
       answers,
+      ...Object.keys(probes).length > 0 ? { probes } : {},
       state: state.text,
       redacted_kinds: state.redactedKinds,
       latency_ms: { total: now() - started, adapter: adapterMs },
@@ -8529,12 +8557,14 @@ function verdictFields(decision) {
 }
 function questionsFor(policy) {
   const questions = {};
-  for (const [name, question] of Object.entries(policy.gate.questions)) {
-    questions[name] = {
-      type: "noul",
-      instructions: question.instructions,
-      ...question.criteria !== void 0 ? { criteria: question.criteria } : {}
-    };
+  for (const source of [policy.gate.questions, policy.gate.probeQuestions]) {
+    for (const [name, question] of Object.entries(source)) {
+      questions[name] = {
+        type: "noul",
+        instructions: question.instructions,
+        ...question.criteria !== void 0 ? { criteria: question.criteria } : {}
+      };
+    }
   }
   return questions;
 }
@@ -8719,6 +8749,7 @@ function bar(p) {
 
 // src/commands/calibrate.ts
 var import_node_path5 = require("node:path");
+var import_node_fs6 = require("node:fs");
 
 // src/calibrate.ts
 var import_node_fs5 = require("node:fs");
@@ -8761,6 +8792,10 @@ async function score(fixtures, policy, adapter, onProgress) {
   for (const [name, q] of Object.entries(policy.gate.questions)) {
     questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
   }
+  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
+  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
+    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+  }
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
     const state = buildState({
@@ -8773,6 +8808,7 @@ async function score(fixtures, policy, adapter, onProgress) {
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
     const answers = {};
     for (const name of Object.keys(questions)) {
+      if (probeNames.has(name)) continue;
       const value = noulProbability(response.answers[name]);
       if (value !== void 0) answers[name] = value;
     }
@@ -8794,7 +8830,8 @@ async function score(fixtures, policy, adapter, onProgress) {
         correct: predicted === expected,
         confidence: Math.max(p, 1 - p),
         verdict: decision.verdict,
-        verdictReason
+        verdictReason,
+        probe: probeNames.has(question)
       });
     }
     onProgress?.(i + 1, fixtures.length);
@@ -8804,6 +8841,7 @@ async function score(fixtures, policy, adapter, onProgress) {
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
   for (const s of scored) {
+    if (s.probe) continue;
     const list = byQuestion.get(s.question) ?? [];
     list.push(s);
     byQuestion.set(s.question, list);
@@ -8829,6 +8867,7 @@ function report(scored, calibration) {
 function disagreements(scored) {
   const byFixture = /* @__PURE__ */ new Map();
   for (const s of scored) {
+    if (s.probe) continue;
     const list = byFixture.get(s.fixture.id) ?? [];
     list.push(s);
     byFixture.set(s.fixture.id, list);
@@ -8861,6 +8900,22 @@ function disagreements(scored) {
   return out.sort(
     (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id)
   );
+}
+function probeReport(scored) {
+  const byQuestion = /* @__PURE__ */ new Map();
+  for (const s of scored) {
+    if (!s.probe) continue;
+    const list = byQuestion.get(s.question) ?? [];
+    list.push(s);
+    byQuestion.set(s.question, list);
+  }
+  return [...byQuestion.entries()].map(([question, items]) => ({
+    question,
+    n: items.length,
+    accuracy: items.filter((i) => i.correct).length / items.length,
+    brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
+    misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
+  })).sort((a, b) => a.question.localeCompare(b.question));
 }
 function gateResult(items, calibration) {
   const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
@@ -8897,6 +8952,20 @@ function formatReport(reports, backend, calibration, scored = []) {
     "",
     failing.length === 0 ? `Every question clears the bar (${reports.length} of ${reports.length}).` : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`
   );
+  const probes = probeReport(scored);
+  if (probes.length > 0) {
+    lines.push(
+      "",
+      "Probes (gate.probe_questions). Asked in the same call, read by no rule, counted",
+      "toward no gate \u2014 this is what they would have said:",
+      ""
+    );
+    lines.push("| probe | n | accuracy | Brier |");
+    lines.push("|---|---|---|---|");
+    for (const r of probes) {
+      lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} |`);
+    }
+  }
   const disagreed = disagreements(scored);
   lines.push("", "What the policy would actually do, where that differs from the labels:", "");
   if (disagreed.length === 0) {
@@ -8934,20 +9003,139 @@ function formatReport(reports, backend, calibration, scored = []) {
   return `${lines.join("\n")}
 `;
 }
+function parseLoggedLabels(source) {
+  const labels = /* @__PURE__ */ new Map();
+  source.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      throw new Error(`label line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (typeof parsed.tool_use_id !== "string" || parsed.tool_use_id.length === 0) {
+      throw new Error(`label line ${i + 1} is missing "tool_use_id"`);
+    }
+    if (typeof parsed.expect !== "object" || parsed.expect === null) {
+      throw new Error(`label "${parsed.tool_use_id}" is missing "expect"`);
+    }
+    const expect = {};
+    for (const [question, value] of Object.entries(parsed.expect)) {
+      if (typeof value !== "boolean") {
+        throw new Error(`label "${parsed.tool_use_id}" gives a non-boolean for "${question}"`);
+      }
+      expect[question] = value;
+    }
+    labels.set(parsed.tool_use_id, expect);
+  });
+  return labels;
+}
+function scoreLoggedProbes(records, labels) {
+  const seen = /* @__PURE__ */ new Map();
+  for (const record2 of records) {
+    if (record2.probes === void 0) continue;
+    const expect = record2.tool_use_id === void 0 ? void 0 : labels.get(record2.tool_use_id);
+    for (const [question, answer] of Object.entries(record2.probes)) {
+      if (typeof answer?.p !== "number" || !Number.isFinite(answer.p)) continue;
+      const entry = seen.get(question) ?? { n: 0, scored: [] };
+      entry.n += 1;
+      const expected = expect?.[question];
+      if (expected !== void 0) entry.scored.push({ p: answer.p, expected });
+      seen.set(question, entry);
+    }
+  }
+  return [...seen.entries()].map(([question, { n, scored }]) => ({
+    question,
+    n,
+    labelled: scored.length,
+    accuracy: scored.length === 0 ? Number.NaN : scored.filter(({ p, expected }) => p >= 0.5 === expected).length / scored.length,
+    brier: scored.length === 0 ? Number.NaN : scored.reduce((sum, { p, expected }) => sum + (p - (expected ? 1 : 0)) ** 2, 0) / scored.length
+  })).sort((a, b) => a.question.localeCompare(b.question));
+}
+function formatLoggedProbes(reports, source) {
+  const lines = [];
+  const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  lines.push(`Probe answers in ${source}`, "");
+  if (reports.length === 0) {
+    lines.push("  None. Either the policy defines no gate.probe_questions, or no gated call");
+    lines.push("  has been made since it started to.");
+    return `${lines.join("\n")}
+`;
+  }
+  lines.push("| probe | answers | labelled | accuracy | Brier |");
+  lines.push("|---|---|---|---|---|");
+  for (const r of reports) {
+    lines.push(
+      `| ${r.question} | ${r.n} | ${r.labelled} | ${pct(r.accuracy)} | ${Number.isNaN(r.brier) ? "  \u2014  " : r.brier.toFixed(3)} |`
+    );
+  }
+  const unlabelled = reports.filter((r) => r.labelled === 0);
+  if (unlabelled.length > 0) {
+    lines.push(
+      "",
+      `Not scored, for want of a label: ${unlabelled.map((r) => r.question).join(", ")}.`,
+      "A label is a line in the labels file naming the tool_use_id of a logged call and what",
+      "each probe should have said for it."
+    );
+  }
+  return `${lines.join("\n")}
+`;
+}
 
 // src/commands/calibrate.ts
+var DEFAULT_LABELS_FILE = "probe-labels.jsonl";
 function parseArgs(argv) {
   const value = (name) => {
     const i = argv.indexOf(`--${name}`);
     return i === -1 ? void 0 : argv[i + 1];
   };
+  const optional = (name) => {
+    const i = argv.indexOf(`--${name}`);
+    if (i === -1) return void 0;
+    const next = argv[i + 1];
+    return next !== void 0 && !next.startsWith("--") ? next : "";
+  };
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
+    ...optional("from-log") !== void 0 ? { fromLog: optional("from-log") } : {},
+    ...value("labels") !== void 0 ? { labels: value("labels") } : {},
     json: argv.includes("--json")
   };
 }
+function calibrateFromLog(args, write2) {
+  const logPath = args.fromLog !== void 0 && args.fromLog.length > 0 ? args.fromLog : (0, import_node_path5.join)(dataDir(), LOG_FILE);
+  let records;
+  try {
+    records = parseLog((0, import_node_fs6.readFileSync)(logPath, "utf8"));
+  } catch (err) {
+    write2(`Cannot read the decision log at ${logPath}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  const labelsPath = args.labels ?? (0, import_node_path5.join)((0, import_node_path5.dirname)(logPath), DEFAULT_LABELS_FILE);
+  let labels = /* @__PURE__ */ new Map();
+  try {
+    labels = parseLoggedLabels((0, import_node_fs6.readFileSync)(labelsPath, "utf8"));
+  } catch (err) {
+    if (args.labels !== void 0) {
+      write2(`Cannot read labels at ${labelsPath}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+  }
+  const reports = scoreLoggedProbes(records, labels);
+  if (args.json === true) {
+    write2(`${JSON.stringify({ log: logPath, records: records.length, reports }, null, 2)}
+`);
+    return 0;
+  }
+  write2(formatLoggedProbes(reports, logPath));
+  return 0;
+}
 async function calibrate(args, write2) {
+  if (args.fromLog !== void 0) return calibrateFromLog(args, write2);
   const root = pluginRoot() ?? process.cwd();
   const resolved = resolvePolicy(process.cwd(), root);
   if (resolved.policy === void 0) {
@@ -9128,7 +9316,7 @@ function isRecord4(value) {
 }
 
 // src/io/skills.ts
-var import_node_fs6 = require("node:fs");
+var import_node_fs7 = require("node:fs");
 var import_node_os2 = require("node:os");
 var import_node_path6 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
@@ -9139,7 +9327,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs6.existsSync)(path)) return;
+    if (!(0, import_node_fs7.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -9235,7 +9423,7 @@ function installedPluginSkills(file) {
 }
 function desktopManifests(home) {
   const root = (0, import_node_path6.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs6.existsSync)(root)) return [];
+  if (!(0, import_node_fs7.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
@@ -9243,7 +9431,7 @@ function desktopManifests(home) {
       if (++visited > MAX_SESSION_DIRS) return found;
       const session = (0, import_node_path6.join)(root, outer, inner);
       const rpm = (0, import_node_path6.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs6.existsSync)(rpm)) {
+      if ((0, import_node_fs7.existsSync)(rpm)) {
         found.push({
           path: rpm,
           gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path6.join)(session, "rpm", `plugin_${name}`, "skills"))
@@ -9251,7 +9439,7 @@ function desktopManifests(home) {
       }
       for (const bucket of nestedBuckets((0, import_node_path6.join)(session, "skills-plugin"))) {
         const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
-        if ((0, import_node_fs6.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+        if ((0, import_node_fs7.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
@@ -9271,14 +9459,14 @@ function nestedBuckets(dir) {
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs6.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read2(file) {
   try {
-    return (0, import_node_fs6.readFileSync)(file, "utf8");
+    return (0, import_node_fs7.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -9291,7 +9479,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs6.statSync)(source);
+      const stat = (0, import_node_fs7.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -9306,7 +9494,7 @@ function projectSkillsDir(cwd) {
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs6.existsSync)((0, import_node_path6.join)(current, ".git"))) return current;
+    if ((0, import_node_fs7.existsSync)((0, import_node_path6.join)(current, ".git"))) return current;
     const parent = (0, import_node_path6.dirname)(current);
     if (parent === current) return void 0;
     current = parent;

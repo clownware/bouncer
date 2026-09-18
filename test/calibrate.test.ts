@@ -1,7 +1,19 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
-import { disagreements, formatReport, parseFixtures, report, score, type Fixture, type Scored } from "../src/calibrate.js";
+import {
+  disagreements,
+  formatLoggedProbes,
+  formatReport,
+  parseFixtures,
+  parseLoggedLabels,
+  probeReport,
+  report,
+  score,
+  scoreLoggedProbes,
+  type Fixture,
+  type Scored,
+} from "../src/calibrate.js";
 import { loadPolicy } from "../src/engine/policy.js";
 
 const POLICY = (() => {
@@ -148,6 +160,7 @@ describe("the release gate in report()", () => {
         confidence,
         verdict: "allow" as const,
         verdictReason: { question: "default", p: Number.NaN },
+        probe: false,
       };
     });
 
@@ -333,5 +346,126 @@ describe("score and report", () => {
   it("runs the whole shipped set through the state builder without throwing", async () => {
     const scored = await score(FIXTURES, POLICY, new MockAdapter());
     expect(scored.length).toBeGreaterThan(100);
+  });
+});
+
+describe("probes in a fixture run", () => {
+  const QUIET = 0.02;
+
+  const adapterWith = (overrides: Record<string, number>) => {
+    const answers: Record<string, number> = {};
+    for (const q of Object.keys(POLICY.gate.questions)) answers[q] = QUIET;
+    return new MockAdapter({ answers: { ...answers, ...overrides } });
+  };
+
+  const fixture = (expect_: Record<string, boolean>): Fixture => ({
+    id: "f", tool: "Bash", input: { command: "cargo fetch" }, expect: expect_, note: "n",
+  });
+
+  it("scores a probe the fixture labels, marked as a probe", async () => {
+    const scored = await score([fixture({ outside_repo: false, outside_repo_v2: false })], POLICY, adapterWith({ outside_repo_v2: 0.1 }));
+
+    const probe = scored.find((s) => s.question === "outside_repo_v2");
+    expect(probe?.probe).toBe(true);
+    expect(probe?.correct).toBe(true);
+    expect(scored.find((s) => s.question === "outside_repo")?.probe).toBe(false);
+  });
+
+  it("keeps probes out of the gate table, which decides whether the thing ships", async () => {
+    const scored = await score([fixture({ outside_repo_v2: false })], POLICY, adapterWith({ outside_repo_v2: 0.1 }));
+
+    expect(report(scored, POLICY.calibration)).toEqual([]);
+    expect(probeReport(scored).map((r) => r.question)).toEqual(["outside_repo_v2"]);
+  });
+
+  // A probe labelled true would otherwise invent a `missed`: the verdict it is measured
+  // against was reached without it, so "the rules allowed something labelled true" would
+  // be a statement about a question no rule consulted.
+  it("keeps probes out of the verdict comparison", async () => {
+    const scored = await score([fixture({ outside_repo_v2: true })], POLICY, adapterWith({ outside_repo_v2: 0.9 }));
+    expect(disagreements(scored)).toEqual([]);
+  });
+
+  it("says nothing about a probe no fixture labels", async () => {
+    const scored = await score([fixture({ outside_repo: false })], POLICY, adapterWith({}));
+    expect(probeReport(scored)).toEqual([]);
+  });
+
+  it("prints a probe section only when there is one", async () => {
+    const labelled = await score([fixture({ outside_repo_v2: false })], POLICY, adapterWith({ outside_repo_v2: 0.1 }));
+    expect(formatReport(report(labelled, POLICY.calibration), "mock", POLICY.calibration, labelled)).toContain("outside_repo_v2");
+
+    const unlabelled = await score([fixture({ outside_repo: false })], POLICY, adapterWith({}));
+    expect(formatReport(report(unlabelled, POLICY.calibration), "mock", POLICY.calibration, unlabelled)).not.toContain("gate.probe_questions");
+  });
+});
+
+describe("probes recovered from the decision log", () => {
+  const record = (toolUseId: string, probes: Record<string, number>) => ({
+    ts: "2026-09-18T00:00:00.000Z",
+    tool: "Bash",
+    tool_use_id: toolUseId,
+    mode: "observe",
+    backend: "jev",
+    verdict: "allow" as const,
+    emitted: null,
+    reason: { kind: "no-rule-matched" as const },
+    latency_ms: { total: 40 },
+    probes: Object.fromEntries(Object.entries(probes).map(([k, p]) => [k, { p, source: "probe" as const }])),
+  });
+
+  it("scores the answers a label covers", () => {
+    const records = [
+      record("toolu_a", { home_dir_tool_cache: 0.9 }),
+      record("toolu_b", { home_dir_tool_cache: 0.2 }),
+    ];
+    const labels = parseLoggedLabels(
+      '{"tool_use_id":"toolu_a","expect":{"home_dir_tool_cache":true}}\n' +
+      '{"tool_use_id":"toolu_b","expect":{"home_dir_tool_cache":true}}\n',
+    );
+
+    const [report_] = scoreLoggedProbes(records, labels);
+    expect(report_).toMatchObject({ question: "home_dir_tool_cache", n: 2, labelled: 2, accuracy: 0.5 });
+    expect(report_?.brier).toBeCloseTo((0.01 + 0.64) / 2, 5);
+  });
+
+  // The ordinary case: a log full of real traffic nobody has labelled. It has to report
+  // that it saw the answers, not report zero, and not score them against a guess.
+  it("counts an unlabelled answer and declines to score it", () => {
+    const reports = scoreLoggedProbes([record("toolu_a", { home_dir_tool_cache: 0.9 })], new Map());
+
+    expect(reports[0]).toMatchObject({ n: 1, labelled: 0 });
+    expect(reports[0]?.accuracy).toBeNaN();
+    expect(formatLoggedProbes(reports, "decisions.jsonl")).toContain("for want of a label");
+  });
+
+  it("mixes the two, scoring only what is labelled", () => {
+    const records = [
+      record("toolu_a", { home_dir_tool_cache: 0.9 }),
+      record("toolu_b", { home_dir_tool_cache: 0.9 }),
+    ];
+    const labels = parseLoggedLabels('{"tool_use_id":"toolu_a","expect":{"home_dir_tool_cache":true}}\n');
+
+    expect(scoreLoggedProbes(records, labels)[0]).toMatchObject({ n: 2, labelled: 1, accuracy: 1 });
+  });
+
+  it("ignores records with no probes at all", () => {
+    const { probes: _probes, ...plain } = record("toolu_a", {});
+    expect(scoreLoggedProbes([plain], new Map())).toEqual([]);
+  });
+
+  it("says so plainly when the log holds no probe answers", () => {
+    expect(formatLoggedProbes([], "decisions.jsonl")).toContain("None.");
+  });
+
+  const badLabels: ReadonlyArray<readonly [string, string, string]> = [
+    ["invalid JSON", "{not json}", "not valid JSON"],
+    ["a missing tool_use_id", '{"expect":{"x":true}}', "tool_use_id"],
+    ["a missing expect", '{"tool_use_id":"toolu_a"}', "expect"],
+    ["a non-boolean label", '{"tool_use_id":"toolu_a","expect":{"x":0.5}}', "non-boolean"],
+  ];
+
+  it.each(badLabels)("rejects %s", (_label, line, message) => {
+    expect(() => parseLoggedLabels(line)).toThrow(new RegExp(message));
   });
 });
