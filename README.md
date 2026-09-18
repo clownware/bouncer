@@ -351,16 +351,26 @@ are evaluated in one call and in parallel, and the rows have not been re-measure
 Steady state lands around 400 ms end to end. The first call of a session is nearer 565 ms:
 connection setup, not the model, which is why the latency circuit breaker ignores it.
 
-The hook row predates `gate.hard_rules`, and the bench now measures both paths separately —
-a command the classifier judges, and one a hard rule stops before the adapter — because
-neither is obviously the cheaper one. A hard-rule hit skips the ~190 ms classifier call but
-still pays the policy parse, and each entry costs about 0.37 ms of cold parse on every gated
-call, since the hook is a fresh process per tool call.
+The hook row predates both `gate.hard_rules` and the policy cache, and the bench now
+measures two paths separately — a command the classifier judges, and one a hard rule stops
+before the adapter — because neither is obviously the cheaper one. A hard-rule hit skips the
+~190 ms classifier call but still builds the state and runs the matcher.
 
-Budget is 80 ms p95 for hook overhead and 600 ms p95 end to end. 80 ms is `npm run bench`'s
-default and the number held to locally; CI runs the same bench at `--budget 150`, because a
-shared runner's tail is noisy enough that 80 would fail on scheduling rather than on code.
-See [ADR-002](docs/adr/002-bundled-single-file-on-node.md).
+**Your policy's size does not cost you anything after the first call.** The hook is a fresh
+process per tool call, so an uncached policy is re-parsed every time, and parse cost tracks
+YAML node count rather than file size — about 0.37 ms per hard rule, cold, forever. The
+compiled policy is therefore cached on disk, keyed on the policy file's full source text.
+Paired over 50 pairs, that is −22.6 ms on the shipped policy and −32.1 ms on one carrying
+thirty more hard rules, and cached those two cost the same number. A miss costs +0.46 ms, so
+the first call after you edit your policy is not meaningfully worse. `BOUNCER_NO_CACHE=1`
+turns it off, which is how to measure the parse. See
+[ADR-007](docs/adr/007-cache-the-compiled-policy.md), which reverses item 2 of
+[ADR-002](docs/adr/002-bundled-single-file-on-node.md) and says why that call was wrong.
+
+CI gates hook overhead at `--budget 150`, and 600 ms p95 end to end is the budget for the
+whole call. The 80 ms in `npm run bench`'s default and in ADR-002 is a local target rather
+than an enforced one, and ADR-007 flags it as the wrong number now: uncached, `main` itself
+measured p95 102.0 ms on an agent container; cached, the same path runs at about 53 ms.
 
 **Comparing two runs means running them paired.** An unpaired p95 measures the machine at
 least as much as the diff: CI has reported 60.9 ms against 122.3 ms at p95 for a
