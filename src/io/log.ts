@@ -11,13 +11,21 @@
 // for. The state is already redacted before it reaches here, and there is a second
 // redaction pass on write as a backstop.
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { redact } from "../engine/redact.js";
 import type { Reason } from "../engine/evaluate.js";
 import type { Verdict } from "../engine/types.js";
 
 export const LOG_FILE = "decisions.jsonl";
+
+/**
+ * When the log passes this size it is renamed to `decisions.jsonl.1`, replacing the
+ * previous generation, and a fresh file is started. One line is a few hundred bytes, so
+ * this is on the order of ten thousand gated calls, and at most two generations exist.
+ * Without a cap the file grows for as long as the plugin is installed.
+ */
+export const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
 export interface DecisionRecord {
   readonly ts: string;
@@ -56,11 +64,25 @@ export function append(dir: string, record: DecisionRecord): void {
     const safe: DecisionRecord =
       record.state !== undefined ? { ...record, state: redact(record.state).text } : record;
 
-    appendFileSync(join(dir, LOG_FILE), `${JSON.stringify(safe)}\n`, "utf8");
+    const file = join(dir, LOG_FILE);
+    rotateIfOversized(file);
+    appendFileSync(file, `${JSON.stringify(safe)}\n`, "utf8");
   } catch {
     // Intentionally silent. stderr from a hook is noise in the user's transcript, and
     // there is nothing they can usefully do about it mid-run.
   }
+}
+
+/** Checked before every append. A missing file is size zero, so this is a no-op on the first write. */
+function rotateIfOversized(file: string): void {
+  let size: number;
+  try {
+    size = statSync(file).size;
+  } catch {
+    return;
+  }
+  if (size < MAX_LOG_BYTES) return;
+  renameSync(file, `${file}.1`);
 }
 
 /** Reads the most recent records, newest first. Returns [] if the log is unreadable. */

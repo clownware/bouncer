@@ -82,9 +82,22 @@ export function dataDir(): string {
   return join(homedir(), ".bouncer");
 }
 
+/**
+ * The plugin's own directory: where the bundled policy and the fixtures live.
+ *
+ * Inside a hook, Claude Code sets CLAUDE_PLUGIN_ROOT. Outside one — `node bin/bouncer.cjs
+ * calibrate` from a checkout, or from wherever the plugin was installed — nothing does,
+ * so fall back to the binary's own location: it lives at <root>/bin/bouncer.cjs, and the
+ * candidate is checked for the bundled policy rather than assumed.
+ */
 export function pluginRoot(): string | undefined {
-  const root = process.env["CLAUDE_PLUGIN_ROOT"];
-  return root !== undefined && root.length > 0 ? root : undefined;
+  const fromEnv = process.env["CLAUDE_PLUGIN_ROOT"];
+  if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
+
+  const script = process.argv[1];
+  if (script === undefined || script.length === 0) return undefined;
+  const candidate = resolve(dirname(script), "..");
+  return existsSync(join(candidate, "policy", "default.yaml")) ? candidate : undefined;
 }
 
 /**

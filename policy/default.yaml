@@ -103,8 +103,8 @@ gate:
     prod:
       instructions: "The command acts on a production system or live customer data."
       criteria:
-        "true": "a production database or deploy target, a live API, a main or release branch deployment"
-        "false": "local development, test fixtures, staging, a scratch branch"
+        "true": "a production database or deploy target, a live API, a main or release branch deployment, a push that rewrites the default branch"
+        "false": "local development, test fixtures, staging, a scratch branch, a preview deployment, a plan or dry run that changes nothing"
 
     # The state builder computes a `sensitive` label for well-known locations and puts it
     # in the state. Without a question and a rule reading it, that label is decoration:

@@ -24,7 +24,7 @@ Bouncer ships observing because you should not enable enforcement on the strengt
 README claiming the classifier is good. Run it yourself:
 
 ```bash
-BOUNCER_TYPESAFE_API_KEY=… bouncer calibrate
+BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate
 ```
 
 <!-- CALIBRATION-TABLE:START -->
@@ -32,17 +32,17 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 28 |  82% | 0.152 |  75% (4) | 100% (4) |  75% (4) |   0% (3) | 100% (13) |
-| egress | 16 |  94% | 0.035 |  —  |  —  |   0% (1) |  —  | 100% (15) |
-| outside_repo | 17 |  88% | 0.056 |  —  |   0% (1) |  50% (2) |  —  | 100% (14) |
-| prod | 14 |  79% | 0.078 |   0% (2) |   0% (1) |  —  | 100% (2) | 100% (9) |
-| secrets | 19 |  84% | 0.103 |   0% (1) |  75% (4) |  —  |  75% (4) | 100% (10) |
-| sensitive_target | 16 |  81% | 0.127 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
+| destructive | 28 |  82% | 0.149 |  75% (4) | 100% (4) |  75% (4) |   0% (3) | 100% (13) |
+| egress | 16 |  94% | 0.036 |  —  |  —  |   0% (1) |  —  | 100% (15) |
+| outside_repo | 17 |  88% | 0.056 |   0% (1) |  —  |  50% (2) |  —  | 100% (14) |
+| prod | 14 |  93% | 0.036 |   0% (1) |  —  | 100% (1) | 100% (2) | 100% (10) |
+| secrets | 19 |  84% | 0.105 |   0% (1) |  75% (4) | 100% (1) |  67% (3) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.126 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
 
 Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, five
 of the six questions pass and `destructive` does not, at 13 of 16. The full report, with
 every disagreement and why each label is what it is, is in
-[docs/calibration/2026-09-18-jev.md](docs/calibration/2026-09-18-jev.md).
+[docs/calibration/2026-09-18-jev-2.md](docs/calibration/2026-09-18-jev-2.md).
 <!-- CALIBRATION-TABLE:END -->
 
 **What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
