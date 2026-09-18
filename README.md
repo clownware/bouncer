@@ -13,9 +13,10 @@ ambiguous — because that middle needs judgment, and judgment used to mean eith
 regex or an LLM in the hot path.
 
 > **Status: v0.1.** The hook runs end to end in observe mode, and the calibration table
-> below comes from a live run against Jev in which all seven questions clear the PRD's
-> 0.85 bar in the high-confidence buckets. See [docs/PRD.md](docs/PRD.md) for the spec
-> and [docs/adr/](docs/adr/) for what has been decided and why.
+> below comes from a live run against Jev in which six of the seven questions clear the
+> PRD's 0.85 bar in the high-confidence buckets; the note under the table says which one
+> does not. See [docs/PRD.md](docs/PRD.md) for the spec and [docs/adr/](docs/adr/) for
+> what has been decided and why.
 
 ## Calibration
 
@@ -41,7 +42,11 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, six
 of the seven questions pass; `sensitive_target` is at 11 of 13, one fixture short, on the
-same two `cat` misses it has had in every run. The full report, with every disagreement and why each label is what
+same two `cat` misses it has had in every run. Both of those also carry `secrets: true`,
+which answers them correctly and prompts on them at 0.60, so the gate is what fails there,
+not the verdict.
+
+The full report, with every disagreement and why each label is what
 it is, is in [docs/calibration/2026-09-18-jev-5.md](docs/calibration/2026-09-18-jev-5.md).
 It also lists every `unreviewed_execution` answer by probability, which is where to look
 before enabling `guard`: everyday installs and builds score below 0.2, but a pinned `npx`
