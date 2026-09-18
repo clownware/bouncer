@@ -12,10 +12,11 @@ There is no cheap middle — let the obvious through, stop the dangerous, ask ab
 ambiguous — because that middle needs judgment, and judgment used to mean either brittle
 regex or an LLM in the hot path.
 
-> **Status: v0.1 nearly complete.** The hook runs end to end, the Jev client is wired up,
-> and the calibration harness and fixtures are in place. The one thing missing is the
-> published table below, which needs a live scoring run. See [docs/PRD.md](docs/PRD.md)
-> for the spec and [docs/adr/](docs/adr/) for what has been decided and why.
+> **Status: v0.1.** The hook runs end to end in observe mode, and the calibration table
+> below comes from a live run against Jev. One question, `destructive`, is under the PRD's
+> 0.85 bar in the high-confidence buckets; the note under the table says why. See
+> [docs/PRD.md](docs/PRD.md) for the spec and [docs/adr/](docs/adr/) for what has been
+> decided and why.
 
 ## Calibration
 
@@ -27,7 +28,21 @@ BOUNCER_TYPESAFE_API_KEY=… bouncer calibrate
 ```
 
 <!-- CALIBRATION-TABLE:START -->
-*Not yet run against live Jev. Run `bouncer calibrate` and paste the table here.*
+Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
+
+| question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
+|---|---|---|---|---|---|---|---|---|
+| destructive | 28 |  82% | 0.152 |  75% (4) | 100% (4) |  75% (4) |   0% (3) | 100% (13) |
+| egress | 16 |  94% | 0.035 |  —  |  —  |   0% (1) |  —  | 100% (15) |
+| outside_repo | 17 |  88% | 0.056 |  —  |   0% (1) |  50% (2) |  —  | 100% (14) |
+| prod | 14 |  79% | 0.078 |   0% (2) |   0% (1) |  —  | 100% (2) | 100% (9) |
+| secrets | 19 |  84% | 0.103 |   0% (1) |  75% (4) |  —  |  75% (4) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.127 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
+
+Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, five
+of the six questions pass and `destructive` does not, at 13 of 16. The full report, with
+every disagreement and why each label is what it is, is in
+[docs/calibration/2026-09-18-jev.md](docs/calibration/2026-09-18-jev.md).
 <!-- CALIBRATION-TABLE:END -->
 
 **What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
