@@ -201,9 +201,11 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 - Ships with `mode: dry-run` and `auto_allow: false`. Enforcement is opt-in after the user has looked at their own table.
 - Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003 written.
 
-**v0.2 — Router**
-- UserPromptSubmit hook, `skills: auto` discovery, min-confidence gating, `/bouncer:calibrate --router` using "which skill did the user end up invoking" as label.
-- DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.
+**v0.2 — Router** *(designed in [ADR-006](adr/006-the-skill-router.md), which supersedes this entry and the `router:` block in §6)*
+- `UserPromptSubmit` hook, `skills: auto` discovery, a `needs_skill` noul plus a `which_skill` choice over the discovered registry, gated on probability *and* margin. Its own `off | observe | suggest` mode, observing by default, and in `observe` it makes no classifier call at all — it records state and the harness replays it offline.
+- `bouncer calibrate --router` over hand-labelled `fixtures/router.jsonl`, plus `--review`, which pairs observe-mode records with the skill Claude actually loaded and prints the disagreements as the hand-labelling queue.
+- ~~DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.~~ Withdrawn: agreement with the skill the model already picked measures imitation of the incumbent, and 100% agreement would be worth nothing. See ADR-006 § Calibration.
+- DoD: ≥ 60 hand-labelled near-miss fixtures, at least a third labelled `none`; top-1 accuracy ≥ 0.85 among the prompts the router answers on; false-suggestion rate ≤ 0.05; coverage reported alongside both so abstention cannot pass as accuracy; table published in the README before `suggest` is recommended.
 
 **v0.3 — Local adapter**
 - Single-token-logprob adapter over an OpenAI-compatible local endpoint (Ollama / vLLM). Same fixtures, `--compare` table in README.
@@ -218,6 +220,10 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 - **ADR-003** Fail-to-prompt, never fail-open; dry-run default; auto-allow off until calibrated.
 - **ADR-004** Policy as YAML in the repo; questions in plain English; no thresholds in code.
 - **ADR-005** What leaves the machine, and redaction rules.
+
+ADR-004 and ADR-005 are still unwritten; their content lives in `policy/default.yaml`'s
+comments and §9 respectively. Numbering is not reused, so the router's design is
+**ADR-006** rather than filling one of those gaps.
 
 ## 14. Test plan
 
@@ -238,7 +244,7 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 1. ~~Exact current Claude Code hook schema and timeout.~~ **Answered.** Captured from a live session on 2026-09-18; the payloads are in `test/fixtures/payloads/` and the pinned facts are in `docs/adr/001`. Read a fixture rather than the docs.
 2. ~~Jev state-size limit and rate limits.~~ **Answered.** 64k tokens for state plus all questions, 32k for state plus the longest question. Rate limits are documented as dynamically adjusting, so nothing hardcodes them.
 3. ~~Does Jev's confidence on Noul questions carry information beyond `|p − 0.5|`?~~ **Answered, and the question was wrong.** `noul` answers have no confidence field at all; only `choice` and `score` return one. Uncertainty rules are written as ranges on `p`.
-4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question.
+4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question. **Still open, and now has a prior question in front of it:** whether the injected line goes to the model (`additionalContext` — the only form that can save tokens, and the only form that can cost them) or to the human (`systemMessage` — no routing risk, no token saving). ADR-006 recommends the former, behind a `suggest` mode that is not the default.
 5. Marketplace: publish under `clownware/plugins` or a dedicated repo? Recommend dedicated repo, listed in the existing marketplace.
 
 ## 17. Project brief (paste into the Claude Code project)
