@@ -18,7 +18,7 @@ Both are *judgment* problems — fuzzy classification over small, bounded state 
 
 - **G1.** A `PreToolUse` gate that classifies a proposed tool call against a user-owned policy and returns `allow` / `ask` / `deny` in < 600 ms p95, with the judgment and confidence logged.
 - **G2.** A `UserPromptSubmit` skill router that picks the best-fit skill (or none) from the user's installed skills and injects a one-line hint, with confidence gating so low-confidence picks are silent.
-- **G3.** Decisions are backend-pluggable. v0.1 ships Jev; the interface is designed so a local logprob adapter (v0.3) is a config change, not a rewrite.
+- **G3.** Decisions are backend-pluggable. v0.1 ships Jev; the interface is designed so a local logprob adapter (v0.2) is a config change, not a rewrite.
 - **G4.** Policy lives in code (a YAML file the user owns); raw judgments are logged unchanged so policy can be re-tuned without re-asking.
 - **G5.** Ship a calibration harness so users can verify the backend's confidence numbers against their own history before trusting enforcement.
 - **G6.** Installable as a standard Claude Code plugin via a marketplace; zero runtime dependencies beyond Node (already required by Claude Code).
@@ -54,7 +54,7 @@ Claude Code ──(hook JSON on stdin)──▶ bouncer CLI ──▶ Decision E
 | **Hook entrypoints** | Two thin scripts registered in the plugin's `hooks/hooks.json`: `pretooluse` and `userpromptsubmit`. Read stdin JSON, call the engine, write stdout JSON. Hard timeout well under Claude Code's hook timeout. |
 | **State builder** | Turns the hook payload into the *state* string sent to the adapter. Applies redaction (see §9) and size caps. |
 | **Decision engine** | Loads policy, builds the question set (fan-out), calls the adapter once, evaluates policy rules against returned probabilities/confidence, emits a verdict. |
-| **Adapter interface** | `decide(state, questions[]) → answers[]` with three question types: `choice`, `score`, `noul`. Adapters: `jev` (v0.1), `mock` (v0.1, for tests/CI), `local` (v0.3). |
+| **Adapter interface** | `decide(state, questions[]) → answers[]` with three question types: `choice`, `score`, `noul`. Adapters: `jev` (v0.1), `mock` (v0.1, for tests/CI), `local` (v0.2). |
 | **Policy** | `bouncer.yaml` — questions, thresholds, actions. Repo-level overrides user-level. |
 | **Log** | `~/.bouncer/decisions.jsonl` — every judgment with raw probabilities, confidence, verdict, latency, backend. Never contains redacted content. |
 | **Calibration harness** | `bouncer calibrate` — replays logged decisions (or a labeled fixture set) and prints a reliability table (bucketed confidence vs. observed agreement with the user's later action). |
@@ -159,14 +159,14 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 - **Redaction before send:** strip anything matching common secret shapes (bearer tokens, `sk-`, `ghp_`, AWS keys, private-key blocks, `op://` refs) and replace with `[REDACTED:<type>]`. The `secrets` question is answered from the *shape* of the command, not the value.
 - **API key handling:** read from `BOUNCER_TYPESAFE_API_KEY` or `TYPESAFE_API_KEY` env only. Never stored by the plugin. Never logged. Resolving an `op://` reference at hook time was dropped: `op read` spawns a subprocess and can raise a biometric prompt, so it would put Touch ID in the middle of an agent run. If 1Password support returns it belongs in a `SessionStart` hook that resolves once per session.
 - **Log hygiene:** `decisions.jsonl` stores the redacted state itself, not only a hash. Decided 2026-09-18, reversing this document's original position. A hash cannot answer "why was this prompted", cannot seed fixtures from real history, and cannot be re-scored after a policy change, which are the three reasons the log exists. The state is redacted before it reaches the writer and redacted again on write as a backstop, and file contents never enter the state at all, so what is retained is a redacted command line. The log is capped at 8 MB and rotates to one `.1` generation.
-- **Local adapter (v0.3)** is the answer for users who won't send command text off-machine; document this trade-off in the README up front.
+- **Local adapter (v0.2)** is the answer for users who won't send command text off-machine; document this trade-off in the README up front. Promoted from v0.3 on 2026-09-18 — see `docs/adr/005-the-local-adapter.md`.
 - **Trust boundary:** hook output is the only thing Bouncer controls. It cannot execute anything. It cannot widen permissions beyond what Claude Code's own settings allow.
 
 ## 10. Calibration harness
 
 `bouncer calibrate [--from decisions.jsonl | --fixtures fixtures/*.jsonl] [--backend jev|local]`
 
-- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 96, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
+- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 99, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
 - Output: per-question reliability table — confidence buckets (0.5–0.6 … 0.9–1.0) vs. observed accuracy, plus Brier score — followed by the release-gate table below, which reports correct/n and pass/fail per question against the `calibration` block in the policy (defaulting to this section's 0.85 at confidence 0.8). The gate is compared on the exact ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a passing-looking 85%. Optional `--compare` runs two backends on the same fixtures side by side.
 - From live log: pair each logged verdict with what the user actually did next (approved/denied at the prompt, or the tool ran) and treat that as the label.
 - This is a release gate: v0.1 README must publish the fixture table for Jev so users see the numbers before enabling `enforce`.
@@ -201,15 +201,19 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 - Ships with `mode: dry-run` and `auto_allow: false`. Enforcement is opt-in after the user has looked at their own table.
 - Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003 written.
 
-**v0.2 — Router** *(designed in [ADR-006](adr/006-the-skill-router.md), which supersedes this entry and the `router:` block in §6)*
+**v0.2 — Local adapter, and the router**
+
+- **Local adapter**, promoted from v0.3 on 2026-09-18. Constrained single-token decode over an OpenAI-compatible endpoint that exposes `logprobs` and `logit_bias` (llama.cpp server, vLLM): one shared prefill of the state, forked per question, softmax over the label logits for `p`. Not a chat completion asked for JSON. If the engine cannot constrain, the adapter refuses to start rather than returning an uncalibrated number. Same fixtures as Jev, same `calibrate` output, `--compare` prints one side-by-side table. The requirement is a capability, not a product: this document's earlier "Ollama / vLLM" named engines, and an engine that exposes `logprobs` but not `logit_bias` cannot be constrained and is refused. Check the engine's current support rather than the name. See `docs/adr/005-the-local-adapter.md`.
+- DoD (adapter): within 5 pts of Jev on the fixture Brier score, or the README says exactly how far off it is. `--compare` prints that sentence itself.
+
+*Router, designed in [ADR-006](adr/006-the-skill-router.md), which supersedes this entry and the `router:` block in §6*
 - `UserPromptSubmit` hook, `skills: auto` discovery, a `needs_skill` noul plus a `which_skill` choice over the discovered registry, gated on probability *and* margin. Its own `off | observe | suggest` mode, observing by default, and in `observe` it makes no classifier call at all — it records state and the harness replays it offline.
 - `bouncer calibrate --router` over hand-labelled `fixtures/router.jsonl`, plus `--review`, which pairs observe-mode records with the skill Claude actually loaded and prints the disagreements as the hand-labelling queue.
 - ~~DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.~~ Withdrawn: agreement with the skill the model already picked measures imitation of the incumbent, and 100% agreement would be worth nothing. See ADR-006 § Calibration.
 - DoD: ≥ 60 hand-labelled near-miss fixtures over a committed registry of real public skill names, at least a third labelled `none`; top-1 accuracy ≥ 0.85 among the prompts the router answers on; false-suggestion rate ≤ 0.05; **coverage ≥ 0.25** among fixtures labelled as needing a skill, so a router that passes by abstaining is visibly doing that; table published in the README before `suggest` is recommended.
 
-**v0.3 — Local adapter**
-- Single-token-logprob adapter over an OpenAI-compatible local endpoint (Ollama / vLLM). Same fixtures, `--compare` table in README.
-- DoD: local adapter within 5 pts of Jev on the fixture Brier score, or the README says exactly how far off it is.
+**v0.3 — Enforcement defaults**
+- Whatever two weeks of observe-mode data says about moving `guard` closer to the default, and the `local:` policy block the adapter needs before it is a supported hook backend rather than a calibration one.
 
 **Later / maybe:** MCP tool gating, team policy inheritance, Ops integration (post decisions to `vendor_api:typesafe` spend rows), event-gating adapter for long-running agents.
 
@@ -273,3 +277,19 @@ carries their titles and nothing is reserved for them:
 **Rules:** read `CLAUDE.md` first; conventional commits; branch per thread; PRs only; no `--no-verify`; no real API key in any thread — Jev calls are stubbed in tests and the calibration run against live Jev is done by me locally. Report out-of-scope findings as Found Work.
 
 **Definition of done:** as §12 v0.1.
+
+---
+
+**v0.2 addendum (2026-09-18).** v0.1 shipped; the goal now has four threads, and the local
+adapter has been promoted out of v0.3 into v0.2 because the thing users ask about first is
+whether the command line leaves the machine.
+
+1. Deterministic hard rules before the judge — `gate.hard_rules` as the symmetric twin of
+   `gate.fast_path`, evaluated before the adapter call. ADR-004.
+2. Friction pass on the question criteria and the fixture labels, off the live run's
+   `friction` rows. No live run happens in a thread; the policy change and the fixture diff
+   are produced here and calibrated locally.
+3. Local adapter, ADR-005, and this promotion. Independent of 1 and 2.
+4. README and announcement, after 1–3 merge and the next live run lands.
+
+**Rules:** unchanged, and `CLAUDE.md` is the current copy of them.

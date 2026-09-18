@@ -27,23 +27,6 @@ export const LOG_FILE = "decisions.jsonl";
  */
 export const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
-/**
- * A probe answer as it appears in the log.
- *
- * `source` is on every entry rather than implied by the key it sits under, so a line read
- * on its own — by a script, by a future reader, by a question that has since been promoted
- * out of `probe_questions` and into `questions` — says which answers could have moved the
- * verdict and which could not. That distinction is the whole point of the record.
- *
- * Not the record's own `source` above, which says what produced the verdict. This one says
- * what the answer was for. A record reading `source: "judge"` with probe entries reading
- * `source: "probe"` is the ordinary case: the judge decided, and these rode along.
- */
-export interface ProbeAnswer {
-  readonly p: number;
-  readonly source: "probe";
-}
-
 export interface DecisionRecord {
   readonly ts: string;
   readonly session_id?: string;
@@ -72,8 +55,14 @@ export interface DecisionRecord {
   /**
    * Answers to `gate.probe_questions`, which no rule read and which changed nothing about
    * `verdict`. Absent when the policy defines no probes.
+   *
+   * Shaped exactly like `answers` — a bare probability per question name — because the two
+   * differ in what was allowed to read them, not in what was measured. Which key an answer
+   * sits under is what says that, and it stays true for a line read years later: an answer
+   * recorded here could not have moved the verdict on this call, whatever the policy does
+   * with that question now.
    */
-  readonly probes?: Readonly<Record<string, ProbeAnswer>>;
+  readonly probes?: Readonly<Record<string, number>>;
   readonly state?: string;
   readonly redacted_kinds?: readonly string[];
   readonly latency_ms: { readonly total: number; readonly adapter?: number };

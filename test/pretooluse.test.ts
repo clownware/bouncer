@@ -351,8 +351,8 @@ describe("probe questions", () => {
     const [record] = logLines();
     expect(record.verdict).toBe("allow");
     // Answered, not merely absent — otherwise this passes for the wrong reason.
-    expect(record.probes.outside_repo_v2).toEqual({ p: 0.5, source: "probe" });
-    expect(record.probes.home_dir_tool_cache).toEqual({ p: 0.5, source: "probe" });
+    expect(record.probes.outside_repo_v2).toBe(0.5);
+    expect(record.probes.home_dir_tool_cache).toBe(0.5);
   });
 
   it("logs them apart from the judgments rather than among them", async () => {

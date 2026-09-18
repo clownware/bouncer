@@ -1,6 +1,6 @@
 ---
 description: Run bouncer's fixtures through its classifier and show the reliability table
-argument-hint: "[--backend jev|mock]"
+argument-hint: "[--backend jev|local|mock] [--compare a,b]"
 allowed-tools: Bash(node:*)
 ---
 
@@ -12,6 +12,19 @@ A live run against `jev` makes one network call per fixture and needs
 `BOUNCER_TYPESAFE_API_KEY` or `TYPESAFE_API_KEY` in the environment. Without a key, it
 will say so; suggest `--backend mock` only if the user wants to check that the harness
 itself works, since the mock's numbers mean nothing about the real classifier.
+
+A run against `local` needs an OpenAI-compatible endpoint that exposes `logprobs` and
+`logit_bias` — llama.cpp's server or vLLM — pointed at by `BOUNCER_LOCAL_URL` (default
+`http://127.0.0.1:8080/v1`) with `BOUNCER_LOCAL_MODEL` naming the model. If the endpoint
+cannot constrain the decode, the adapter refuses to start and says which of the three
+checks failed; it does not fall back to an unconstrained answer, because that would be a
+number with nothing behind it.
+
+`--compare jev,local` runs both over the same fixtures and prints a side-by-side table
+after the two reports. It compares `p` and Brier only: a noul answer has no confidence
+field on either backend, and the confidence in the gate table is the derived statistic
+max(p, 1 - p). The row worth reading first is how many fixtures reach the same verdict
+under both, since that is what the user would actually feel.
 
 Reading the result with the user:
 

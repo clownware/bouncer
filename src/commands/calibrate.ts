@@ -4,42 +4,37 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--backend jev|mock] [--json]
-//   bouncer calibrate --from-log [path] [--labels path] [--json]
+//   bouncer calibrate [--fixtures path] [--backend jev|local|mock] [--compare a,b] [--json]
 //
-// `--from-log` answers a different question and makes no network call at all. Probes are
-// answered on every real gated call and land in `decisions.jsonl`, so the log accumulates
-// candidate-question data as a by-product of ordinary use. This reads it back. Labels come
-// from a separate file a human writes, keyed by `tool_use_id`; a probe answer with no
-// label is counted and skipped rather than guessed at.
+// `--compare` runs two backends over the same fixture set and prints them side by side.
+// Both runs go through the same `score()`, so the comparison is of the backends and not of
+// two code paths that happen to agree.
 
 import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { JevAdapter } from "../adapters/jev.js";
+import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
-import type { Adapter } from "../adapters/types.js";
+import { AdapterError, type Adapter } from "../adapters/types.js";
 import {
-  formatLoggedProbes,
+  compare,
+  formatComparison,
   formatReport,
   loadFixtures,
-  parseLoggedLabels,
   report,
   score,
-  scoreLoggedProbes,
+  type Fixture,
+  type Scored,
 } from "../calibrate.js";
-import { apiKey, dataDir, errorsIn, pluginRoot, resolvePolicy } from "../io/config.js";
-import { LOG_FILE, parseLog } from "../io/log.js";
-
-/** The labels file looked for next to the log when `--labels` is not given. */
-const DEFAULT_LABELS_FILE = "probe-labels.jsonl";
+import type { Policy } from "../engine/types.js";
+import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
   readonly backend?: string;
+  /** One or two backend names. One means "against the backend already selected". */
+  readonly compare?: string;
   readonly json?: boolean;
-  /** Present for `--from-log`; an empty string means "the log in the data directory". */
-  readonly fromLog?: string;
-  readonly labels?: string;
 }
 
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
@@ -47,72 +42,15 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     const i = argv.indexOf(`--${name}`);
     return i === -1 ? undefined : argv[i + 1];
   };
-  // `--from-log` takes an optional path, so the next token is only its value if it is not
-  // itself a flag. Without this, `bouncer calibrate --from-log --json` would look for a
-  // log named "--json".
-  const optional = (name: string): string | undefined => {
-    const i = argv.indexOf(`--${name}`);
-    if (i === -1) return undefined;
-    const next = argv[i + 1];
-    return next !== undefined && !next.startsWith("--") ? next : "";
-  };
-
   return {
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
-    ...(optional("from-log") !== undefined ? { fromLog: optional("from-log") as string } : {}),
-    ...(value("labels") !== undefined ? { labels: value("labels") as string } : {}),
+    ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
     json: argv.includes("--json"),
   };
 }
 
-/**
- * `--from-log`: score the probe answers already in the decision log.
- *
- * Reads no policy and calls no adapter. A missing labels file is the normal case rather
- * than an error — the log fills up on its own, and labelling it is a thing someone does
- * later, if ever.
- */
-function calibrateFromLog(args: CalibrateArgs, write: (s: string) => void): number {
-  const logPath = args.fromLog !== undefined && args.fromLog.length > 0
-    ? args.fromLog
-    : join(dataDir(), LOG_FILE);
-
-  let records;
-  try {
-    records = parseLog(readFileSync(logPath, "utf8"));
-  } catch (err) {
-    write(`Cannot read the decision log at ${logPath}: ${err instanceof Error ? err.message : String(err)}\n`);
-    return 1;
-  }
-
-  const labelsPath = args.labels ?? join(dirname(logPath), DEFAULT_LABELS_FILE);
-  let labels = new Map<string, Record<string, boolean>>();
-  try {
-    labels = parseLoggedLabels(readFileSync(labelsPath, "utf8"));
-  } catch (err) {
-    // An explicitly named labels file that cannot be read is a mistake worth reporting.
-    // The default one being absent is not: most logs have never been labelled.
-    if (args.labels !== undefined) {
-      write(`Cannot read labels at ${labelsPath}: ${err instanceof Error ? err.message : String(err)}\n`);
-      return 1;
-    }
-  }
-
-  const reports = scoreLoggedProbes(records, labels);
-
-  if (args.json === true) {
-    write(`${JSON.stringify({ log: logPath, records: records.length, reports }, null, 2)}\n`);
-    return 0;
-  }
-
-  write(formatLoggedProbes(reports, logPath));
-  return 0;
-}
-
 export async function calibrate(args: CalibrateArgs, write: (s: string) => void): Promise<number> {
-  if (args.fromLog !== undefined) return calibrateFromLog(args, write);
-
   const root = pluginRoot() ?? process.cwd();
   const resolved = resolvePolicy(process.cwd(), root);
 
@@ -131,37 +69,135 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     return 1;
   }
 
-  const backend = args.backend ?? resolved.policy.backend;
-  let adapter: Adapter;
+  const primary = args.backend ?? resolved.policy.backend;
+  const names = backendsFor(primary, args.compare);
 
-  if (backend === "mock") {
-    adapter = new MockAdapter();
-  } else if (backend === "jev") {
-    const key = apiKey();
-    if (key === undefined) {
-      write("Cannot calibrate against jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.\n");
+  const adapters: Adapter[] = [];
+  for (const name of names) {
+    const adapter = adapterFor(name);
+    if (typeof adapter === "string") {
+      write(`${adapter}\n`);
       return 1;
     }
-    adapter = new JevAdapter({ apiKey: key });
-  } else {
-    write(`Unknown backend "${backend}".\n`);
+    adapters.push(adapter);
+  }
+
+  // Preflight before the first fixture, not on it. The local adapter refuses to start when
+  // the endpoint cannot constrain its decode, and finding that out 40 fixtures into a run
+  // wastes the run and reads like a flake.
+  for (const adapter of adapters) {
+    const problem = await startIfNeeded(adapter);
+    if (problem !== undefined) {
+      write(`Cannot calibrate against ${adapter.name}: ${problem}\n`);
+      return 1;
+    }
+  }
+
+  const runs: Array<{ backend: string; scored: Scored[] }> = [];
+  for (const [i, adapter] of adapters.entries()) {
+    const label = names[i] as string;
+    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+  }
+
+  const [first, second] = runs;
+  if (first === undefined) {
+    write("No backend to run.\n");
     return 1;
   }
 
-  // Progress matters here: a live run is one network call per fixture and takes minutes.
-  // It goes to stderr so `--json` output stays pipeable.
-  const scored = await score(fixtures, resolved.policy, adapter, (done, total) => {
-    if (!args.json) process.stderr.write(`\r  ${done}/${total} fixtures`);
-  });
-  if (!args.json) process.stderr.write("\r\x1b[K");
-
-  const reports = report(scored, resolved.policy.calibration);
-
   if (args.json === true) {
-    write(`${JSON.stringify({ backend, fixtures: fixtures.length, reports }, null, 2)}\n`);
+    const payload =
+      second === undefined
+        ? { backend: first.backend, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) }
+        : {
+            backends: [first.backend, second.backend],
+            fixtures: fixtures.length,
+            reports: {
+              [first.backend]: report(first.scored, resolved.policy.calibration),
+              [second.backend]: report(second.scored, resolved.policy.calibration),
+            },
+            comparison: compare(first, second, resolved.policy.calibration),
+          };
+    write(`${JSON.stringify(payload, null, 2)}\n`);
     return 0;
   }
 
-  write(formatReport(reports, backend, resolved.policy.calibration, scored));
+  for (const r of runs) {
+    write(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
+    write("\n");
+  }
+
+  if (second !== undefined) {
+    write(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
+  }
+
   return 0;
+}
+
+async function run(
+  fixtures: readonly Fixture[],
+  policy: Policy,
+  adapter: Adapter,
+  label: string,
+  total: number,
+  args: CalibrateArgs,
+): Promise<Scored[]> {
+  // Progress matters here: a live run is one network call per fixture and takes minutes.
+  // It goes to stderr so `--json` output stays pipeable.
+  const prefix = total > 1 ? `${label}: ` : "";
+  const scored = await score(fixtures, policy, adapter, (done, n) => {
+    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+  });
+  if (!args.json) process.stderr.write("\r\x1b[K");
+  return scored;
+}
+
+/**
+ * Which backends to run.
+ *
+ * `--compare local` compares against whatever `--backend` or the policy already selected,
+ * which is the shape the flag is reached for; `--compare jev,local` names both explicitly.
+ * A backend compared with itself is a typo worth catching rather than a run worth making.
+ */
+function backendsFor(primary: string, compare?: string): string[] {
+  if (compare === undefined || compare.trim().length === 0) return [primary];
+
+  const named = compare
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  const pair = named.length >= 2 ? named.slice(0, 2) : [primary, ...named];
+  return pair[0] === pair[1] ? [pair[0] as string] : pair;
+}
+
+/** An adapter, or the sentence to print instead of one. */
+function adapterFor(backend: string): Adapter | string {
+  if (backend === "mock") return new MockAdapter();
+
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === undefined) {
+      return "Cannot calibrate against jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+
+  if (backend === "local") return new LocalAdapter(localBackend());
+
+  return `Unknown backend "${backend}".`;
+}
+
+/** The adapter's own refusal message, or undefined if it started. */
+async function startIfNeeded(adapter: Adapter): Promise<string | undefined> {
+  const start = (adapter as { start?: () => Promise<void> }).start;
+  if (typeof start !== "function") return undefined;
+
+  try {
+    await start.call(adapter);
+    return undefined;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
 }

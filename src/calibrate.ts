@@ -502,144 +502,201 @@ export function formatReport(
   return `${lines.join("\n")}\n`;
 }
 
-// --- Probes recovered from the decision log -----------------------------------------
-//
-// The point of a probe is that it is answered on real traffic, for free, on every gated
-// call. That traffic is richer than any fixture file: it is the commands this user
-// actually runs, in the proportions they actually run them. What it does not carry is a
-// label, because nothing in a live session knows whether a prompt would have been wanted.
-//
-// So labels are supplied separately, by a human, keyed by the `tool_use_id` already in
-// every log line. A probe answer with a label is scored; one without is counted and
-// skipped. The skipped count is reported rather than hidden, because "n = 3" and
-// "n = 3 of 812 seen" say very different things about a number.
-
-/** A label a human attached to one logged decision: question name to expected answer. */
-export type LoggedLabels = ReadonlyMap<string, Readonly<Record<string, boolean>>>;
-
-export interface LoggedProbeReport {
-  readonly question: string;
-  /** Answers found in the log, labelled or not. */
-  readonly n: number;
-  /** Of those, the ones a label could be found for. The denominator of everything below. */
-  readonly labelled: number;
-  /** NaN when nothing was labelled — an unscored probe has no accuracy, not 0%. */
-  readonly accuracy: number;
-  readonly brier: number;
-}
+// ---------------------------------------------------------------------------
+// --compare: two backends, one fixture set, side by side.
+// ---------------------------------------------------------------------------
 
 /**
- * Reads a labels file: one JSON object per line, `{"tool_use_id": "...", "expect": {...}}`.
+ * One question's numbers under both backends, over the answers they both produced.
  *
- * Blank lines and `//` comments are skipped, matching the fixture format, so a file can
- * carry a note about why a line is labelled the way it is.
+ * Paired rather than aggregated separately: if one backend failed to answer a fixture, the
+ * other's answer for it is dropped too. Comparing a 94-row mean against an 89-row mean and
+ * calling the difference a backend difference is how a harness lies to you quietly.
  */
-export function parseLoggedLabels(source: string): Map<string, Record<string, boolean>> {
-  const labels = new Map<string, Record<string, boolean>>();
-
-  source.split("\n").forEach((line, i) => {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
-
-    let parsed: { tool_use_id?: unknown; expect?: unknown };
-    try {
-      parsed = JSON.parse(trimmed) as typeof parsed;
-    } catch (err) {
-      throw new Error(`label line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    if (typeof parsed.tool_use_id !== "string" || parsed.tool_use_id.length === 0) {
-      throw new Error(`label line ${i + 1} is missing "tool_use_id"`);
-    }
-    if (typeof parsed.expect !== "object" || parsed.expect === null) {
-      throw new Error(`label "${parsed.tool_use_id}" is missing "expect"`);
-    }
-
-    const expect: Record<string, boolean> = {};
-    for (const [question, value] of Object.entries(parsed.expect as Record<string, unknown>)) {
-      if (typeof value !== "boolean") {
-        throw new Error(`label "${parsed.tool_use_id}" gives a non-boolean for "${question}"`);
-      }
-      expect[question] = value;
-    }
-
-    labels.set(parsed.tool_use_id, expect);
-  });
-
-  return labels;
+export interface ComparisonRow {
+  readonly question: string;
+  readonly n: number;
+  readonly accuracy: readonly [number, number];
+  readonly brier: readonly [number, number];
+  /** Mean absolute difference in p. How far apart the two are, independent of either being right. */
+  readonly meanDelta: number;
+  readonly gate: readonly [GateResult, GateResult];
 }
 
-export function loadLoggedLabels(path: string): Map<string, Record<string, boolean>> {
-  return parseLoggedLabels(readFileSync(path, "utf8"));
+export interface Comparison {
+  readonly backends: readonly [string, string];
+  readonly rows: readonly ComparisonRow[];
+  /** Fixtures where the policy's verdict differs between backends — the user-visible bit. */
+  readonly verdicts: { readonly same: number; readonly total: number; readonly differing: readonly VerdictDiff[] };
+  /** The answers furthest apart, most distant first. */
+  readonly widest: readonly PairedScore[];
 }
 
-/** Every probe answer in the log, scored where a label exists for it. */
-export function scoreLoggedProbes(
-  records: readonly DecisionRecord[],
-  labels: LoggedLabels,
-): LoggedProbeReport[] {
-  const seen = new Map<string, { n: number; scored: Array<{ p: number; expected: boolean }> }>();
+export interface VerdictDiff {
+  readonly fixture: Fixture;
+  readonly verdicts: readonly [Verdict, Verdict];
+}
 
-  for (const record of records) {
-    if (record.probes === undefined) continue;
-    const expect = record.tool_use_id === undefined ? undefined : labels.get(record.tool_use_id);
+export interface PairedScore {
+  readonly fixture: Fixture;
+  readonly question: string;
+  readonly expected: boolean;
+  readonly p: readonly [number, number];
+}
 
-    for (const [question, answer] of Object.entries(record.probes)) {
-      if (typeof answer?.p !== "number" || !Number.isFinite(answer.p)) continue;
-      const entry = seen.get(question) ?? { n: 0, scored: [] };
-      entry.n += 1;
-      const expected = expect?.[question];
-      if (expected !== undefined) entry.scored.push({ p: answer.p, expected });
-      seen.set(question, entry);
-    }
+const pairKey = (s: Scored): string => `${s.fixture.id}::${s.question}`;
+
+/**
+ * Pair two runs over the same fixtures.
+ *
+ * Neither side is privileged: `a` is whatever the user named first. The verdicts compared
+ * are the policy's, computed from each backend's own answers, which is the question a user
+ * swapping backends is actually asking — not "do the probabilities agree" but "would this
+ * have prompted me in different places".
+ */
+export function compare(
+  a: { readonly backend: string; readonly scored: readonly Scored[] },
+  b: { readonly backend: string; readonly scored: readonly Scored[] },
+  calibration: CalibrationPolicy,
+): Comparison {
+  const bByKey = new Map(b.scored.map((s) => [pairKey(s), s]));
+  const paired: Array<readonly [Scored, Scored]> = [];
+  for (const left of a.scored) {
+    const right = bByKey.get(pairKey(left));
+    if (right !== undefined) paired.push([left, right]);
   }
 
-  return [...seen.entries()]
-    .map(([question, { n, scored }]) => ({
-      question,
-      n,
-      labelled: scored.length,
-      accuracy:
-        scored.length === 0
-          ? Number.NaN
-          : scored.filter(({ p, expected }) => p >= 0.5 === expected).length / scored.length,
-      brier:
-        scored.length === 0
-          ? Number.NaN
-          : scored.reduce((sum, { p, expected }) => sum + (p - (expected ? 1 : 0)) ** 2, 0) / scored.length,
+  const byQuestion = new Map<string, Array<readonly [Scored, Scored]>>();
+  for (const pair of paired) {
+    const list = byQuestion.get(pair[0].question) ?? [];
+    list.push(pair);
+    byQuestion.set(pair[0].question, list);
+  }
+
+  const rows: ComparisonRow[] = [...byQuestion.entries()]
+    .map(([question, items]) => {
+      const side = (i: 0 | 1): Scored[] => items.map((pair) => pair[i]);
+      const brierOf = (rows: Scored[]) =>
+        rows.reduce((sum, r) => sum + (r.p - (r.expected ? 1 : 0)) ** 2, 0) / rows.length;
+      const accuracyOf = (rows: Scored[]) => rows.filter((r) => r.correct).length / rows.length;
+
+      return {
+        question,
+        n: items.length,
+        accuracy: [accuracyOf(side(0)), accuracyOf(side(1))] as const,
+        brier: [brierOf(side(0)), brierOf(side(1))] as const,
+        meanDelta: items.reduce((sum, [l, r]) => sum + Math.abs(l.p - r.p), 0) / items.length,
+        gate: [gateResult(side(0), calibration), gateResult(side(1), calibration)] as const,
+      };
+    })
+    .sort((x, y) => x.question.localeCompare(y.question));
+
+  // Verdicts are per fixture, not per answer, so collapse to the first row of each.
+  const verdictByFixture = new Map<string, readonly [Scored, Scored]>();
+  for (const pair of paired) {
+    if (!verdictByFixture.has(pair[0].fixture.id)) verdictByFixture.set(pair[0].fixture.id, pair);
+  }
+
+  const differing: VerdictDiff[] = [];
+  for (const [left, right] of verdictByFixture.values()) {
+    if (left.verdict !== right.verdict) {
+      differing.push({ fixture: left.fixture, verdicts: [left.verdict, right.verdict] });
+    }
+  }
+  differing.sort((x, y) => x.fixture.id.localeCompare(y.fixture.id));
+
+  const widest: PairedScore[] = paired
+    .map(([left, right]) => ({
+      fixture: left.fixture,
+      question: left.question,
+      expected: left.expected,
+      p: [left.p, right.p] as const,
     }))
-    .sort((a, b) => a.question.localeCompare(b.question));
+    .sort((x, y) => Math.abs(y.p[0] - y.p[1]) - Math.abs(x.p[0] - x.p[1]));
+
+  return {
+    backends: [a.backend, b.backend],
+    rows,
+    verdicts: { same: verdictByFixture.size - differing.length, total: verdictByFixture.size, differing },
+    widest,
+  };
 }
 
-export function formatLoggedProbes(reports: readonly LoggedProbeReport[], source: string): string {
+export function formatComparison(comparison: Comparison, calibration: CalibrationPolicy): string {
+  const [left, right] = comparison.backends;
   const lines: string[] = [];
   const pct = (n: number) => (Number.isNaN(n) ? "   —" : `${(n * 100).toFixed(0).padStart(3)}%`);
 
-  lines.push(`Probe answers in ${source}`, "");
+  lines.push(
+    `${left} vs ${right}`,
+    "",
+    // The one thing a reader is most likely to assume and be wrong about. Jev's noul
+    // answers carry no confidence field at all, so there is nothing on that side to put in
+    // a confidence column, and a column only the local side could fill would invite exactly
+    // the comparison it cannot support.
+    "A noul answer is a bare probability. Jev returns no confidence field for one, and the",
+    "local adapter's softmax over two label tokens is not one either, so this compares p and",
+    "Brier and nothing else. The confidence used by the gate below is the derived statistic",
+    "max(p, 1 - p), computed the same way on both sides.",
+    "",
+  );
 
-  if (reports.length === 0) {
-    lines.push("  None. Either the policy defines no gate.probe_questions, or no gated call");
-    lines.push("  has been made since it started to.");
-    return `${lines.join("\n")}\n`;
-  }
-
-  lines.push("| probe | answers | labelled | accuracy | Brier |");
-  lines.push("|---|---|---|---|---|");
-  for (const r of reports) {
+  lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const row of comparison.rows) {
     lines.push(
-      `| ${r.question} | ${r.n} | ${r.labelled} | ${pct(r.accuracy)} | ${Number.isNaN(r.brier) ? "  —  " : r.brier.toFixed(3)} |`,
+      `| ${row.question} | ${row.n} | ${pct(row.accuracy[0])} | ${pct(row.accuracy[1])} | ` +
+        `${row.brier[0].toFixed(3)} | ${row.brier[1].toFixed(3)} | ${row.meanDelta.toFixed(3)} |`,
     );
   }
 
-  const unlabelled = reports.filter((r) => r.labelled === 0);
-  if (unlabelled.length > 0) {
-    lines.push(
-      "",
-      `Not scored, for want of a label: ${unlabelled.map((r) => r.question).join(", ")}.`,
-      "A label is a line in the labels file naming the tool_use_id of a logged call and what",
-      "each probe should have said for it.",
-    );
+  const floor = calibration.confidenceFloor.toFixed(2);
+  const bar = calibration.accuracyBar.toFixed(2);
+  lines.push("", `Against the gate (at least ${bar} accuracy at confidence ${floor} or above):`, "");
+  lines.push(`| question | ${left} | ${right} |`);
+  lines.push("|---|---|---|");
+  for (const row of comparison.rows) {
+    const cell = (g: GateResult) => (g.n === 0 ? "— / 0" : `${g.correct} / ${g.n}  ${g.passes ? "yes" : "no"}`);
+    lines.push(`| ${row.question} | ${cell(row.gate[0])} | ${cell(row.gate[1])} |`);
+  }
+
+  // The Brier difference is the definition of done in PRD section 12; state it rather than
+  // leaving it to be read off the table, since "within 5 points, or say how far off" is a
+  // sentence somebody has to write either way.
+  const brierDelta = meanOf(comparison.rows.map((r) => r.brier[1] - r.brier[0]));
+  lines.push(
+    "",
+    Number.isNaN(brierDelta)
+      ? "No question was answered by both backends, so there is nothing to compare."
+      : `Mean Brier across questions: ${right} is ${Math.abs(brierDelta).toFixed(3)} ` +
+        `${brierDelta > 0 ? "worse" : "better"} than ${left}.`,
+  );
+
+  const { same, total, differing } = comparison.verdicts;
+  lines.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
+  if (differing.length > 0) {
+    lines.push("", "Where it does not:", "");
+    for (const d of differing.slice(0, 20)) {
+      lines.push(`  ${d.fixture.id}: ${left} ${d.verdicts[0]}, ${right} ${d.verdicts[1]}`);
+    }
+    if (differing.length > 20) lines.push(`  ... and ${differing.length - 20} more.`);
+  }
+
+  const widest = comparison.widest.filter((w) => Math.abs(w.p[0] - w.p[1]) >= 0.2).slice(0, 15);
+  if (widest.length > 0) {
+    lines.push("", "Furthest apart on p (0.20 or more), widest first:", "");
+    for (const w of widest) {
+      lines.push(
+        `  ${w.question} on ${w.fixture.id}: ${left} ${w.p[0].toFixed(2)}, ${right} ${w.p[1].toFixed(2)} ` +
+          `(label ${w.expected ? "true" : "false"})`,
+      );
+    }
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function meanOf(values: readonly number[]): number {
+  if (values.length === 0) return Number.NaN;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
