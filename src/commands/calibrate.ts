@@ -81,6 +81,6 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     return 0;
   }
 
-  write(formatReport(reports, backend, resolved.policy.calibration));
+  write(formatReport(reports, backend, resolved.policy.calibration, scored));
   return 0;
 }

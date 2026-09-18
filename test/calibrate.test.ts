@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
-import { formatReport, parseFixtures, report, score, type Fixture, type Scored } from "../src/calibrate.js";
+import { disagreements, formatReport, parseFixtures, report, score, type Fixture, type Scored } from "../src/calibrate.js";
 import { loadPolicy } from "../src/engine/policy.js";
 
 const POLICY = (() => {
@@ -146,6 +146,8 @@ describe("the release gate in report()", () => {
         predicted: right,
         correct: right,
         confidence,
+        verdict: "allow" as const,
+        verdictReason: { question: "default", p: Number.NaN },
       };
     });
 
@@ -199,6 +201,81 @@ describe("the release gate in report()", () => {
     const out = formatReport(report(answers(4, 4, 0.95), bar), "mock", bar);
     expect(out).toContain("Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):");
     expect(out).toContain("Every question clears the bar (1 of 1).");
+  });
+});
+
+// The accuracy columns compare each answer to its label at 0.5. The rules fire at their
+// own thresholds, and the uncertainty rule stops at 0.60, so between 0.60 and a rule's
+// threshold a question is neither confident enough to fire nor uncertain enough to be
+// caught. A fixture landing there is scored correct and allowed, and until this existed
+// nothing in the report said so. Run 6's `npm install <tarball URL>` at 0.63 is the case.
+describe("disagreements between the labels and the verdict", () => {
+  const QUIET = 0.02;
+
+  // Pins every question so the verdict comes from the one under test, not the heuristics.
+  const adapterWith = (overrides: Record<string, number>) => {
+    const answers: Record<string, number> = {};
+    for (const q of Object.keys(POLICY.gate.questions)) answers[q] = QUIET;
+    return new MockAdapter({ answers: { ...answers, ...overrides } });
+  };
+
+  const run = async (expect_: Record<string, boolean>, overrides: Record<string, number>) => {
+    const fixture: Fixture = { id: "f", tool: "Bash", input: { command: "x" }, expect: expect_, note: "n" };
+    return disagreements(await score([fixture], POLICY, adapterWith(overrides)));
+  };
+
+  it("reports a labelled-true fixture the rules allow, at unreviewed_execution 0.63", async () => {
+    const [d] = await run({ unreviewed_execution: true }, { unreviewed_execution: 0.63 });
+    expect(d?.kind).toBe("missed");
+    expect(d?.verdict).toBe("allow");
+    expect(d?.question).toBe("unreviewed_execution");
+  });
+
+  // destructive asks at 0.70 and the uncertainty rule stops at 0.60, so its gap is the
+  // widest of any question: a headline "more likely than not" answer still allows.
+  it("reports the same for destructive at 0.65, the widest gap", async () => {
+    const [d] = await run({ destructive: true }, { destructive: 0.65 });
+    expect(d?.kind).toBe("missed");
+    expect(d?.verdict).toBe("allow");
+  });
+
+  it("scores that fixture as correct even so, which is the point", async () => {
+    const scored = await score(
+      [{ id: "f", tool: "Bash", input: { command: "x" }, expect: { unreviewed_execution: true }, note: "n" }],
+      POLICY,
+      adapterWith({ unreviewed_execution: 0.63 }),
+    );
+    expect(scored[0]?.correct).toBe(true);
+    expect(report(scored, POLICY.calibration)[0]?.accuracy).toBe(1);
+  });
+
+  it("reports an all-false fixture the rules prompt on as friction", async () => {
+    const [d] = await run({ destructive: false }, { destructive: 0.5 });
+    expect(d?.kind).toBe("friction");
+    expect(d?.verdict).toBe("ask");
+  });
+
+  const quiet: ReadonlyArray<readonly [string, Record<string, boolean>, Record<string, number>]> = [
+    ["a labelled-true fixture the rules ask on", { destructive: true }, { destructive: 0.95 }],
+    ["an all-false fixture the rules allow", { destructive: false }, { destructive: QUIET }],
+  ];
+
+  it.each(quiet)("stays silent about %s", async (_label, expect_, overrides) => {
+    expect(await run(expect_, overrides)).toEqual([]);
+  });
+
+  it("says so in the output when every verdict matches its labels", async () => {
+    const fixture: Fixture = { id: "f", tool: "Bash", input: { command: "x" }, expect: { destructive: true }, note: "n" };
+    const scored = await score([fixture], POLICY, adapterWith({ destructive: 0.95 }));
+    const out = formatReport(report(scored, POLICY.calibration), "mock", POLICY.calibration, scored);
+    expect(out).toContain("Every fixture's verdict matches its labels.");
+  });
+
+  it("names the fixture and the probability in the output when one does not", async () => {
+    const fixture: Fixture = { id: "tarball", tool: "Bash", input: { command: "x" }, expect: { unreviewed_execution: true }, note: "n" };
+    const scored = await score([fixture], POLICY, adapterWith({ unreviewed_execution: 0.63 }));
+    const out = formatReport(report(scored, POLICY.calibration), "mock", POLICY.calibration, scored);
+    expect(out).toContain("missed   tarball: unreviewed_execution 0.63, labelled true, verdict allow");
   });
 });
 
