@@ -7566,7 +7566,8 @@ var HEURISTICS = [
   ["secrets", /\bsk-|\bghp_|AKIA|PRIVATE KEY|\[REDACTED:|\.env\b|\bcredential/i],
   ["outside_repo", /"inside_project":\s*false|\bsensitive"/i],
   ["egress", /\bcurl\b.*-X\s*(POST|PUT)|\bwget\b.*--post|\|\s*nc\b|\bscp\b/i],
-  ["prod", /\bprod(uction)?\b|\bdeploy\b|\brelease\b/i]
+  ["prod", /\bprod(uction)?\b|\bdeploy\b|\brelease\b/i],
+  ["unreviewed_execution", /\|\s*(ba|z)?sh\b|<\(\s*(curl|wget)\b|--auto-approve\b|\s--yes\b|chmod \+x .*&&/i]
 ];
 var MockAdapter = class {
   name = "mock";
