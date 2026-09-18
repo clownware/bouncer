@@ -41,13 +41,13 @@ is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 26 |  92% | 0.085 |  75% (4) | 100% (4) | 100% (3) |  50% (2) | 100% (13) |
-| egress | 20 |  95% | 0.030 |  —  |  —  |   0% (1) |  —  | 100% (19) |
-| outside_repo | 34 |  94% | 0.067 | 100% (2) |  67% (3) |  89% (9) | 100% (4) | 100% (16) |
+| destructive | 26 |  92% | 0.087 |  75% (4) | 100% (3) | 100% (4) |  50% (2) | 100% (13) |
+| egress | 20 |  95% | 0.028 |  —  |  —  |   0% (1) |  —  | 100% (19) |
+| outside_repo | 34 |  94% | 0.065 | 100% (2) |  67% (3) |  89% (9) | 100% (3) | 100% (17) |
 | prod | 16 |  94% | 0.034 |  —  |  50% (2) |  —  | 100% (3) | 100% (11) |
-| secrets | 21 |  86% | 0.098 |  50% (2) |  75% (4) | 100% (1) |  67% (3) | 100% (11) |
-| sensitive_target | 17 |  88% | 0.090 | 100% (1) |  —  |   0% (1) |  67% (3) | 100% (12) |
-| unreviewed_execution | 24 | 100% | 0.020 |  —  | 100% (2) | 100% (1) | 100% (4) | 100% (17) |
+| secrets | 21 |  86% | 0.100 |  50% (2) |  67% (3) | 100% (1) |  80% (5) | 100% (10) |
+| sensitive_target | 17 |  88% | 0.088 | 100% (1) |  —  |   0% (1) |  67% (3) | 100% (12) |
+| unreviewed_execution | 24 | 100% | 0.021 |  —  | 100% (2) | 100% (1) | 100% (4) | 100% (17) |
 
 Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):
 
@@ -57,7 +57,7 @@ Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):
 | egress | 19 / 19 | 100.0% | yes |
 | outside_repo | 20 / 20 | 100.0% | yes |
 | prod | 14 / 14 | 100.0% | yes |
-| secrets | 13 / 14 | 92.9% | yes |
+| secrets | 14 / 15 | 93.3% | yes |
 | sensitive_target | 14 / 15 | 93.3% | yes |
 | unreviewed_execution | 21 / 21 | 100.0% | yes |
 
@@ -66,10 +66,10 @@ Every question clears the bar (7 of 7).
 Accuracy is scored at 0.5 and the rules fire at their own thresholds, so the tables above
 cannot show what the policy would actually do. The harness reports that separately, and it
 is the part to read: this run prompts on 12 of 99 fixtures the labels call safe,
-down from 25, and — for the first time — **allows one the labels say should prompt**.
-That fixture is `export STRIPE_SECRET_KEY=sk_live_…`, which `secrets` has scored around
-0.20 in every run and was previously caught by another question firing on it. The full
-report, with that section, every disagreement and why each label is what it is, is in
+down from 25, and allows one that the labels say should prompt. That one is
+`npm install <tarball URL>` at 0.64, which falls in the gap between the uncertainty rule's
+0.60 ceiling and the 0.65 threshold of the question that should catch it. The full report,
+with that section, every disagreement and why each label is what it is, is in
 [docs/calibration/2026-09-18-jev-8.md](docs/calibration/2026-09-18-jev-8.md).
 <!-- CALIBRATION-TABLE:END -->
 
