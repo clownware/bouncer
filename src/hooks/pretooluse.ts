@@ -10,7 +10,7 @@ import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
-import { escalationFor } from "../engine/escalation.js";
+import { escalationFor, type EscalationItem } from "../engine/escalation.js";
 import { evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
 import { buildState, commandOf } from "../engine/state.js";
 import type { Policy, Verdict } from "../engine/types.js";
@@ -215,7 +215,7 @@ export async function runPreToolUse(
       ...(status.warmup ? { warmup: true } : {}),
     });
 
-    const output = outputFor(decision, policy);
+    const output = outputFor(decision, policy, escalation);
     if (next.message !== undefined) {
       return { ...(output ?? {}), systemMessage: next.message };
     }
@@ -271,13 +271,17 @@ function standDown(
   return next.message !== undefined ? { systemMessage: next.message } : undefined;
 }
 
-function outputFor(decision: Decision, policy: Policy): HookOutput | undefined {
+function outputFor(
+  decision: Decision,
+  policy: Policy,
+  escalation?: EscalationItem,
+): HookOutput | undefined {
   if (decision.emit === undefined) return undefined;
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: decision.emit,
-      permissionDecisionReason: explain(decision, policy),
+      permissionDecisionReason: explain(decision, policy, escalation),
     },
   };
 }
@@ -290,13 +294,21 @@ function outputFor(decision: Decision, policy: Policy): HookOutput | undefined {
  * what the rule is for instead, which is the honest explanation and the more useful one at
  * the moment someone is being stopped.
  */
-function explain(decision: Decision, policy: Policy): string {
+function explain(decision: Decision, policy: Policy, escalation?: EscalationItem): string {
   const { reason } = decision;
   switch (reason.kind) {
     case "rule": {
       if (reason.question === "default") return "bouncer: no rule matched.";
       const instructions = policy.gate.questions[reason.question]?.instructions ?? reason.question;
-      return `bouncer: ${instructions} (${reason.question} ${reason.p.toFixed(2)})`;
+      // The escalation knows every threshold this call crossed, not just the one that
+      // decided. Naming the others is the difference between "secrets 0.71" and "secrets
+      // 0.71, and it is also touching production" at the moment someone decides whether to
+      // approve. The deciding question stays first and stays the headline.
+      const also = (escalation?.signals ?? [])
+        .filter((s) => !s.decided && s.question !== reason.question)
+        .map((s) => `${s.question} ${s.p.toFixed(2)}`);
+      const others = also.length > 0 ? `; also ${also.join(", ")}` : "";
+      return `bouncer: ${instructions} (${reason.question} ${reason.p.toFixed(2)}${others})`;
     }
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
