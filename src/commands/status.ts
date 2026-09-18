@@ -4,7 +4,7 @@
 // mode and the numbers that would justify changing it, not with configuration trivia.
 
 import * as breaker from "../io/breaker.js";
-import { apiKey, dataDir, errorsIn, pluginRoot, resolvePolicy } from "../io/config.js";
+import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import { tail, type DecisionRecord } from "../io/log.js";
 
 const SAMPLE = 200;
@@ -29,7 +29,7 @@ export function status(): string {
   const records = tail(dir, SAMPLE);
 
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
-  lines.push(`Backend: ${policy.backend}${policy.backend === "jev" && apiKey() === undefined ? "  (no API key in the environment)" : ""}`);
+  lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
 
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
@@ -115,4 +115,14 @@ function readBreaker(dir: string): breaker.BreakerState | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** What is missing or where it is pointing, for the one backend line. */
+function backendNote(backend: string): string {
+  if (backend === "jev") return apiKey() === undefined ? "  (no API key in the environment)" : "";
+  if (backend === "local") {
+    const { baseUrl } = localBackend();
+    return `  (${baseUrl ?? "http://127.0.0.1:8080/v1"})`;
+  }
+  return "";
 }

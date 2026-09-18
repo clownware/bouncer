@@ -127,3 +127,27 @@ function tryRead(path: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Where the local backend lives.
+ *
+ * Environment only, for now. An endpoint URL is not a threshold, so the no-thresholds-in-
+ * code rule does not send it to the policy — but a `local:` block in the YAML is the right
+ * home once the adapter is a supported hook backend rather than a calibration one, and
+ * ADR-005 records that as the follow-up. Keeping it out of the schema today means the
+ * adapter can land without touching the policy loader.
+ */
+export function localBackend(): { baseUrl?: string; model?: string; concurrency?: number } {
+  const text = (name: string): string | undefined => {
+    const value = process.env[name];
+    return value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
+  };
+
+  const concurrency = Number(text("BOUNCER_LOCAL_CONCURRENCY"));
+
+  return {
+    ...(text("BOUNCER_LOCAL_URL") !== undefined ? { baseUrl: text("BOUNCER_LOCAL_URL") as string } : {}),
+    ...(text("BOUNCER_LOCAL_MODEL") !== undefined ? { model: text("BOUNCER_LOCAL_MODEL") as string } : {}),
+    ...(Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}),
+  };
+}

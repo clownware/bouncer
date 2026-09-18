@@ -1,7 +1,19 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
-import { disagreements, formatReport, parseFixtures, report, score, type Fixture, type Scored } from "../src/calibrate.js";
+import {
+  compare,
+  disagreements,
+  formatComparison,
+  formatReport,
+  parseFixtures,
+  report,
+  score,
+  type Fixture,
+  type Scored,
+} from "../src/calibrate.js";
+import { calibrate as calibrateCommand, parseArgs } from "../src/commands/calibrate.js";
 import { loadPolicy } from "../src/engine/policy.js";
 
 const POLICY = (() => {
@@ -333,5 +345,127 @@ describe("score and report", () => {
   it("runs the whole shipped set through the state builder without throwing", async () => {
     const scored = await score(FIXTURES, POLICY, new MockAdapter());
     expect(scored.length).toBeGreaterThan(100);
+  });
+});
+
+describe("compare", () => {
+  const fixtures: Fixture[] = [
+    { id: "a", tool: "Bash", input: { command: "rm -rf /" }, expect: { destructive: true }, note: "n" },
+    { id: "b", tool: "Bash", input: { command: "ls -la" }, expect: { destructive: false }, note: "n" },
+  ];
+
+  const runs = async (left: number, right: number) => ({
+    a: { backend: "jev", scored: await score(fixtures, POLICY, new MockAdapter({ answers: { destructive: left } })) },
+    b: { backend: "local", scored: await score(fixtures, POLICY, new MockAdapter({ answers: { destructive: right } })) },
+  });
+
+  it("puts both backends' numbers on one row per question", async () => {
+    const { a, b } = await runs(0.9, 0.6);
+    const [row] = compare(a, b, POLICY.calibration).rows;
+
+    expect(row?.question).toBe("destructive");
+    expect(row?.n).toBe(2);
+    expect(row?.meanDelta).toBeCloseTo(0.3, 6);
+    expect(row?.accuracy[0]).toBe(0.5); // 0.9 on both fixtures: right on "a", wrong on "b"
+    expect(row?.accuracy[1]).toBe(0.5);
+    expect(row?.brier[0]).toBeGreaterThan(row?.brier[1] as number);
+  });
+
+  // Comparing a 94-row mean against an 89-row mean and calling the difference a backend
+  // difference is the quiet way for this table to lie.
+  it("drops an answer one backend did not produce rather than comparing unequal sets", async () => {
+    const { a } = await runs(0.9, 0.9);
+    const partial = { backend: "local", scored: a.scored.slice(0, 1) };
+    const result = compare(a, partial, POLICY.calibration);
+
+    expect(result.rows[0]?.n).toBe(1);
+    expect(result.verdicts.total).toBe(1);
+  });
+
+  it("counts the fixtures where the policy's verdict differs, which is what a user feels", async () => {
+    const { a, b } = await runs(0.95, 0.05);
+    const result = compare(a, b, POLICY.calibration);
+
+    expect(result.verdicts.total).toBe(2);
+    expect(result.verdicts.same + result.verdicts.differing.length).toBe(2);
+    expect(result.verdicts.differing.every((d) => d.verdicts[0] !== d.verdicts[1])).toBe(true);
+  });
+
+  it("orders the widest p disagreements first", async () => {
+    const { a, b } = await runs(0.9, 0.2);
+    const [widest] = compare(a, b, POLICY.calibration).widest;
+    expect(Math.abs((widest?.p[0] ?? 0) - (widest?.p[1] ?? 0))).toBeCloseTo(0.7, 6);
+  });
+
+  it("says in its header that there is no confidence to compare", async () => {
+    // Jev returns a bare probability for a noul and no confidence field at all, so a
+    // confidence column here would be inventing one. The header has to say so, because a
+    // reader who assumes otherwise misreads every row below it.
+    const { a, b } = await runs(0.9, 0.6);
+    const text = formatComparison(compare(a, b, POLICY.calibration), POLICY.calibration);
+
+    expect(text).toContain("no confidence field");
+    expect(text).toContain("compares p and");
+    expect(text).toContain("max(p, 1 - p)");
+    expect(text).not.toMatch(/calibrated confidence/i);
+  });
+
+  it("states the Brier gap in words, since that is the definition of done", async () => {
+    const { a, b } = await runs(0.9, 0.95);
+    const text = formatComparison(compare(a, b, POLICY.calibration), POLICY.calibration);
+    expect(text).toMatch(/Mean Brier across questions: local is 0\.\d+ (better|worse) than jev\./);
+  });
+
+  it("has nothing to say when the two runs share no answers", async () => {
+    const { a } = await runs(0.9, 0.9);
+    const text = formatComparison(
+      compare(a, { backend: "local", scored: [] }, POLICY.calibration),
+      POLICY.calibration,
+    );
+    expect(text).toContain("nothing to compare");
+  });
+});
+
+describe("the calibrate command's backend selection", () => {
+  beforeEach(() => {
+    process.env["BOUNCER_POLICY"] = resolve("policy/default.yaml");
+  });
+  afterEach(() => {
+    delete process.env["BOUNCER_POLICY"];
+  });
+
+  const run = async (args: Parameters<typeof calibrateCommand>[0]) => {
+    let out = "";
+    const code = await calibrateCommand({ fixtures: "fixtures/gate.jsonl", ...args }, (s) => {
+      out += s;
+    });
+    return { code, out };
+  };
+
+  it("reads --backend and --compare off the argv", () => {
+    expect(parseArgs(["--backend", "jev"]).backend).toBe("jev");
+    expect(parseArgs(["--compare", "jev,local"]).compare).toBe("jev,local");
+    expect(parseArgs([]).compare).toBeUndefined();
+  });
+
+  it("refuses an unknown backend by name", async () => {
+    const { code, out } = await run({ backend: "gpt5" });
+    expect(code).toBe(1);
+    expect(out).toContain('Unknown backend "gpt5"');
+  });
+
+  it("refuses an unknown backend named only on the --compare side", async () => {
+    const { code, out } = await run({ backend: "mock", compare: "typo" });
+    expect(code).toBe(1);
+    expect(out).toContain('Unknown backend "typo"');
+  });
+
+  // Running a backend against itself produces a table of zeroes and a comparison that says
+  // nothing; it is a typo, and the second run costs a full live pass.
+  it("collapses a backend compared with itself to one run", async () => {
+    const { code, out } = await run({ backend: "mock", compare: "mock" });
+    expect(code).toBe(0);
+    expect(out).toContain("Backend: mock");
+    expect(out).not.toContain("mock vs mock");
   });
 });
