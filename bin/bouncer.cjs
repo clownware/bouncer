@@ -9233,6 +9233,7 @@ function isRecord4(value) {
 }
 
 // src/commands/status.ts
+var import_node_path6 = require("node:path");
 var SAMPLE = 200;
 function status() {
   const cwd = process.cwd();
@@ -9254,6 +9255,7 @@ function status() {
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
   lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
+  lines.push(`Log:     ${(0, import_node_path6.join)(dir, LOG_FILE)}`);
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
   const state = readBreaker(dir);
@@ -9407,7 +9409,7 @@ function bar(p) {
 }
 
 // src/commands/calibrate.ts
-var import_node_path6 = require("node:path");
+var import_node_path7 = require("node:path");
 
 // src/calibrate.ts
 var import_node_fs6 = require("node:fs");
@@ -9805,7 +9807,7 @@ async function calibrate(args, write3) {
 `);
     return 1;
   }
-  const fixturePath = args.fixtures ?? (0, import_node_path6.join)(root, "fixtures", "gate.jsonl");
+  const fixturePath = args.fixtures ?? (0, import_node_path7.join)(root, "fixtures", "gate.jsonl");
   let fixtures;
   try {
     fixtures = loadFixtures(fixturePath);
@@ -10039,7 +10041,7 @@ function isRecord5(value) {
 // src/io/skills.ts
 var import_node_fs7 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path7 = require("node:path");
+var import_node_path8 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -10062,17 +10064,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path7.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path8.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path7.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path7.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path7.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path8.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path7.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path8.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -10083,7 +10085,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path7.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -10107,7 +10109,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path7.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -10133,9 +10135,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path7.join)(installPath, "skills");
+    const dir = (0, import_node_path8.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path7.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path8.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -10143,23 +10145,23 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path7.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  const root = (0, import_node_path8.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
   if (!(0, import_node_fs7.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path7.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path8.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path7.join)(root, outer, inner);
-      const rpm = (0, import_node_path7.join)(session, "rpm", "manifest.json");
+      const session = (0, import_node_path8.join)(root, outer, inner);
+      const rpm = (0, import_node_path8.join)(session, "rpm", "manifest.json");
       if ((0, import_node_fs7.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path7.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path8.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path7.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
+      for (const bucket of nestedBuckets((0, import_node_path8.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
         if ((0, import_node_fs7.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
@@ -10167,13 +10169,13 @@ function desktopManifests(home) {
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path7.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path8.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path7.join)(dir, outer))) {
-      buckets.push((0, import_node_path7.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path8.join)(dir, outer))) {
+      buckets.push((0, import_node_path8.join)(dir, outer, inner));
     }
   }
   return buckets;
@@ -10210,13 +10212,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path7.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path8.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs7.existsSync)((0, import_node_path7.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path7.dirname)(current);
+    if ((0, import_node_fs7.existsSync)((0, import_node_path8.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path8.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }

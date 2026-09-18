@@ -19,7 +19,8 @@ deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes
 > observing, and every accuracy number below comes from a live calibration run against Jev
 > on the policy in this repository. Read the verdict paragraph under the table before the
 > table itself: clearing the bar is not the same as behaving well. See [docs/PRD.md](docs/PRD.md) for the spec and
-> [docs/adr/](docs/adr/) for what has been decided and why.
+> [docs/adr/](docs/adr/) for what has been decided and why. [Install](#install) is two
+> commands.
 
 ## The judgment tax
 
@@ -305,6 +306,34 @@ prompted user one keystroke they were going to spend anyway, but for a bypass us
 alternative was that the command simply ran. That trade only reverses for verdicts that came
 from a rule, whose false-positive rate is a property of the rule, rather than from a
 probability, whose false-positive rate is a property of the model's day.
+
+## Install
+
+Two commands inside Claude Code. The repository is its own single-plugin marketplace.
+
+```
+/plugin marketplace add clownware/bouncer
+/plugin install bouncer@bouncer
+```
+
+Restart Claude Code, then run `/bouncer:status`. It prints the mode, the backend, the
+policy file it resolved and the path to the decision log. Node 20 or newer has to be on
+`PATH`; there is no `npm install` step, because `bin/bouncer.cjs` is a committed bundle
+with zero runtime dependencies ([ADR-002](docs/adr/002-bundled-single-file-on-node.md)).
+
+The `jev` backend reads `BOUNCER_TYPESAFE_API_KEY` from the environment, falling back to
+`TYPESAFE_API_KEY`. A hook inherits Claude Code's environment, so exporting it from the
+shell profile you launch `claude` from is enough. Without a key every call takes the error
+path, which emits nothing — so a missing key is invisible unless you look at
+`/bouncer:status`, which says so on the backend line.
+
+It ships in `observe`, which emits nothing at all. To change that, copy the policy file
+`/bouncer:status` printed to `~/.bouncer/bouncer.yaml` and edit the `mode:` line; the
+bundled default is overwritten by plugin updates. Which mode to move to is the section
+above — `seatbelt` if you run `--dangerously-skip-permissions`.
+
+Then watch it: [docs/dogfooding.md](docs/dogfooding.md) covers where the log lives, how it
+rotates, and the queries worth having.
 
 ## Design commitments
 

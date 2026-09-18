@@ -1,0 +1,14 @@
+{
+  "name": "bouncer",
+  "owner": {
+    "name": "Clownware",
+    "url": "https://github.com/clownware"
+  },
+  "plugins": [
+    {
+      "name": "bouncer",
+      "source": "./",
+      "description": "A decision layer for Claude Code hooks. Classifies proposed tool calls against a policy you own and returns allow / ask / deny, using a fast System One model instead of a frontier LLM. Observe-only until you have looked at your own calibration table."
+    }
+  ]
+}
