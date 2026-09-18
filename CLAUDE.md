@@ -60,6 +60,8 @@ re-verify rather than assuming the note is stale.
   `choice` and `score` do return `confidence`, but the docs describe it as a statistic
   derived from the distribution, so it carries no independent signal. Write uncertainty
   rules as ranges on `p`.
+- `choice` takes up to 255 options; `score` takes 2 to 10 ordered levels. Every question in
+  the policy is a `noul` today. If one becomes a `score`, that is the range it has.
 - Pricing is $0.042 per million input tokens, output free. Cost is not a design constraint.
 - Limits: 64k tokens for state + all questions, 32k for state + longest question.
   Rate limits documented as dynamically adjusting — do not hardcode them.
