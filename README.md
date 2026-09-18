@@ -34,6 +34,13 @@ ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a pass
 85%.
 
 <!-- CALIBRATION-TABLE:START -->
+> **This table predates the current policy and has not been re-measured.** Run 5 was
+> measured against the previous `unreviewed_execution` wording, before the `npx` clauses
+> were added, and with `kubectl delete deployment` still labelled `destructive`. All seven
+> questions go to Jev in one call, so changing one question's text can move the answers to
+> the others — that is why runs 1 and 2 could not be compared. Read every row below as
+> stale until run 6 replaces it, not just the two that changed.
+
 Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
@@ -56,7 +63,8 @@ The full report, with every disagreement and why each label is what
 it is, is in [docs/calibration/2026-09-18-jev-5.md](docs/calibration/2026-09-18-jev-5.md).
 It also lists every `unreviewed_execution` answer by probability, which is where to look
 before enabling `guard`: everyday installs and builds score below 0.2, but a pinned `npx`
-scores 0.55 and would prompt.
+scores 0.55 and would prompt. Fixing that 0.55 is what the criteria change above is for,
+and whether it worked is a question only run 6 can answer.
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
