@@ -196,26 +196,95 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 
 ## 12. Phasing
 
-**v0.1 — Gate, dry-run first (target: this weekend)**
-- Jev + mock adapters, policy loader, redaction, PreToolUse hook, JSONL log, `/bouncer:status`, `/bouncer:explain`, `bouncer calibrate --fixtures` with ~150 fixtures and the published Jev table.
-- Ships with `mode: dry-run` and `auto_allow: false`. Enforcement is opt-in after the user has looked at their own table.
-- Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003 written.
+Bouncer is a judgment engine and the gate is its first consumer ([ADR-008](adr/008-bouncer-is-a-judgment-engine.md)).
+The order below follows from that: the gate stays the demo because it is what someone can
+install in two minutes and watch run, and `judge` is where the token bill goes down.
 
-**v0.2 — Local adapter, and the router**
+| Version | Scope | Why this order |
+|---|---|---|
+| **v0.1** (shipped) | Jev + mock adapters, policy loader, redaction, PreToolUse hook, JSONL log, `/bouncer:status`, `/bouncer:explain`, `calibrate --fixtures` with the published Jev table. Ships `observe` with nothing emitted. | Enforcement is opt-in after the user has looked at their own table. |
+| **v0.2** (in flight) | Hard rules, `seatbelt` mode, the friction pass, the local adapter, probe questions, the README reframe. | Closes the misses run 7 named, gets the Jev-vs-local compare table, sets the framing. Unchanged by ADR-008. |
+| **v0.3 — `bouncer judge`** | Batch CLI: a policy set of questions over a JSONL file or a directory of items, producing a judgments log and an escalation manifest. Same engine, same adapters, same `calibrate`. | The token-spend play, and the first second consumer — which is what earns the package extraction. Dogfood on Slopless output and one content batch. |
+| **v0.4 — extract core** | `@clownware/bouncer-core` (engine, adapters, policy, calibrate). The hook and the CLI become thin consumers. | Only after v0.3 has bent the interface. ADR-008 decision 3: no `packages/core` until a second consumer has forced it. |
+| **v0.5 — router** | Skill routing on `UserPromptSubmit`, per [ADR-006](adr/006-the-skill-router.md). | Moved out of v0.2. It is the least aligned with the thesis and the hardest thing here to calibrate, so it goes last. |
 
-- **Local adapter**, promoted from v0.3 on 2026-09-18. Constrained single-token decode over an OpenAI-compatible endpoint that exposes `logprobs` and `logit_bias` (llama.cpp server, vLLM): one shared prefill of the state, forked per question, softmax over the label logits for `p`. Not a chat completion asked for JSON. If the engine cannot constrain, the adapter refuses to start rather than returning an uncalibrated number. Same fixtures as Jev, same `calibrate` output, `--compare` prints one side-by-side table. The requirement is a capability, not a product: this document's earlier "Ollama / vLLM" named engines, and an engine that exposes `logprobs` but not `logit_bias` cannot be constrained and is refused. Check the engine's current support rather than the name. See `docs/adr/005-the-local-adapter.md`.
-- DoD (adapter): within 5 pts of Jev on the fixture Brier score, or the README says exactly how far off it is. `--compare` prints that sentence itself.
+**v0.1 — Gate, dry-run first (shipped)**
+- Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool
+  calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003
+  written.
 
-*Router, designed in [ADR-006](adr/006-the-skill-router.md), which supersedes this entry and the `router:` block in §6*
-- `UserPromptSubmit` hook, `skills: auto` discovery, a `needs_skill` noul plus a `which_skill` choice over the discovered registry, gated on probability *and* margin. Its own `off | observe | suggest` mode, observing by default, and in `observe` it makes no classifier call at all — it records state and the harness replays it offline.
-- `bouncer calibrate --router` over hand-labelled `fixtures/router.jsonl`, plus `--review`, which pairs observe-mode records with the skill Claude actually loaded and prints the disagreements as the hand-labelling queue.
-- ~~DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.~~ Withdrawn: agreement with the skill the model already picked measures imitation of the incumbent, and 100% agreement would be worth nothing. See ADR-006 § Calibration.
-- DoD: ≥ 60 hand-labelled near-miss fixtures over a committed registry of real public skill names, at least a third labelled `none`; top-1 accuracy ≥ 0.85 among the prompts the router answers on; false-suggestion rate ≤ 0.05; **coverage ≥ 0.25** among fixtures labelled as needing a skill, so a router that passes by abstaining is visibly doing that; table published in the README before `suggest` is recommended.
+**v0.2 — Hard rules, the local adapter, and the friction pass**
 
-**v0.3 — Enforcement defaults**
-- Whatever two weeks of observe-mode data says about moving `guard` closer to the default, and the `local:` policy block the adapter needs before it is a supported hook backend rather than a calibration one.
+- **Hard rules and `seatbelt`**, [ADR-004](adr/004-hard-rules-before-the-judge.md). A
+  `gate.hard_rules` block evaluated before the adapter, and a fourth mode for sessions
+  started with `--dangerously-skip-permissions`, where `ask` is not a verdict that can help.
+- **Local adapter**, promoted from v0.3 on 2026-09-18. Constrained single-token decode over
+  an OpenAI-compatible endpoint that exposes `logprobs` and `logit_bias` (llama.cpp server,
+  vLLM): one shared prefill of the state, forked per question, softmax over the label
+  logits for `p`. Not a chat completion asked for JSON. If the engine cannot constrain, the
+  adapter refuses to start rather than returning an uncalibrated number. Same fixtures as
+  Jev, same `calibrate` output, `--compare` prints one side-by-side table. The requirement
+  is a capability, not a product: an engine that exposes `logprobs` but not `logit_bias`
+  cannot be constrained and is refused, so check the engine's current support rather than
+  the name. See [ADR-005](adr/005-the-local-adapter.md).
+- DoD (adapter): within 5 pts of Jev on the fixture Brier score, or the README says exactly
+  how far off it is. `--compare` prints that sentence itself.
+- **Friction pass** on the question criteria and the fixture labels, off the live run's
+  `friction` rows, and **probe questions** — an optional `gate.probe_questions` block asked
+  in the same fan-out and read by no rule, so a candidate rewording can be measured against
+  real traffic without going near a verdict.
+- **The naming pass of [ADR-008](adr/008-bouncer-is-a-judgment-engine.md)**, plus the
+  escalation manifest as an engine output. Types and one log field; no schema change.
 
-**Later / maybe:** MCP tool gating, team policy inheritance, Ops integration (post decisions to `vendor_api:typesafe` spend rows), event-gating adapter for long-running agents.
+**v0.3 — `bouncer judge`, the batch consumer**
+
+- A second entrypoint over the same engine: `bouncer judge --policy <set> <file-or-dir>`,
+  reading a JSONL file or a directory of items, writing a judgments log and an escalation
+  manifest. Its state builder is a second implementation of `StateBuilder`, not a fork of
+  the tool-call one.
+- The two deferred items from ADR-008 land here, because this is the change that needs
+  them: the policy file naming more than one set of questions and rules, with `gate:` as
+  one of them; and `calibrate` scoring items from any decisions log rather than only
+  hook-shaped fixtures.
+- DoD: it replaces a real scoring workload end to end, and the README publishes
+  `items escalated / items judged` for that workload beside what the same batch cost
+  through a reasoning model.
+
+**v0.4 — extract `@clownware/bouncer-core`**
+
+- Engine, adapters, policy and calibrate move into the package; the hook and both CLIs
+  become consumers of it. Not before v0.3 has shipped and changed the interface at least
+  once.
+
+**v0.5 — the skill router**
+
+- `UserPromptSubmit` hook, `skills: auto` discovery, a `needs_skill` noul plus a
+  `which_skill` choice over the discovered registry, gated on probability *and* margin. Its
+  own `off | observe | suggest` mode, observing by default, and in `observe` it makes no
+  classifier call at all — it records state and the harness replays it offline. Designed in
+  [ADR-006](adr/006-the-skill-router.md), which supersedes the `router:` block in §6.
+- Skill discovery itself shipped early, in v0.2: `src/engine/registry.ts`, `src/io/skills.ts`
+  and `bouncer skills`. Nothing else of the router is built.
+- `bouncer calibrate --router` over hand-labelled `fixtures/router.jsonl`, plus `--review`,
+  which pairs observe-mode records with the skill Claude actually loaded and prints the
+  disagreements as the hand-labelling queue.
+- ~~DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week
+  of prompts.~~ Withdrawn: agreement with the skill the model already picked measures
+  imitation of the incumbent, and 100% agreement would be worth nothing. See ADR-006
+  § Calibration.
+- DoD: ≥ 60 hand-labelled near-miss fixtures over a committed registry of real public skill
+  names, at least a third labelled `none`; top-1 accuracy ≥ 0.85 among the prompts the
+  router answers on; false-suggestion rate ≤ 0.05; **coverage ≥ 0.25** among fixtures
+  labelled as needing a skill, so a router that passes by abstaining is visibly doing that;
+  table published in the README before `suggest` is recommended.
+
+**Enforcement defaults** are not a version. Whatever two weeks of observe data says about
+moving `guard` closer to the default lands when the data says it, as does the `local:`
+policy block the adapter needs before it is a supported hook backend rather than a
+calibration one.
+
+**Later / maybe:** MCP tool gating, team policy inheritance, Ops integration (post decisions
+to `vendor_api:typesafe` spend rows), event-gating adapter for long-running agents.
 
 ## 13. ADRs
 
@@ -224,14 +293,19 @@ is written, in the order it was decided. A number that has been *used* is never 
 if that ADR is later superseded; a number this document once *planned* for a topic that was
 never written carries no reservation, and the next ADR to be written may take it. ADR-004 is
 the precedent: this section originally earmarked it for policy-as-YAML, and it was written
-for hard rules instead.
+for hard rules instead. ADR-008 is the second: it was proposed in the project thread as
+"ADR-006", and 006 and 007 were already written by the time it was, so it took the next
+free number rather than the one it was asked for.
 
 - **ADR-001** Decide at the hook layer, not as MCP tools — why the model never sees the judge.
 - **ADR-002** A single bundled JS file on Node, with the bundle committed — the packaging and latency bet.
 - **ADR-003** Fail to the prompt, observe by default, and ship no deny rules until calibrated.
 - **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
 - **ADR-005** The local adapter — constrained decoding, and `calibrate --compare`.
-- **ADR-006** The skill router (v0.2), superseding the router half of §5 and §6.
+- **ADR-006** The skill router (now v0.5), superseding the router half of §5 and §6.
+- **ADR-007** Cache the compiled policy on disk, reversing ADR-002's second item.
+- **ADR-008** Bouncer is a judgment engine; the gate is one consumer. Escalation as a
+  first-class output, and no package extraction until a second consumer exists.
 
 Two topics this section originally earmarked for ADRs were settled without one, so no ADR
 carries their titles and nothing is reserved for them:
@@ -260,7 +334,7 @@ carries their titles and nothing is reserved for them:
 1. ~~Exact current Claude Code hook schema and timeout.~~ **Answered.** Captured from a live session on 2026-09-18; the payloads are in `test/fixtures/payloads/` and the pinned facts are in `docs/adr/001`. Read a fixture rather than the docs.
 2. ~~Jev state-size limit and rate limits.~~ **Answered.** 64k tokens for state plus all questions, 32k for state plus the longest question. Rate limits are documented as dynamically adjusting, so nothing hardcodes them.
 3. ~~Does Jev's confidence on Noul questions carry information beyond `|p − 0.5|`?~~ **Answered, and the question was wrong.** `noul` answers have no confidence field at all; only `choice` and `score` return one. Uncertainty rules are written as ranges on `p`.
-4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question. **Still open, and now has a prior question in front of it:** whether the injected line goes to the model (`additionalContext` — the only form that can save tokens, and the only form that can cost them) or to the human (`systemMessage` — no routing risk, no token saving). ADR-006 recommends the former, behind a `suggest` mode that is not the default.
+4. Should the router inject context or actually invoke the skill? The router injects only; invoking is a bigger permission question. **Still open, and now has a prior question in front of it:** whether the injected line goes to the model (`additionalContext` — the only form that can save tokens, and the only form that can cost them) or to the human (`systemMessage` — no routing risk, no token saving). ADR-006 recommends the former, behind a `suggest` mode that is not the default.
 5. Marketplace: publish under `clownware/plugins` or a dedicated repo? Recommend dedicated repo, listed in the existing marketplace.
 
 ## 17. Project brief (paste into the Claude Code project)

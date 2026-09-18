@@ -10,6 +10,7 @@ import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
+import { escalationFor } from "../engine/escalation.js";
 import { evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
 import { buildState, commandOf } from "../engine/state.js";
 import type { Policy, Verdict } from "../engine/types.js";
@@ -86,6 +87,11 @@ export async function runPreToolUse(
     mode: policy.mode,
     backend: policy.backend,
   };
+
+  // What an escalation names this item by. The tool_use_id when Claude Code sent one,
+  // since that is the id the transcript and the log already agree on; otherwise the
+  // timestamp, which is unique within a session and is what `explain` matches on.
+  const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
 
   // Cheap outs first: tool not gated, permission mode skipped, command on the fast path.
   // None of these touch the network, and the fast path is the main reason a heavy session
@@ -184,6 +190,12 @@ export async function runPreToolUse(
     }
 
     const decision = evaluate(policy, answers);
+
+    // The escalation manifest item, from the same answers and the same rules. It adds a
+    // second pass over a handful of rules and no I/O, and it is what makes "how often did
+    // the judge need help" answerable from the log rather than by eye. See docs/adr/008.
+    const escalation = escalationFor(policy.gate, decision, answers, itemId);
+
     const next = breaker.record(breakerState, {
       failed: false,
       overBudget: adapterMs > policy.timeoutMs,
@@ -196,6 +208,7 @@ export async function runPreToolUse(
       ...verdictFields(decision),
       answers,
       ...(Object.keys(probes).length > 0 ? { probes } : {}),
+      ...(escalation !== undefined ? { escalation } : {}),
       state: state.text,
       redacted_kinds: state.redactedKinds,
       latency_ms: { total: now() - started, adapter: adapterMs },

@@ -3,6 +3,7 @@
 // Written for someone deciding whether to move off observe mode, so it leads with the
 // mode and the numbers that would justify changing it, not with configuration trivia.
 
+import { manifestOf, type EscalationItem } from "../engine/escalation.js";
 import * as breaker from "../io/breaker.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import { tail, type DecisionRecord } from "../io/log.js";
@@ -73,6 +74,22 @@ function summarize(records: readonly DecisionRecord[]): string[] {
   const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
   if (fastPath > 0) {
     lines.push(`  (${fastPath} of these never reached the classifier — fast path)`);
+  }
+
+  // The substitution ratio (docs/adr/008): of the calls the classifier answered, how many
+  // it could not settle. That is the set a reasoning model would have to look at, so it is
+  // the number that says what asking a judgment model first actually bought.
+  const judged = records.filter((r) => r.source === "judge");
+  if (judged.length > 0) {
+    const escalated = judged
+      .map((r) => r.escalation)
+      .filter((e): e is EscalationItem => e !== undefined);
+    const manifest = manifestOf(escalated, judged.length);
+    const pct = (manifest.escalationRate * 100).toFixed(1);
+    lines.push(
+      "",
+      `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct}%) — the calls a rule could not settle on the classifier's answer alone.`,
+    );
   }
 
   // Warm-up is excluded: it reflects connection setup, not steady-state behaviour, and

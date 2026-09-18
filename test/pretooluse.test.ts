@@ -276,6 +276,41 @@ describe("the state handed to the classifier", () => {
     expect(record.answers).toBeDefined();
   });
 
+  it("records the escalation on a judged ask, keyed by the tool_use_id", async () => {
+    // The manifest item, from the same answers the same call already logged. It is what
+    // makes "how often did the judge need help" answerable from the log. See docs/adr/008.
+    await runPreToolUse(payload(), { adapter: dangerous });
+
+    const record = logLines()[0];
+    expect(record.source).toBe("judge");
+    expect(record.escalation.item).toBe("toolu_test");
+    expect(record.escalation.verdict).toBe("ask");
+    expect(record.escalation.signals[0].question).toBe("destructive");
+    expect(record.escalation.signals[0].p).toBe(0.95);
+    expect(record.escalation.signals[0].decided).toBe(true);
+  });
+
+  it("writes no escalation when the judge settled it, and none on a hard rule", async () => {
+    // Absent rather than empty, for the same reason `probes` is: an empty object on every
+    // allowed line would be the largest thing in the highest-volume file bouncer owns, and
+    // a hard rule is a decision rather than something to hand a reasoning model.
+    await runPreToolUse(payload({ tool_input: { command: "npm run something" } }), { adapter: harmless });
+    await runPreToolUse(payload({ tool_input: { command: "cat .env" } }), { adapter: harmless });
+
+    const [judged, hardRule] = logLines();
+    expect(judged.verdict).toBe("allow");
+    expect(judged).not.toHaveProperty("escalation");
+    expect(hardRule.source).toBe("hard_rule");
+    expect(hardRule).not.toHaveProperty("escalation");
+  });
+
+  it("does not repeat the state inside the escalation it sits beside", async () => {
+    await runPreToolUse(payload(), { adapter: dangerous });
+    const record = logLines()[0];
+    expect(record.state).toBeDefined();
+    expect(record.escalation).not.toHaveProperty("state");
+  });
+
   it("records what was redacted without recording the value", async () => {
     await runPreToolUse(
       payload({ tool_input: { command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123'" } }),
