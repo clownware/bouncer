@@ -34,6 +34,13 @@ jobs:
             exit 1
           fi
 
+      # The calibration harness must keep working even though its live run is manual and
+      # needs a key. Against the mock the numbers are meaningless; that it completes is not.
+      - name: Calibration harness runs
+        run: node bin/bouncer.cjs calibrate --backend mock --json > /dev/null
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}
+
       # Hook overhead is in the latency path of every gated tool call. CI machines are
       # noisy, so the budget here is deliberately looser than the 80 ms target we hold
       # ourselves to locally; this catches a dependency blowing up the bundle, not drift.

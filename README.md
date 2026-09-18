@@ -12,10 +12,42 @@ There is no cheap middle — let the obvious through, stop the dangerous, ask ab
 ambiguous — because that middle needs judgment, and judgment used to mean either brittle
 regex or an LLM in the hot path.
 
-> **Status: v0.1 in progress.** The hook runs end to end against the mock backend and the
-> Jev client is wired up. Still missing: the calibration harness and the published fixture
-> table, which is the release gate. See [docs/PRD.md](docs/PRD.md) for the spec and
-> [docs/adr/](docs/adr/) for what has been decided and why.
+> **Status: v0.1 nearly complete.** The hook runs end to end, the Jev client is wired up,
+> and the calibration harness and fixtures are in place. The one thing missing is the
+> published table below, which needs a live scoring run. See [docs/PRD.md](docs/PRD.md)
+> for the spec and [docs/adr/](docs/adr/) for what has been decided and why.
+
+## Calibration
+
+Bouncer ships observing because you should not enable enforcement on the strength of a
+README claiming the classifier is good. Run it yourself:
+
+```bash
+BOUNCER_TYPESAFE_API_KEY=… bouncer calibrate
+```
+
+<!-- CALIBRATION-TABLE:START -->
+*Not yet run against live Jev. Run `bouncer calibrate` and paste the table here.*
+<!-- CALIBRATION-TABLE:END -->
+
+**What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
+the number is the classifier's agreement with one person's policy intuitions, not accuracy
+against ground truth. Since you are also the one setting the thresholds, that is the right
+thing to measure — but it is not the same claim as "97% accurate", and it should not be
+read as one.
+
+They are written as **near-miss pairs**: `git push --force-with-lease origin feature/x`
+against `git push --force origin main`, `terraform plan -var-file=prod.tfvars` against
+`terraform apply -auto-approve`, `ssh-keygen -y -f ~/.ssh/id_ed25519` against
+`cat ~/.ssh/id_ed25519`. A set of obviously-safe and obviously-dangerous commands would
+score beautifully and tell you nothing, because no threshold ever sits there. As a
+sanity check on that: the built-in keyword-matching mock adapter scores 38–79% on these,
+which is roughly what a regex deserves on them.
+
+The useful part is the buckets, not the headline. A question that is right 95% of the time
+when it answers above 0.9 is one you can set a high threshold on and trust; a question
+that is wrong at high confidence needs rewording, not a different threshold.
 
 ## Design commitments
 

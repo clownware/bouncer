@@ -7523,12 +7523,12 @@ function parseAnswer(value) {
       };
     }
     case "score": {
-      const score = record2["score"];
+      const score2 = record2["score"];
       const probabilities = record2["probabilities"];
-      if (typeof score !== "number" || !isNumberRecord(probabilities)) return void 0;
+      if (typeof score2 !== "number" || !isNumberRecord(probabilities)) return void 0;
       return {
         type: "score",
-        score,
+        score: score2,
         probabilities,
         confidence: typeof record2["confidence"] === "number" ? record2["confidence"] : Number.NaN
       };
@@ -8664,6 +8664,193 @@ function bar(p) {
   return `${"\u2588".repeat(filled)}${"\xB7".repeat(20 - filled)}`;
 }
 
+// src/commands/calibrate.ts
+var import_node_path5 = require("node:path");
+
+// src/calibrate.ts
+var import_node_fs5 = require("node:fs");
+var BUCKETS = [
+  [0.5, 0.6],
+  [0.6, 0.7],
+  [0.7, 0.8],
+  [0.8, 0.9],
+  [0.9, 1.0001]
+  // inclusive of 1.0
+];
+function parseFixtures(source) {
+  const fixtures = [];
+  source.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      throw new Error(`fixture line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    for (const field of ["id", "tool", "note"]) {
+      if (typeof parsed[field] !== "string" || parsed[field].length === 0) {
+        throw new Error(`fixture line ${i + 1} is missing "${field}"`);
+      }
+    }
+    if (typeof parsed.expect !== "object" || parsed.expect === null || Object.keys(parsed.expect).length === 0) {
+      throw new Error(`fixture "${parsed.id}" has no expectations, so it scores nothing`);
+    }
+    fixtures.push(parsed);
+  });
+  return fixtures;
+}
+function loadFixtures(path) {
+  return parseFixtures((0, import_node_fs5.readFileSync)(path, "utf8"));
+}
+async function score(fixtures, policy, adapter, onProgress) {
+  const questions = {};
+  for (const [name, q] of Object.entries(policy.gate.questions)) {
+    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+  }
+  const results = [];
+  for (const [i, fixture] of fixtures.entries()) {
+    const state = buildState({
+      toolName: fixture.tool,
+      toolInput: fixture.input,
+      cwd: fixture.cwd ?? "/home/user/project",
+      ...fixture.permission_mode !== void 0 ? { permissionMode: fixture.permission_mode } : {},
+      ...fixture.target_exists !== void 0 ? { targetExists: fixture.target_exists } : {}
+    });
+    const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = noulProbability(response.answers[question]);
+      if (p === void 0) continue;
+      const predicted = p >= 0.5;
+      results.push({
+        fixture,
+        question,
+        expected,
+        p,
+        predicted,
+        correct: predicted === expected,
+        confidence: Math.max(p, 1 - p)
+      });
+    }
+    onProgress?.(i + 1, fixtures.length);
+  }
+  return results;
+}
+function report(scored) {
+  const byQuestion = /* @__PURE__ */ new Map();
+  for (const s of scored) {
+    const list = byQuestion.get(s.question) ?? [];
+    list.push(s);
+    byQuestion.set(s.question, list);
+  }
+  return [...byQuestion.entries()].map(([question, items]) => ({
+    question,
+    n: items.length,
+    accuracy: items.filter((i) => i.correct).length / items.length,
+    brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
+    buckets: BUCKETS.map(([low, high]) => {
+      const inBucket = items.filter((i) => i.confidence >= low && i.confidence < high);
+      return {
+        low,
+        high: Math.min(high, 1),
+        n: inBucket.length,
+        accuracy: inBucket.length === 0 ? Number.NaN : inBucket.filter((i) => i.correct).length / inBucket.length
+      };
+    }),
+    misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
+  })).sort((a, b) => a.question.localeCompare(b.question));
+}
+function formatReport(reports, backend) {
+  const lines = [];
+  const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  lines.push(`Backend: ${backend}`, "");
+  lines.push("| question | n | accuracy | Brier | 0.5\u20130.6 | 0.6\u20130.7 | 0.7\u20130.8 | 0.8\u20130.9 | 0.9\u20131.0 |");
+  lines.push("|---|---|---|---|---|---|---|---|---|");
+  for (const r of reports) {
+    const buckets = r.buckets.map((b) => b.n === 0 ? " \u2014 " : `${pct(b.accuracy)} (${b.n})`).join(" | ");
+    lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} | ${buckets} |`);
+  }
+  const all = reports.flatMap((r) => r.misses);
+  if (all.length > 0) {
+    lines.push("", `Disagreements (${all.length}), most confident first:`, "");
+    for (const miss of all.sort((a, b) => b.confidence - a.confidence).slice(0, 20)) {
+      lines.push(
+        `  ${miss.question} on ${miss.fixture.id}: said ${miss.p.toFixed(2)}, label says ${miss.expected ? "true" : "false"}`
+      );
+      lines.push(`      ${miss.fixture.note}`);
+    }
+  }
+  lines.push(
+    "",
+    "This table measures the classifier's agreement with the fixture labels. The labels are",
+    "hand-written judgments about what should warrant a prompt, so this is agreement with a",
+    "human's policy intuitions, not accuracy against ground truth."
+  );
+  return `${lines.join("\n")}
+`;
+}
+
+// src/commands/calibrate.ts
+function parseArgs(argv) {
+  const value = (name) => {
+    const i = argv.indexOf(`--${name}`);
+    return i === -1 ? void 0 : argv[i + 1];
+  };
+  return {
+    ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
+    ...value("backend") !== void 0 ? { backend: value("backend") } : {},
+    json: argv.includes("--json")
+  };
+}
+async function calibrate(args, write2) {
+  const root = pluginRoot() ?? process.cwd();
+  const resolved = resolvePolicy(process.cwd(), root);
+  if (resolved.policy === void 0) {
+    write2(`Cannot calibrate: ${resolved.source} did not load.
+`);
+    for (const d of errorsIn(resolved.diagnostics)) write2(`  ${d.path || "(top level)"}: ${d.message}
+`);
+    return 1;
+  }
+  const fixturePath = args.fixtures ?? (0, import_node_path5.join)(root, "fixtures", "gate.jsonl");
+  let fixtures;
+  try {
+    fixtures = loadFixtures(fixturePath);
+  } catch (err) {
+    write2(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  const backend = args.backend ?? resolved.policy.backend;
+  let adapter;
+  if (backend === "mock") {
+    adapter = new MockAdapter();
+  } else if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      write2("Cannot calibrate against jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.\n");
+      return 1;
+    }
+    adapter = new JevAdapter({ apiKey: key });
+  } else {
+    write2(`Unknown backend "${backend}".
+`);
+    return 1;
+  }
+  const scored = await score(fixtures, resolved.policy, adapter, (done, total) => {
+    if (!args.json) process.stderr.write(`\r  ${done}/${total} fixtures`);
+  });
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  const reports = report(scored);
+  if (args.json === true) {
+    write2(`${JSON.stringify({ backend, fixtures: fixtures.length, reports }, null, 2)}
+`);
+    return 0;
+  }
+  write2(formatReport(reports, backend));
+  return 0;
+}
+
 // src/io/stdin.ts
 async function readPayload() {
   const raw = await readAll();
@@ -8703,6 +8890,8 @@ async function main(argv) {
     case "explain":
       process.stdout.write(explain2(argv[3]));
       return OK;
+    case "calibrate":
+      return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
     case "--version":
       process.stdout.write("0.1.0\n");
       return OK;

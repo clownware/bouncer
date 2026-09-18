@@ -9,6 +9,7 @@
 import { runPreToolUse } from "./hooks/pretooluse.js";
 import { status } from "./commands/status.js";
 import { explain } from "./commands/explain.js";
+import { calibrate, parseArgs } from "./commands/calibrate.js";
 import { readPayload } from "./io/stdin.js";
 
 const OK = 0;
@@ -36,6 +37,9 @@ async function main(argv: string[]): Promise<number> {
     case "explain":
       process.stdout.write(explain(argv[3]));
       return OK;
+
+    case "calibrate":
+      return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
 
     case "--version":
       process.stdout.write("0.1.0\n");
