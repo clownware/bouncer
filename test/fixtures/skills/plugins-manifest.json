@@ -1,0 +1,54 @@
+{
+  "lastUpdated": 1789741856102,
+  "plugins": [
+    {
+      "pluginId": "plugin_01Eeb9y5m4iFuY3yRtytYfdc",
+      "name": "marketing",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_014WxCYbLf7f3uw2isHFR9US",
+      "name": "productivity",
+      "version": "0039",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_01FTLa86dhbVJ3HB1LdHdhN7",
+      "name": "engineering",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_01AYHYqVLaZRH2Vi6aHgDwEw",
+      "name": "product-management",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_01VTbvGZYaCVU2CNSvhDCnkg",
+      "name": "data",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_01XXJmxLXPEhPMmnxmrgntNw",
+      "name": "design",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    },
+    {
+      "pluginId": "plugin_0155zZVATbJU3jHUmPP9NvMC",
+      "name": "cowork-plugin-management",
+      "version": "0038",
+      "marketplaceName": "knowledge-work-plugins",
+      "installationPreference": "available"
+    }
+  ]
+}
