@@ -40,18 +40,23 @@ The `jev` backend reads `BOUNCER_TYPESAFE_API_KEY`, falling back to `TYPESAFE_AP
 It reads the environment only: no `op://` resolution, deliberately, because `op read`
 can raise a Touch ID prompt in the middle of an agent run.
 
-A hook is a child process of Claude Code, so it inherits Claude Code's environment. Put
-the key where the app that launches Claude Code will see it — for a terminal-launched
-`claude`, your shell profile:
+A hook is a child process of Claude Code, so it gets Claude Code's environment. Two ways
+to put the key there, and they trade off against each other:
+
+```json
+// ~/.claude/settings.json — reliable, but the key sits in a file in plaintext
+{ "env": { "BOUNCER_TYPESAFE_API_KEY": "sk-…" } }
+```
 
 ```bash
-# ~/.zshrc
+# ~/.zshrc — keeps the key out of any file, but only reaches a `claude` you launched
+# from that shell
 export BOUNCER_TYPESAFE_API_KEY="$(security find-generic-password -s typesafe-api-key -w)"
 ```
 
-Reading it out of the Keychain at shell startup keeps it out of a dotfile you might
-commit. A plain `export BOUNCER_TYPESAFE_API_KEY=…` works the same way if you would
-rather not.
+The settings block is the one that works however Claude Code was started; the shell
+profile is the one that does not leave a key on disk. Reading it out of the Keychain is
+what makes the second worth the inconvenience.
 
 Then confirm the hook can see it, in a new terminal and a new Claude Code session:
 
@@ -160,11 +165,13 @@ means Bouncer stopped calling out and is emitting nothing — safe, and worth kn
 /bouncer:explain <tool_use_id>   # a specific one
 ```
 
-It prints the probability every question returned and names the rule that matched. Read a
-verdict you disagree with as a threshold problem, not a bug: it points at the rule and the
-number that would have to move. A probability near 0.5 means the classifier was genuinely
-unsure rather than wrong — that is what the uncertainty rule is for. `fast-path` in the
-reason means the classifier was never called at all.
+It prints the probability every question returned, names the rule that matched, and — for
+anything the judge did not settle — lists every threshold the call crossed with the
+question's own words, marking the one that decided. Read a verdict you disagree with as a
+threshold problem, not a bug: it points at the rule and the number that would have to
+move. A probability near 0.5 means the classifier was genuinely unsure rather than wrong,
+which is what the uncertainty rule is for. `fast-path` in the reason means the classifier
+was never called at all.
 
 ### Tailing it
 
