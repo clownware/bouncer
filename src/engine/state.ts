@@ -21,6 +21,9 @@
 
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { redact } from "./redact.js";
+import type { BuiltState, StateBuilder } from "./types.js";
+
+export type { BuiltState } from "./types.js";
 
 /** Hard cap on the serialized state. Jev's limit is far higher; this is for latency. */
 export const MAX_STATE_BYTES = 4096;
@@ -45,14 +48,17 @@ export interface StateInput {
   readonly git?: { readonly branch?: string; readonly dirty?: boolean };
 }
 
-export interface BuiltState {
-  /** The JSON string handed to the classifier. */
-  readonly text: string;
-  /** Redaction kinds that fired, for the log. Safe to record; the values are not. */
-  readonly redactedKinds: readonly string[];
-  /** True when the state hit MAX_STATE_BYTES and lost detail. */
-  readonly truncated: boolean;
-}
+/**
+ * The tool-call implementation of `StateBuilder`, and the only one in v0.2.
+ *
+ * `buildState` stays exported and is what every caller still calls. This names the
+ * boundary rather than routing through it: a second consumer would implement the same
+ * interface over its own item type instead of adding a branch here. See docs/adr/008.
+ */
+export const toolCallState: StateBuilder<StateInput> = {
+  kind: "tool_call",
+  build: buildState,
+};
 
 /** The command a fast-path check should run against; empty for non-Bash tools. */
 export function commandOf(toolName: string, toolInput: Readonly<Record<string, unknown>>): string {

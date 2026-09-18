@@ -14,6 +14,7 @@
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { redact } from "../engine/redact.js";
+import type { EscalationItem } from "../engine/escalation.js";
 import type { Reason } from "../engine/evaluate.js";
 import type { Verdict } from "../engine/types.js";
 
@@ -63,6 +64,14 @@ export interface DecisionRecord {
    * with that question now.
    */
   readonly probes?: Readonly<Record<string, number>>;
+  /**
+   * What the judge could not settle: every threshold this item crossed, at what `p`.
+   * Absent unless the classifier produced a verdict other than `allow`. See docs/adr/008.
+   *
+   * The item carries no `state` of its own — this record's `state` field is the same
+   * string, and writing it twice would double the largest field in the log.
+   */
+  readonly escalation?: EscalationItem;
   readonly state?: string;
   readonly redacted_kinds?: readonly string[];
   readonly latency_ms: { readonly total: number; readonly adapter?: number };

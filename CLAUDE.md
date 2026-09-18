@@ -45,6 +45,13 @@ but "is every form of it harmless". That excludes anything printing file content
 `echo $OPENAI_API_KEY` are the literal examples in the `secrets` question's own criteria.
 Fast-pathing the verb means the gate's headline question can never fire.
 
+**Nothing hook-shaped below the entrypoint.** Bouncer is a judgment engine and the gate is
+one consumer of it (ADR-008). `evaluate()` takes probabilities, `redact()` takes a string,
+the adapters take a state and a question map — none of them knows what a tool call is, and
+none of them is allowed to learn. A second consumer should be a new `StateBuilder` and a new
+policy set, never a branch inside `src/engine/`. The gate's own pieces — `gate.tools`,
+`gate.fast_path`, `gate.hard_rules` — live on `GatePolicy`, not on `PolicySet`.
+
 **A computed fact is decoration until a question reads it.** The state builder labels
 sensitive paths, but a label with no question asking about it and no rule reading it
 changes no verdict. When adding a fact to the state, add the question and the rule in the

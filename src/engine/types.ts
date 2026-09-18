@@ -92,10 +92,51 @@ export interface HardRule {
   readonly index: number;
 }
 
-export interface GatePolicy {
-  readonly tools: readonly string[];
-  readonly fastPath: readonly string[];
-  readonly hardRules: readonly HardRule[];
+/**
+ * What a state builder produces: the string the classifier is asked about, plus the two
+ * facts the log needs about how it was made.
+ */
+export interface BuiltState {
+  /** The JSON string handed to the classifier. */
+  readonly text: string;
+  /** Redaction kinds that fired, for the log. Safe to record; the values are not. */
+  readonly redactedKinds: readonly string[];
+  /** True when the state hit the builder's size cap and lost detail. */
+  readonly truncated: boolean;
+}
+
+/**
+ * Turns one item into the state a policy set is judged against.
+ *
+ * The engine asks questions about a state string; what that string describes is the
+ * consumer's business. `toolCallState` in `state.ts` is the implementation the PreToolUse
+ * hook uses, and it is the only one today. Declaring the interface is how ADR-008's rule —
+ * nothing hook-shaped below the entrypoint — becomes something the type checker can hold
+ * to, and it is what the `bouncer judge` item builder of v0.3 implements rather than
+ * forking `buildState`.
+ *
+ * Implementations must be pure: no I/O, so they stay testable and so a state can be
+ * rebuilt from a log line years later. Facts that need the filesystem — whether a target
+ * file exists — are stat'd by the caller and passed in.
+ */
+export interface StateBuilder<TItem> {
+  /** Recorded on the item so a replay knows what shape of state it is reading. */
+  readonly kind: string;
+  build(item: TItem): BuiltState;
+}
+
+/**
+ * A named set of questions and the rules over their answers.
+ *
+ * This is the engine's unit of work and it knows nothing about tool calls. Give it a
+ * state string and it returns a verdict: `gate` is the set the PreToolUse hook uses, and
+ * the batch judge of v0.3 will pass a different one over the same code. See docs/adr/008.
+ *
+ * The policy file still spells this set `gate:` and only `gate:`. Naming the shape is what
+ * keeps the next consumer from being a rewrite; letting the file name several sets is a
+ * schema change and is deliberately not in this change — ADR-008 has the design.
+ */
+export interface PolicySet {
   readonly questions: Readonly<Record<string, Question>>;
   /**
    * Questions asked in the same call as `questions` and read by nothing.
@@ -113,6 +154,19 @@ export interface GatePolicy {
    */
   readonly probeQuestions: Readonly<Record<string, Question>>;
   readonly rules: readonly Rule[];
+}
+
+/**
+ * The gate: one policy set, plus the things only a tool call has.
+ *
+ * `tools`, `fastPath` and `hardRules` all reason about a Claude Code tool name or a shell
+ * command, so they belong to this consumer rather than to the engine. Everything below
+ * `evaluate()` sees the `PolicySet` half and nothing else.
+ */
+export interface GatePolicy extends PolicySet {
+  readonly tools: readonly string[];
+  readonly fastPath: readonly string[];
+  readonly hardRules: readonly HardRule[];
 }
 
 /**

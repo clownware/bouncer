@@ -506,6 +506,24 @@ export function parseComparison(input: string): Comparison | undefined {
   return undefined;
 }
 
+/**
+ * The inverse of `parseComparison`: a threshold back in the spelling the user wrote.
+ *
+ * The escalation manifest is read by a person or by a reasoning model, and "secrets 0.63
+ * failed >=0.70" says what "secrets 0.63, rule 2" does not. Rendering from the parsed
+ * form rather than keeping the source string means the manifest cannot drift from what
+ * the rule actually tests.
+ */
+export function describeComparison(comparison: Comparison): string {
+  switch (comparison.kind) {
+    case "gte": return `>=${comparison.value}`;
+    case "gt": return `>${comparison.value}`;
+    case "lte": return `<=${comparison.value}`;
+    case "lt": return `<${comparison.value}`;
+    case "range": return `${comparison.low}..${comparison.high}`;
+  }
+}
+
 export function satisfies(p: number, comparison: Comparison): boolean {
   switch (comparison.kind) {
     case "gte": return p >= comparison.value;
