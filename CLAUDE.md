@@ -4,7 +4,7 @@ A decision layer for Claude Code hooks. A `PreToolUse` hook classifies the propo
 call against a policy the user owns and returns allow / ask / deny, using a fast System One
 model (TypeSafe Jev) instead of a frontier LLM. Ships observing only.
 
-Read `bouncer-prd.md` for the product spec and `docs/adr/` for decisions already made and
+Read `docs/PRD.md` for the product spec and `docs/adr/` for decisions already made and
 the reasoning behind them. The ADRs win over the PRD where they disagree — several PRD
 details were corrected once the hook payloads and the Jev API were actually verified.
 
@@ -56,7 +56,6 @@ re-verify rather than assuming the note is stale.
   `instructions`, and `criteria` — not `prompt` / `options` / `levels`.
 - The request body is `{ model, state, questions }`. Confirmed live on 2026-09-18; see
   `scripts/jev-latency.mjs` for a working request.
-  the same keys. Fields are `instructions` and `criteria` — not `prompt`/`options`/`levels`.
 - **`noul` returns only `{type:"noul", noul: 0..1}`. There is no confidence field.**
   `choice` and `score` do return `confidence`, but the docs describe it as a statistic
   derived from the distribution, so it carries no independent signal. Write uncertainty
