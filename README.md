@@ -32,27 +32,30 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 28 |  82% | 0.149 |  75% (4) | 100% (4) |  75% (4) |   0% (3) | 100% (13) |
+| destructive | 28 |  82% | 0.156 |  75% (4) | 100% (4) | 100% (2) |  20% (5) | 100% (13) |
 | egress | 16 |  94% | 0.036 |  —  |  —  |   0% (1) |  —  | 100% (15) |
-| outside_repo | 17 |  88% | 0.056 |   0% (1) |  —  |  50% (2) |  —  | 100% (14) |
-| prod | 14 |  93% | 0.036 |   0% (1) |  —  | 100% (1) | 100% (2) | 100% (10) |
-| secrets | 19 |  84% | 0.105 |   0% (1) |  75% (4) | 100% (1) |  67% (3) | 100% (10) |
-| sensitive_target | 16 |  81% | 0.126 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
+| outside_repo | 17 |  88% | 0.051 |   0% (1) |  —  |  50% (2) |  —  | 100% (14) |
+| prod | 14 |  93% | 0.039 |  —  |  50% (2) |  —  | 100% (3) | 100% (9) |
+| secrets | 19 |  84% | 0.096 |   0% (1) |  75% (4) |  50% (2) | 100% (3) | 100% (9) |
+| sensitive_target | 16 |  81% | 0.128 | 100% (1) |  50% (2) |   0% (1) |   0% (1) | 100% (11) |
 
 Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, five
-of the six questions pass and `destructive` does not, at 13 of 16. The full report, with
+of the six questions pass and `destructive` does not, at 14 of 18. The full report, with
 every disagreement and why each label is what it is, is in
-[docs/calibration/2026-09-18-jev-2.md](docs/calibration/2026-09-18-jev-2.md).
+[docs/calibration/2026-09-18-jev-3.md](docs/calibration/2026-09-18-jev-3.md).
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
-anything; every bucket below it rests on one to four. Two live runs of the identical
-fixtures against the identical policy moved `secrets` in the 0.8–0.9 bucket from 75% to
-67%, because one fixture's `p` drifted across the 0.8 boundary into the bucket below.
-Its verdict never changed. So the `n`, `accuracy`
-and `Brier` columns are the numbers worth acting on, and the lower buckets show only the
-rough shape of where the model is unsure. Making them mean more needs the ~150 fixtures
-the PRD asks for, not the 81 that ship.
+anything; every bucket below it rests on one to five. Runs
+[2](docs/calibration/2026-09-18-jev-2.md) and [3](docs/calibration/2026-09-18-jev-3.md)
+used identical fixtures and an identical policy. Every overall accuracy came back the same
+and no Brier score moved by more than 0.01, yet `destructive` in the 0.8–0.9 bucket went
+from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% of 3.
+No verdict changed: fixtures near a bucket edge drift across it from run to run and take
+their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
+worth acting on, and the lower buckets show only the rough shape of where the model is
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 81 that
+ship.
 
 **What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
