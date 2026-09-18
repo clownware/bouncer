@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # bin/bouncer.cjs is committed so the plugin works without an install step
+      # (ADR-002). If this fails, run `npm run build` and commit the result.
+      - name: Committed bundle is up to date
+        run: |
+          if ! git diff --exit-code -- bin/bouncer.cjs; then
+            echo "::error::bin/bouncer.cjs is stale. Run 'npm run build' and commit it."
+            exit 1
+          fi
+
+      # The calibration harness must keep working even though its live run is manual and
+      # needs a key. Against the mock the numbers are meaningless; that it completes is not.
+      - name: Calibration harness runs
+        run: node bin/bouncer.cjs calibrate --backend mock --json > /dev/null
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}
+
+      # Hook overhead is in the latency path of every gated tool call. CI machines are
+      # noisy, so the budget here is deliberately looser than the 80 ms target we hold
+      # ourselves to locally; this catches a dependency blowing up the bundle, not drift.
+      - name: Latency budget
+        run: node scripts/bench.mjs --budget 150 --runs 20

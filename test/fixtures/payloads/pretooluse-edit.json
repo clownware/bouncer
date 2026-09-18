@@ -1,0 +1,20 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "/home/user/.claude/projects/example/transcript.jsonl",
+  "cwd": "/home/user/Dev/clownware/bouncer",
+  "scratchpad_dir": "/private/tmp/claude-0/-Users-user-Dev-clownware-bouncer/00000000-0000-0000-0000-000000000000/scratchpad",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "bypassPermissions",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/private/tmp/claude-0/-Users-user-Dev-clownware-bouncer/00000000-0000-0000-0000-000000000000/scratchpad/scratch/hello.txt",
+    "old_string": "hello world",
+    "new_string": "hello there",
+    "replace_all": false
+  },
+  "tool_use_id": "toolu_00000000000000000000000000"
+}

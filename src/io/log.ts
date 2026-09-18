@@ -1,0 +1,89 @@
+// The decision log: append-only JSONL, one line per gated tool call.
+//
+// This is the only record of what bouncer did. `/bouncer:explain` reads it, the
+// calibration harness replays it, and it is what a user looks at when they want to know
+// why something got prompted. So it stores enough to answer those questions and nothing
+// that would make the file itself a liability.
+//
+// Contrary to PRD §9, the redacted state IS stored rather than only its hash. A hash
+// cannot answer "why did that get blocked", cannot seed fixtures from real history, and
+// cannot be re-scored when a policy changes — which are the three things the log exists
+// for. The state is already redacted before it reaches here, and there is a second
+// redaction pass on write as a backstop.
+
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { redact } from "../engine/redact.js";
+import type { Reason } from "../engine/evaluate.js";
+import type { Verdict } from "../engine/types.js";
+
+export const LOG_FILE = "decisions.jsonl";
+
+export interface DecisionRecord {
+  readonly ts: string;
+  readonly session_id?: string;
+  readonly tool_use_id?: string;
+  readonly tool: string;
+  readonly permission_mode?: string;
+  readonly agent_type?: string;
+  readonly mode: string;
+  readonly backend: string;
+  /** What policy concluded. */
+  readonly verdict: Verdict;
+  /** What was actually put on stdout; null when nothing was emitted. */
+  readonly emitted: Verdict | null;
+  readonly reason: Reason;
+  /** Raw probability per question. The thing calibration is computed from. */
+  readonly answers?: Readonly<Record<string, number>>;
+  readonly state?: string;
+  readonly redacted_kinds?: readonly string[];
+  readonly latency_ms: { readonly total: number; readonly adapter?: number };
+  readonly error?: { readonly kind: string; readonly message: string };
+  /** True for the first gated call of a session — excluded from the latency breaker. */
+  readonly warmup?: boolean;
+}
+
+/**
+ * Appends a record. Never throws.
+ *
+ * A logging failure must not affect the verdict. By the time this runs the decision is
+ * already made, and a full disk is not a reason to change what Claude Code is told.
+ */
+export function append(dir: string, record: DecisionRecord): void {
+  try {
+    mkdirSync(dir, { recursive: true });
+
+    const safe: DecisionRecord =
+      record.state !== undefined ? { ...record, state: redact(record.state).text } : record;
+
+    appendFileSync(join(dir, LOG_FILE), `${JSON.stringify(safe)}\n`, "utf8");
+  } catch {
+    // Intentionally silent. stderr from a hook is noise in the user's transcript, and
+    // there is nothing they can usefully do about it mid-run.
+  }
+}
+
+/** Reads the most recent records, newest first. Returns [] if the log is unreadable. */
+export function tail(dir: string, count: number): DecisionRecord[] {
+  let raw: string;
+  try {
+    raw = readFileSync(join(dir, LOG_FILE), "utf8");
+  } catch {
+    return [];
+  }
+
+  const records: DecisionRecord[] = [];
+  const lines = raw.split("\n");
+
+  for (let i = lines.length - 1; i >= 0 && records.length < count; i--) {
+    const line = lines[i];
+    if (line === undefined || line.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(line) as DecisionRecord);
+    } catch {
+      // A truncated final line is expected if a write was interrupted. Skip it.
+    }
+  }
+
+  return records;
+}
