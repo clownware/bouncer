@@ -3,8 +3,14 @@
 // These mirror the policy file's shape rather than an idealised internal model, so that a
 // validation error can always point at the line the user wrote.
 
-/** What bouncer is allowed to emit. See docs/adr/003. */
-export type Mode = "observe" | "guard" | "full";
+/**
+ * What bouncer is allowed to emit. See docs/adr/003, and docs/adr/004 for `seatbelt`.
+ *
+ * `seatbelt` is the mode for a session running `--dangerously-skip-permissions`, where the
+ * baseline is no prompts at all. `ask` cannot help there — it forces the prompt the user
+ * turned off — so the mode emits nothing for one and denies on a hard rule instead.
+ */
+export type Mode = "observe" | "guard" | "full" | "seatbelt";
 
 /** The verdicts a rule can produce. `allow` is only emitted in `full` mode. */
 export type Verdict = "allow" | "ask" | "deny";
@@ -48,9 +54,48 @@ export interface Question {
   readonly criteria?: { readonly true?: string; readonly false?: string };
 }
 
+/**
+ * The predicates a `gate.hard_rules` entry can assert, ANDed together.
+ *
+ * Every one exists for a specific near-miss pair in fixtures/gate.jsonl; ADR-004 has the
+ * table. The data lives in the policy file — there is no list of paths, verbs or
+ * credential shapes in `src/`.
+ */
+export interface HardRuleWhen {
+  /** The command's first word is one of these. */
+  readonly firstToken?: readonly string[];
+  /** Every one of these appears as an exact token. */
+  readonly tokens?: readonly string[];
+  /** None of these appears as a token. Never asserted alone. */
+  readonly notTokens?: readonly string[];
+  /** One of these appears as a case-insensitive substring. For text inside a quoted argument. */
+  readonly text?: readonly string[];
+  /** Some token is a path carrying one of these sensitivity labels. */
+  readonly pathLabelled?: readonly string[];
+  /** `redact()` reports one of these kinds for the command. */
+  readonly redactsAs?: readonly string[];
+}
+
+/**
+ * A deterministic rule, evaluated before the classifier.
+ *
+ * Entries ship as `ask`. `seatbelt` promotes that to `deny` rather than the entry doing so,
+ * so changing populations never means rewriting the policy file.
+ */
+export interface HardRule {
+  readonly name: string;
+  readonly verdict: Verdict;
+  /** The one-line reason the user reads at the prompt. */
+  readonly because: string;
+  readonly when: HardRuleWhen;
+  /** 1-based position in the policy file's list, for diagnostics. */
+  readonly index: number;
+}
+
 export interface GatePolicy {
   readonly tools: readonly string[];
   readonly fastPath: readonly string[];
+  readonly hardRules: readonly HardRule[];
   readonly questions: Readonly<Record<string, Question>>;
   readonly rules: readonly Rule[];
 }
