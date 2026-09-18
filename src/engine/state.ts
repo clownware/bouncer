@@ -258,8 +258,16 @@ function pathFacts(
  *
  * Deterministic on purpose: these are exact, well-known locations, and asking a classifier
  * "is this a git internal" would be slower and less reliable than checking.
+ *
+ * Exported because `gate.hard_rules` reads it (ADR-004). Until then this function's output
+ * reached the state and nothing else, which is the "a computed fact is decoration until a
+ * question reads it" bug class in CLAUDE.md: the label was present and changed no verdict.
+ * A hard rule reading it is the first thing that turns it into one.
+ *
+ * A leading `~/` is stripped by the caller, not here — this function takes a path, and
+ * shell tilde expansion is the shell's business.
  */
-function describeSensitivity(path: string): string | undefined {
+export function describeSensitivity(path: string): string | undefined {
   const parts = path.split(sep).filter((p) => p.length > 0);
   const name = parts.at(-1) ?? "";
 
@@ -268,6 +276,13 @@ function describeSensitivity(path: string): string | undefined {
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
   if (/^\.env(\..+)?$/.test(name)) return "environment_file";
   if (/^(\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.dockercfg)$/.test(name)) return "credentials_file";
+  // The canonical credential files of the tools an agent actually drives. Added for the
+  // hard rules rather than for the state: no fixture's Write or Edit targets any of these,
+  // so no fixture's state changes and run 8 stays comparable to run 7 on every `p`.
+  if (parts.includes(".aws") && /^(credentials|config)$/.test(name)) return "credentials_file";
+  if (parts.includes(".kube") && name === "config") return "credentials_file";
+  if (parts.includes(".docker") && name === "config.json") return "credentials_file";
+  if (parts.includes(".gnupg")) return "credentials_file";
   if (/^(id_rsa|id_ed25519|id_ecdsa)(\.pub)?$/.test(name)) return "ssh_key";
   if (/^(\.bashrc|\.zshrc|\.profile|\.bash_profile)$/.test(name)) return "shell_startup_file";
 

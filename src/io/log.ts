@@ -34,6 +34,10 @@ export const MAX_LOG_BYTES = 8 * 1024 * 1024;
  * on its own — by a script, by a future reader, by a question that has since been promoted
  * out of `probe_questions` and into `questions` — says which answers could have moved the
  * verdict and which could not. That distinction is the whole point of the record.
+ *
+ * Not the record's own `source` above, which says what produced the verdict. This one says
+ * what the answer was for. A record reading `source: "judge"` with probe entries reading
+ * `source: "probe"` is the ordinary case: the judge decided, and these rode along.
  */
 export interface ProbeAnswer {
   readonly p: number;
@@ -54,6 +58,15 @@ export interface DecisionRecord {
   /** What was actually put on stdout; null when nothing was emitted. */
   readonly emitted: Verdict | null;
   readonly reason: Reason;
+  /**
+   * Which layer decided: a deterministic entry in `gate.hard_rules`, an entry in
+   * `gate.fast_path`, or the classifier and `gate.rules`. See docs/adr/004.
+   *
+   * Redundant with `reason.kind` and written anyway, because this is the field a query
+   * over the log actually wants: "what did the judge decide" has to exclude the lines the
+   * judge never saw, and `answers` being absent is true of error lines too.
+   */
+  readonly source?: "hard_rule" | "fast_path" | "judge";
   /** Raw probability per question. The thing calibration is computed from. */
   readonly answers?: Readonly<Record<string, number>>;
   /**
