@@ -11,6 +11,7 @@ import { status } from "./commands/status.js";
 import { explain } from "./commands/explain.js";
 import { calibrate, parseArgs } from "./commands/calibrate.js";
 import { judge, parseArgs as parseJudgeArgs } from "./commands/judge.js";
+import { measure, parseArgs as parseMeasureArgs } from "./commands/measure.js";
 import { skills, parseArgs as parseSkillsArgs } from "./commands/skills.js";
 import { readPayload } from "./io/stdin.js";
 
@@ -45,6 +46,9 @@ async function main(argv: string[]): Promise<number> {
 
     case "judge":
       return judge(parseJudgeArgs(argv.slice(3)), (text) => process.stdout.write(text));
+
+    case "measure":
+      return measure(parseMeasureArgs(argv.slice(3)), (text) => process.stdout.write(text));
 
     case "skills":
       process.stdout.write(skills(parseSkillsArgs(argv.slice(3))));

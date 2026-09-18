@@ -45,6 +45,19 @@ but "is every form of it harmless". That excludes anything printing file content
 `echo $OPENAI_API_KEY` are the literal examples in the `secrets` question's own criteria.
 Fast-pathing the verb means the gate's headline question can never fire.
 
+**The engine has two consumers now, and neither is privileged.** `bouncer judge` runs a
+policy set over a batch of items and `bouncer measure` compares it against a reasoning
+model (ADR-009). Anything below `src/cli.ts` that would have to know which one is calling
+is a design mistake: `evaluate()` takes a `PolicySet` and a `Mode`, the judge runner takes
+states the caller built, and `calibrate` scores items whatever built them. The gate is the
+one that runs hundreds of times a session, so it is the one whose hot path is measured —
+that is a performance fact, not a hierarchy.
+
+**`judge` sends item content; the gate never does.** PRD §9 is about a hook that runs on
+every tool call over content the user never chose to send. `judge` is a command pointed at
+a file, and the document is the subject. Redaction runs either way. If a change ever lets
+the gate's state builder near file contents "because judge does it", that is the line.
+
 **Nothing hook-shaped below the entrypoint.** Bouncer is a judgment engine and the gate is
 one consumer of it (ADR-008). `evaluate()` takes probabilities, `redact()` takes a string,
 the adapters take a state and a question map — none of them knows what a tool call is, and
@@ -116,6 +129,13 @@ recorded reality; the docs are a description of it.
 ## Conventions
 
 - Conventional commits. Branch per thread. PRs only, no `--no-verify`.
+- A policy file names its sets under `policies:`; a top-level `gate:` is a permanent alias
+  and not a deprecated spelling, so never add a warning to it (ADR-009). `policy/default.yaml`
+  deliberately stays on the alias: it is the file every user copies.
+- The reasoning model in `bouncer measure` is a command the user supplies, never a client
+  bouncer ships. That is what keeps zero runtime dependencies true and keeps the claim about
+  a class of model rather than one vendor. `test/fixtures/reasoning/oracle.mjs` is the
+  stand-in every automated run uses.
 - Zero runtime dependencies. Dev dependencies are fine; anything reaching `bin/bouncer.cjs`
   is not.
 - `bin/bouncer.cjs` is a committed build artifact. Rebuild and commit it whenever `src/`

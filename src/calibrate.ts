@@ -23,7 +23,7 @@ import { itemState } from "./engine/item.js";
 import { evaluate } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
 import { GATE_SET, type BuiltState, type CalibrationPolicy, type Policy, type PolicySet, type Verdict } from "./engine/types.js";
-import type { DecisionRecord } from "./io/log.js";
+import { parseLog, type DecisionRecord } from "./io/log.js";
 
 /**
  * A fixture is an item with labels, and `kind` says which `StateBuilder` builds it.
@@ -383,6 +383,93 @@ export function stateFor(fixture: Fixture): BuiltState {
     ...(call.permission_mode !== undefined ? { permissionMode: call.permission_mode } : {}),
     ...(call.target_exists !== undefined ? { targetExists: call.target_exists } : {}),
   });
+}
+
+/**
+ * Scores a log's recorded answers against labels, without calling a backend.
+ *
+ * `score()` above asks the classifier; this reads what it already said. That is the whole
+ * point: a live run costs one call per item and, once it has been paid for, re-scoring it
+ * after a relabelling or a threshold change should cost nothing. It is also what makes a
+ * batch run in anger into calibration data — `bouncer judge` writes `item` on every line,
+ * so a judgments log over a fixture file joins to it by id.
+ *
+ * The verdict is recomputed from the recorded probabilities rather than read off the line,
+ * so changing a threshold and re-running this says what the new threshold would have done.
+ * Lines a deterministic path decided carry no answers and are counted as skipped rather
+ * than scored: there is nothing of the classifier's in them to measure.
+ */
+export function scoreFromLog(
+  source: string,
+  fixtures: readonly Fixture[],
+  policy: Policy,
+  setName: string = GATE_SET,
+): { scored: Scored[]; matched: number; unmatched: number; unscorable: number } {
+  const set = policy.sets[setName];
+  if (set === undefined) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
+  }
+
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+
+  const scored: Scored[] = [];
+  let matched = 0;
+  let unmatched = 0;
+  let unscorable = 0;
+
+  for (const record of parseLog(source)) {
+    // A judge line is keyed on the item; a gate line has only its tool_use_id, so a user
+    // labelling their own history labels by that.
+    const key = record.item ?? record.tool_use_id;
+    if (key === undefined) {
+      unscorable += 1;
+      continue;
+    }
+
+    const fixture = byId.get(key);
+    if (fixture === undefined) {
+      unmatched += 1;
+      continue;
+    }
+
+    const answers = { ...(record.answers ?? {}) };
+    const probes = record.probes ?? {};
+    if (Object.keys(answers).length === 0) {
+      // A hard rule, a fast-path hit or an error line. Nothing of the classifier's in it.
+      unscorable += 1;
+      continue;
+    }
+
+    matched += 1;
+    const decision = evaluate(set, policy.mode, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+      source: "rule" as const,
+    };
+
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = probeNames.has(question) ? probes[question] : answers[question];
+      if (p === undefined) continue;
+
+      const predicted = p >= 0.5;
+      scored.push({
+        fixture,
+        question,
+        expected,
+        p,
+        predicted,
+        correct: predicted === expected,
+        confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason,
+        probe: probeNames.has(question),
+      });
+    }
+  }
+
+  return { scored, matched, unmatched, unscorable };
 }
 
 export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {

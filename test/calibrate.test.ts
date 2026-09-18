@@ -11,6 +11,7 @@ import {
   probeReport,
   report,
   score,
+  scoreFromLog,
   stateFor,
   type Fixture,
   type Scored,
@@ -576,5 +577,80 @@ describe("scoring a named set", () => {
     await expect(
       score([], POLICY, new MockAdapter(), undefined, "nonexistent"),
     ).rejects.toThrow(/no set named "nonexistent".*gate/s);
+  });
+});
+
+// docs/adr/009: calibrate scores items from any log, not only hook-shaped fixtures. The
+// point is that a run already paid for can be re-scored for nothing, after a relabelling
+// or a threshold change.
+describe("scoring from a log", () => {
+  const FIXTURES_JSONL = [
+    '{"id":"a","kind":"item","item":{"text":"one"},"expect":{"destructive":true},"note":"n"}',
+    '{"id":"b","kind":"item","item":{"text":"two"},"expect":{"destructive":false},"note":"n"}',
+  ].join("\n");
+
+  const line = (over: Record<string, unknown>) =>
+    JSON.stringify({
+      ts: "2026-09-18T00:00:00.000Z",
+      consumer: "judge",
+      set: "gate",
+      mode: "observe",
+      backend: "jev",
+      verdict: "allow",
+      emitted: null,
+      reason: { kind: "rule", ruleIndex: 9, question: "default", p: null },
+      latency_ms: { total: 10 },
+      ...over,
+    });
+
+  it("scores the answers the log recorded, joining on the item id", () => {
+    const log = [
+      line({ item: "a", answers: { destructive: 0.91 } }),
+      line({ item: "b", answers: { destructive: 0.04 } }),
+    ].join("\n");
+
+    const result = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.matched).toBe(2);
+    expect(result.scored.map((s) => s.correct)).toEqual([true, true]);
+    expect(result.scored[0]?.p).toBe(0.91);
+  });
+
+  it("joins a gate line on its tool_use_id, which is all such a line has", () => {
+    const log = line({ tool_use_id: "a", answers: { destructive: 0.91 } });
+    expect(scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY).matched).toBe(1);
+  });
+
+  // Recomputed rather than read off the line: that is what makes "move a threshold and
+  // re-run this" answer the question it looks like it answers.
+  it("recomputes the verdict from the recorded probabilities", () => {
+    const log = line({ item: "a", answers: { destructive: 0.91 }, verdict: "allow" });
+    expect(scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY).scored[0]?.verdict).toBe("ask");
+  });
+
+  it("counts a line with no answers as unscorable rather than wrong", () => {
+    const log = [
+      line({ item: "a", source: "hard_rule", reason: { kind: "hard-rule", name: "x", because: "y" } }),
+      line({ item: "b", answers: { destructive: 0.04 } }),
+    ].join("\n");
+
+    const result = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.unscorable).toBe(1);
+    expect(result.matched).toBe(1);
+  });
+
+  it("counts a line with no matching fixture rather than guessing at a label", () => {
+    const log = line({ item: "elsewhere", answers: { destructive: 0.91 } });
+    const result = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.unmatched).toBe(1);
+    expect(result.scored).toEqual([]);
+  });
+
+  it("skips a truncated final line the way every other log reader does", () => {
+    const log = `${line({ item: "a", answers: { destructive: 0.91 } })}\n{"ts":"2026`;
+    expect(scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY).matched).toBe(1);
+  });
+
+  it("refuses a set the policy does not define", () => {
+    expect(() => scoreFromLog("", [], POLICY, "nope")).toThrow(/no set named "nope"/);
   });
 });

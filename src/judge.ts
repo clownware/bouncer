@@ -1,9 +1,9 @@
 // The batch judge: a policy set over a batch of items.
 //
 // This is the second consumer of the engine (docs/adr/008, docs/adr/009), and it is
-// deliberately thin. It builds a state with `itemState`, asks the set's questions in one
-// fan-out per item, evaluates the same rules the gate evaluates, and collects what did not
-// settle into an escalation manifest. Every line of judgment logic it uses is the line the
+// deliberately thin. It takes states the caller has already built, asks the set's questions
+// in one fan-out per item, evaluates the same rules the gate evaluates, and collects what
+// did not settle into an escalation manifest. Every line of judgment logic it uses is the line the
 // PreToolUse hook uses; if that ever stops being true, one of the two is wrong.
 //
 // What it does NOT share with the hook is mode. `observe` / `guard` / `full` / `seatbelt`
@@ -19,8 +19,7 @@ import { AdapterError } from "./adapters/types.js";
 import { questionsOf } from "./calibrate.js";
 import { evaluate, type Reason } from "./engine/evaluate.js";
 import { escalationFor, manifestOf, type EscalationItem, type EscalationManifest } from "./engine/escalation.js";
-import { itemState, type Item } from "./engine/item.js";
-import type { Mode, PolicySet, Verdict } from "./engine/types.js";
+import type { BuiltState, Mode, PolicySet, Verdict } from "./engine/types.js";
 
 /** One item, judged. */
 export interface JudgedItem {
@@ -75,8 +74,21 @@ export interface JudgeOptions {
 
 const DEFAULT_CONCURRENCY = 4;
 
+/**
+ * An item with its state already built.
+ *
+ * The runner judges states; which `StateBuilder` made one is the caller's business. That
+ * is what lets `bouncer judge` build with `itemState` and `bouncer measure` build each
+ * fixture with the builder its `kind` names, without either of them being a special case
+ * in here.
+ */
+export interface StatedItem {
+  readonly id: string;
+  readonly state: BuiltState;
+}
+
 export async function judge(
-  items: ReadonlyArray<{ readonly id: string; readonly item: Item }>,
+  items: readonly StatedItem[],
   options: JudgeOptions,
 ): Promise<JudgeRun> {
   const questions = questionsOf(options.set);
@@ -96,7 +108,7 @@ export async function judge(
       const entry = items[index];
       if (entry === undefined) return;
 
-      results[index] = await judgeOne(entry.id, entry.item, questions, probeNames, options);
+      results[index] = await judgeOne(entry.id, entry.state, questions, probeNames, options);
       options.onProgress?.(++done, items.length);
     }
   };
@@ -125,12 +137,11 @@ export async function judge(
 
 async function judgeOne(
   id: string,
-  item: Item,
+  state: BuiltState,
   questions: ReturnType<typeof questionsOf>,
   probeNames: ReadonlySet<string>,
   options: JudgeOptions,
 ): Promise<JudgedItem> {
-  const state = itemState.build(item);
   const base = {
     id,
     state: state.text,

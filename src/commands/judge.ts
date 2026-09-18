@@ -24,6 +24,7 @@ import { AdapterError, type Adapter } from "../adapters/types.js";
 import { formatRun, judge as runJudge, type JudgeRun, type JudgedItem } from "../judge.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import { itemState } from "../engine/item.js";
 import { loadItems, type LoadedBatch } from "../io/items.js";
 import { JUDGMENTS_FILE, append, type DecisionRecord } from "../io/log.js";
 
@@ -129,19 +130,23 @@ export async function judge(args: JudgeArgs, write: (s: string) => void): Promis
     return 1;
   }
 
-  const run = await runJudge(batch.items, {
-    setName,
-    set,
-    mode: policy.mode,
-    adapter,
-    // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong budget:
-    // it exists to keep a tool call responsive. Give an item room to be a long document.
-    timeoutMs: Math.max(policy.timeoutMs, 30_000),
-    ...(args.concurrency !== undefined ? { concurrency: args.concurrency } : {}),
-    onProgress: (done, total) => {
-      if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+  const run = await runJudge(
+    batch.items.map((entry) => ({ id: entry.id, state: itemState.build(entry.item) })),
+    {
+      setName,
+      set,
+      mode: policy.mode,
+      adapter,
+      // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong
+      // budget: it exists to keep a tool call responsive. Give an item room to be a long
+      // document.
+      timeoutMs: Math.max(policy.timeoutMs, 30_000),
+      ...(args.concurrency !== undefined ? { concurrency: args.concurrency } : {}),
+      onProgress: (done, total) => {
+        if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+      },
     },
-  });
+  );
   if (!args.json) process.stderr.write("\r\x1b[K");
 
   const logPath = args.out ?? join(dataDir(), JUDGMENTS_FILE);

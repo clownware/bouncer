@@ -9039,6 +9039,17 @@ function rotateIfOversized(file) {
   if (size < MAX_LOG_BYTES) return;
   (0, import_node_fs4.renameSync)(file, `${file}.1`);
 }
+function parseLog(source) {
+  const records = [];
+  for (const line of source.split("\n")) {
+    if (line.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return records;
+}
 function tail(dir, count, name = LOG_FILE) {
   let raw;
   try {
@@ -9494,6 +9505,7 @@ function bar(p) {
 
 // src/commands/calibrate.ts
 var import_node_path7 = require("node:path");
+var import_node_fs7 = require("node:fs");
 
 // src/calibrate.ts
 var import_node_fs6 = require("node:fs");
@@ -9699,6 +9711,61 @@ function stateFor(fixture) {
     ...call.target_exists !== void 0 ? { targetExists: call.target_exists } : {}
   });
 }
+function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
+  }
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+  const scored = [];
+  let matched = 0;
+  let unmatched = 0;
+  let unscorable = 0;
+  for (const record2 of parseLog(source)) {
+    const key = record2.item ?? record2.tool_use_id;
+    if (key === void 0) {
+      unscorable += 1;
+      continue;
+    }
+    const fixture = byId.get(key);
+    if (fixture === void 0) {
+      unmatched += 1;
+      continue;
+    }
+    const answers = { ...record2.answers ?? {} };
+    const probes = record2.probes ?? {};
+    if (Object.keys(answers).length === 0) {
+      unscorable += 1;
+      continue;
+    }
+    matched += 1;
+    const decision = evaluate(set, policy.mode, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+      source: "rule"
+    };
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = probeNames.has(question) ? probes[question] : answers[question];
+      if (p === void 0) continue;
+      const predicted = p >= 0.5;
+      scored.push({
+        fixture,
+        question,
+        expected,
+        p,
+        predicted,
+        correct: predicted === expected,
+        confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason,
+        probe: probeNames.has(question)
+      });
+    }
+  }
+  return { scored, matched, unmatched, unscorable };
+}
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
   for (const s of scored) {
@@ -9884,11 +9951,11 @@ function compare(a, b, calibration) {
   const rows = [...byQuestion.entries()].map(([question, items]) => {
     const side = (i) => items.map((pair) => pair[i]);
     const brierOf = (rows2) => rows2.reduce((sum, r) => sum + (r.p - (r.expected ? 1 : 0)) ** 2, 0) / rows2.length;
-    const accuracyOf = (rows2) => rows2.filter((r) => r.correct).length / rows2.length;
+    const accuracyOf2 = (rows2) => rows2.filter((r) => r.correct).length / rows2.length;
     return {
       question,
       n: items.length,
-      accuracy: [accuracyOf(side(0)), accuracyOf(side(1))],
+      accuracy: [accuracyOf2(side(0)), accuracyOf2(side(1))],
       brier: [brierOf(side(0)), brierOf(side(1))],
       meanDelta: items.reduce((sum, [l, r]) => sum + Math.abs(l.p - r.p), 0) / items.length,
       gate: [gateResult(side(0), calibration), gateResult(side(1), calibration)]
@@ -9991,6 +10058,7 @@ function parseArgs(argv) {
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
     ...value("set") !== void 0 ? { set: value("set") } : {},
+    ...value("from") !== void 0 ? { from: value("from") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     json: argv.includes("--json")
@@ -10014,6 +10082,9 @@ async function calibrate(args, write3) {
     write3(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}
 `);
     return 1;
+  }
+  if (args.from !== void 0) {
+    return fromLog(args, resolved.policy, fixtures, write3);
   }
   const primary = args.backend ?? resolved.policy.backend;
   const names = backendsFor(primary, args.compare);
@@ -10076,6 +10147,57 @@ async function calibrate(args, write3) {
   }
   return 0;
 }
+function fromLog(args, policy, fixtures, write3) {
+  let source;
+  try {
+    source = (0, import_node_fs7.readFileSync)(args.from, "utf8");
+  } catch (err) {
+    write3(`Cannot read the log at ${args.from}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  let result;
+  try {
+    result = scoreFromLog(source, fixtures, policy, args.set);
+  } catch (err) {
+    write3(`${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  if (result.matched === 0) {
+    write3(
+      `No line in ${args.from} matched a fixture id.
+  ${result.unmatched} lines named an item with no fixture, and ${result.unscorable} carried no answers.
+  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.
+`
+    );
+    return 1;
+  }
+  if (args.json === true) {
+    write3(
+      `${JSON.stringify(
+        {
+          from: args.from,
+          matched: result.matched,
+          unmatched: result.unmatched,
+          unscorable: result.unscorable,
+          reports: report(result.scored, policy.calibration)
+        },
+        null,
+        2
+      )}
+`
+    );
+    return 0;
+  }
+  write3(formatReport(report(result.scored, policy.calibration), `${args.from} (recorded)`, policy.calibration, result.scored));
+  write3(
+    `
+Scored ${result.matched} logged items against their labels. ${result.unmatched} had no fixture; ${result.unscorable} carried no classifier answer (a hard rule, the fast path, or an error).
+`
+  );
+  return 0;
+}
 async function run(fixtures, policy, adapter, label, total, args) {
   const prefix = total > 1 ? `${label}: ` : "";
   const scored = await score(
@@ -10121,7 +10243,7 @@ async function startIfNeeded(adapter) {
 }
 
 // src/commands/judge.ts
-var import_node_fs8 = require("node:fs");
+var import_node_fs9 = require("node:fs");
 var import_node_path9 = require("node:path");
 
 // src/judge.ts
@@ -10138,7 +10260,7 @@ async function judge(items, options) {
       const index = cursor++;
       const entry = items[index];
       if (entry === void 0) return;
-      results[index] = await judgeOne(entry.id, entry.item, questions, probeNames, options);
+      results[index] = await judgeOne(entry.id, entry.state, questions, probeNames, options);
       options.onProgress?.(++done, items.length);
     }
   };
@@ -10161,8 +10283,7 @@ async function judge(items, options) {
     latencyMs: Date.now() - started
   };
 }
-async function judgeOne(id, item, questions, probeNames, options) {
-  const state = itemState.build(item);
+async function judgeOne(id, state, questions, probeNames, options) {
   const base = {
     id,
     state: state.text,
@@ -10239,14 +10360,14 @@ function formatRun(run2) {
 }
 
 // src/io/items.ts
-var import_node_fs7 = require("node:fs");
+var import_node_fs8 = require("node:fs");
 var import_node_path8 = require("node:path");
 var MAX_FILE_BYTES = 1024 * 1024;
 var MAX_DEPTH2 = 8;
 function loadItems(path) {
-  const stats = (0, import_node_fs7.statSync)(path);
+  const stats = (0, import_node_fs8.statSync)(path);
   if (stats.isDirectory()) return loadDirectory(path);
-  const source = (0, import_node_fs7.readFileSync)(path, "utf8");
+  const source = (0, import_node_fs8.readFileSync)(path, "utf8");
   return (0, import_node_path8.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
 }
 function loadJsonl(source, path) {
@@ -10305,7 +10426,7 @@ function loadDirectory(root) {
       skipped.push({ path: (0, import_node_path8.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
       return;
     }
-    for (const entry of (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
       const full = (0, import_node_path8.join)(dir, entry.name);
       if (entry.isDirectory()) {
@@ -10316,7 +10437,7 @@ function loadDirectory(root) {
       const id = (0, import_node_path8.relative)(root, full).split(import_node_path8.sep).join("/");
       let size;
       try {
-        size = (0, import_node_fs7.statSync)(full).size;
+        size = (0, import_node_fs8.statSync)(full).size;
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -10327,7 +10448,7 @@ function loadDirectory(root) {
       }
       let buffer;
       try {
-        buffer = (0, import_node_fs7.readFileSync)(full);
+        buffer = (0, import_node_fs8.readFileSync)(full);
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -10436,19 +10557,23 @@ async function judge2(args, write3) {
 `);
     return 1;
   }
-  const run2 = await judge(batch.items, {
-    setName,
-    set,
-    mode: policy.mode,
-    adapter,
-    // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong budget:
-    // it exists to keep a tool call responsive. Give an item room to be a long document.
-    timeoutMs: Math.max(policy.timeoutMs, 3e4),
-    ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
-    onProgress: (done, total) => {
-      if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+  const run2 = await judge(
+    batch.items.map((entry) => ({ id: entry.id, state: itemState.build(entry.item) })),
+    {
+      setName,
+      set,
+      mode: policy.mode,
+      adapter,
+      // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong
+      // budget: it exists to keep a tool call responsive. Give an item room to be a long
+      // document.
+      timeoutMs: Math.max(policy.timeoutMs, 3e4),
+      ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
+      onProgress: (done, total) => {
+        if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+      }
     }
-  });
+  );
   if (!args.json) process.stderr.write("\r\x1B[K");
   const logPath = args.out ?? (0, import_node_path9.join)(dataDir(), JUDGMENTS_FILE);
   const manifestPath = args.manifest ?? (0, import_node_path9.join)(dataDir(), "escalations.json");
@@ -10468,7 +10593,7 @@ async function judge2(args, write3) {
   return run2.judged === 0 ? 1 : 0;
 }
 function writeLog(path, run2, policy) {
-  (0, import_node_fs8.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   for (const item of run2.items) {
     append((0, import_node_path9.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
@@ -10505,8 +10630,8 @@ function withoutState(escalation) {
 }
 function writeManifest(path, run2) {
   if (run2.manifest.items.length === 0) return false;
-  (0, import_node_fs8.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
-  (0, import_node_fs8.writeFileSync)(
+  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs9.writeFileSync)(
     path,
     `${JSON.stringify({ set: run2.set, backend: run2.backend, ...run2.manifest }, null, 2)}
 `,
@@ -10530,6 +10655,437 @@ function adapterFor3(backend) {
   return `Unknown backend "${backend}".`;
 }
 async function startIfNeeded2(adapter) {
+  const start = adapter.start;
+  if (typeof start !== "function") return void 0;
+  try {
+    await start.call(adapter);
+    return void 0;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+// src/measure.ts
+async function measure(fixtures, options) {
+  const stated = fixtures.map((f) => ({ id: f.id, state: stateFor(f) }));
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const judgeRun = await judge(stated, {
+    setName: options.setName,
+    set: options.set,
+    mode: options.mode,
+    adapter: options.adapter,
+    timeoutMs: options.timeoutMs,
+    ...options.concurrency !== void 0 ? { concurrency: options.concurrency } : {},
+    onProgress: (done2, total) => options.onProgress?.("judge", done2, total)
+  });
+  const judgeAnswers = new Map(judgeRun.items.map((i) => [i.id, i.answers]));
+  const escalatedIds = new Set(judgeRun.manifest.items.map((i) => i.item));
+  const signalsById = new Map(judgeRun.manifest.items.map((i) => [i.item, i.signals]));
+  const questions = questionsOf(options.set);
+  const reasoning = /* @__PURE__ */ new Map();
+  const failures = [];
+  let done = 0;
+  for (const item of judgeRun.items) {
+    try {
+      reasoning.set(
+        item.id,
+        await options.reasoning.answer({
+          item: item.id,
+          state: item.state,
+          questions,
+          ...signalsById.has(item.id) ? { signals: signalsById.get(item.id) } : {}
+        })
+      );
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
+    }
+    options.onProgress?.("reasoning", ++done, judgeRun.items.length);
+  }
+  const reasoningAnswers = new Map([...reasoning].map(([id, r]) => [id, r.answers]));
+  const cascadeAnswers = new Map(judgeAnswers);
+  for (const id of escalatedIds) {
+    const answers = reasoningAnswers.get(id);
+    if (answers !== void 0) cascadeAnswers.set(id, answers);
+  }
+  const reasoningTokens = sumTokens([...reasoning.values()]);
+  const cascadeTokens = sumTokens([...escalatedIds].flatMap((id) => {
+    const r = reasoning.get(id);
+    return r === void 0 ? [] : [r];
+  }));
+  const passes = [
+    {
+      name: "judge",
+      by: options.adapter.name,
+      ...accuracyOf(byId, judgeAnswers),
+      ...judgeRun.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens } : {},
+      items: judgeRun.judged
+    },
+    {
+      name: "reasoning",
+      by: options.reasoning.name,
+      ...accuracyOf(byId, reasoningAnswers),
+      ...reasoningTokens,
+      items: reasoning.size
+    },
+    {
+      name: "cascade",
+      by: `${options.adapter.name} + ${options.reasoning.name}`,
+      ...accuracyOf(byId, cascadeAnswers),
+      // Every item pays the judge; only the escalated ones pay the reasoning model. That
+      // sum is the whole cost argument, so it is added rather than estimated.
+      ...addTokens(
+        judgeRun.inputTokens === void 0 ? {} : { inputTokens: judgeRun.inputTokens },
+        cascadeTokens
+      ),
+      items: judgeRun.judged
+    }
+  ];
+  return {
+    set: options.setName,
+    fixtures: fixtures.length,
+    passes,
+    escalated: judgeRun.manifest.items.length,
+    judged: judgeRun.judged,
+    reasoningFailures: failures.length,
+    ...failures[0] !== void 0 ? { firstReasoningError: failures[0] } : {}
+  };
+}
+function accuracyOf(fixtures, answers) {
+  let n = 0;
+  let correct = 0;
+  let unanswered = 0;
+  for (const [id, fixture] of fixtures) {
+    const given = answers.get(id);
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = given?.[question];
+      if (p === void 0) {
+        unanswered += 1;
+        continue;
+      }
+      n += 1;
+      if (p >= 0.5 === expected) correct += 1;
+    }
+  }
+  return { n, correct, accuracy: n === 0 ? Number.NaN : correct / n, unanswered };
+}
+function sumTokens(responses) {
+  const add = (pick) => responses.reduce((sum, r) => {
+    const value = pick(r);
+    return value === void 0 ? sum : (sum ?? 0) + value;
+  }, void 0);
+  const inputTokens = add((r) => r.inputTokens);
+  const outputTokens = add((r) => r.outputTokens);
+  return {
+    ...inputTokens !== void 0 ? { inputTokens } : {},
+    ...outputTokens !== void 0 ? { outputTokens } : {}
+  };
+}
+function addTokens(left, right) {
+  const both = (a, b) => a === void 0 && b === void 0 ? void 0 : (a ?? 0) + (b ?? 0);
+  const inputTokens = both(left.inputTokens, right.inputTokens);
+  const outputTokens = both(left.outputTokens, right.outputTokens);
+  return {
+    ...inputTokens !== void 0 ? { inputTokens } : {},
+    ...outputTokens !== void 0 ? { outputTokens } : {}
+  };
+}
+function formatMeasurement(m) {
+  const lines = [];
+  const pct = (n) => Number.isNaN(n) ? "     \u2014" : `${(n * 100).toFixed(1).padStart(5)}%`;
+  const num = (n) => n === void 0 ? "\u2014" : n.toLocaleString("en-US");
+  const per = (total, items) => total === void 0 || items === 0 ? "\u2014" : Math.round(total / items).toLocaleString("en-US");
+  lines.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
+  lines.push("| pass | by | accuracy | n | input | output | in/item |");
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const p of m.passes) {
+    lines.push(
+      `| ${p.name} | ${p.by} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
+    );
+  }
+  lines.push("");
+  lines.push(
+    `Escalated ${m.escalated} of ${m.judged} judged (${m.judged === 0 ? "\u2014" : `${(m.escalated / m.judged * 100).toFixed(1)}%`}) \u2014 the items the cascade row paid the reasoning model for.`
+  );
+  const judgePass = m.passes.find((p) => p.name === "judge");
+  const cascade = m.passes.find((p) => p.name === "cascade");
+  const full = m.passes.find((p) => p.name === "reasoning");
+  if (cascade !== void 0 && full !== void 0 && cascade.inputTokens !== void 0 && full.inputTokens !== void 0 && full.inputTokens > 0) {
+    const ratio = cascade.inputTokens / full.inputTokens;
+    const delta = cascade.accuracy - full.accuracy;
+    const points = `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} points of accuracy against the labels`;
+    lines.push("");
+    if (ratio <= 1) {
+      lines.push(`The cascade used ${((1 - ratio) * 100).toFixed(0)}% fewer input tokens than the reasoning pass, at ${points}.`);
+    } else {
+      lines.push(
+        `The cascade cost ${((ratio - 1) * 100).toFixed(0)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
+        `At ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation it is not worth running: either the thresholds are too wide or the questions are not separating the batch.`
+      );
+    }
+    if (judgePass !== void 0 && !Number.isNaN(judgePass.accuracy)) {
+      const worth = cascade.accuracy - judgePass.accuracy;
+      lines.push(
+        worth === 0 ? `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations changed no verdict.` : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`
+      );
+    }
+  }
+  if (m.reasoningFailures > 0) {
+    lines.push(
+      "",
+      `${m.reasoningFailures} reasoning call${m.reasoningFailures === 1 ? "" : "s"} failed and are excluded from the rows above. First error: ${m.firstReasoningError ?? "(none recorded)"}`
+    );
+  }
+  const unanswered = m.passes.reduce((sum, p) => sum + p.unanswered, 0);
+  if (unanswered > 0) {
+    lines.push(`${unanswered} labelled rows went unanswered and are excluded rather than counted wrong.`);
+  }
+  lines.push(
+    "",
+    "Accuracy is agreement with the fixture labels at a 0.5 boundary, not accuracy against",
+    "ground truth. The labels are hand-written judgments about what should be flagged, which",
+    "is the right thing to measure when you also set the thresholds \u2014 but it is what this is."
+  );
+  return `${lines.join("\n")}
+`;
+}
+
+// src/io/reasoning.ts
+var import_node_child_process = require("node:child_process");
+var REASONING_CMD_ENV = "BOUNCER_REASONING_CMD";
+var DEFAULT_TIMEOUT_MS2 = 18e4;
+var CommandReasoning = class {
+  name;
+  command;
+  timeoutMs;
+  constructor(command, timeoutMs = DEFAULT_TIMEOUT_MS2) {
+    this.command = command;
+    this.name = command;
+    this.timeoutMs = timeoutMs;
+  }
+  async answer(request) {
+    const payload = JSON.stringify({
+      item: request.item,
+      state: request.state,
+      questions: request.questions,
+      ...request.signals !== void 0 ? { signals: request.signals } : {}
+    });
+    const { stdout } = await this.spawn(payload);
+    return parseResponse2(stdout, request.item);
+  }
+  /**
+   * Runs the command through a shell, because the whole point is that the user writes the
+   * invocation. `claude -p "$(cat)" --output-format json | jq ...` is the shape this is
+   * for, and it is not expressible as an argv array.
+   *
+   * The command comes from the user's own flag or environment, exactly like `$EDITOR`. It
+   * is not attacker-influenced input, and bouncer runs nothing else anywhere.
+   */
+  spawn(input) {
+    return new Promise((resolve4, reject) => {
+      const child = (0, import_node_child_process.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        child.kill("SIGKILL");
+        reject(new Error(`the reasoning command did not answer within ${this.timeoutMs / 1e3}s`));
+      }, this.timeoutMs);
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`the reasoning command exited ${code}: ${stderr.trim().slice(0, 500)}`));
+          return;
+        }
+        resolve4({ stdout });
+      });
+      child.stdin.on("error", () => {
+      });
+      child.stdin.end(input, "utf8");
+    });
+  }
+};
+function parseResponse2(stdout, item) {
+  const json = lastJsonObject(stdout);
+  if (json === void 0) {
+    throw new Error(`the reasoning command printed no JSON object for "${item}"`);
+  }
+  const answersRaw = json["answers"];
+  if (typeof answersRaw !== "object" || answersRaw === null || Array.isArray(answersRaw)) {
+    throw new Error(`the reasoning command's output for "${item}" has no "answers" mapping`);
+  }
+  const answers = {};
+  for (const [name, value] of Object.entries(answersRaw)) {
+    if (typeof value === "boolean") {
+      answers[name] = value ? 1 : 0;
+    } else if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1) {
+      answers[name] = value;
+    } else {
+      throw new Error(
+        `the reasoning command answered "${name}" for "${item}" with ${JSON.stringify(value)}; expected true, false, or a number between 0 and 1`
+      );
+    }
+  }
+  return {
+    answers,
+    ...countOf(json["input_tokens"]) !== void 0 ? { inputTokens: countOf(json["input_tokens"]) } : {},
+    ...countOf(json["output_tokens"]) !== void 0 ? { outputTokens: countOf(json["output_tokens"]) } : {}
+  };
+}
+function countOf(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : void 0;
+}
+function lastJsonObject(stdout) {
+  for (let start = stdout.lastIndexOf("{"); start >= 0; start = stdout.lastIndexOf("{", start - 1)) {
+    const end = stdout.lastIndexOf("}");
+    if (end < start) continue;
+    try {
+      const parsed = JSON.parse(stdout.slice(start, end + 1));
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
+
+// src/commands/measure.ts
+var VALUE_FLAGS2 = ["set", "backend", "reasoning", "concurrency", "fixtures"];
+function parseArgs3(argv) {
+  const values = /* @__PURE__ */ new Map();
+  let positional;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.startsWith("--")) {
+      const name = token.slice(2);
+      if (VALUE_FLAGS2.includes(name)) {
+        const value = argv[i + 1];
+        if (value !== void 0) values.set(name, value);
+        i += 1;
+      }
+      continue;
+    }
+    positional ??= token;
+  }
+  const fixtures = values.get("fixtures") ?? positional;
+  const concurrency = Number(values.get("concurrency"));
+  return {
+    ...fixtures !== void 0 ? { fixtures } : {},
+    ...values.has("set") ? { set: values.get("set") } : {},
+    ...values.has("backend") ? { backend: values.get("backend") } : {},
+    ...values.has("reasoning") ? { reasoning: values.get("reasoning") } : {},
+    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
+    json: argv.includes("--json")
+  };
+}
+async function measure2(args, write3) {
+  if (args.fixtures === void 0) {
+    write3('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"]\n');
+    return 1;
+  }
+  const command = args.reasoning ?? process.env[REASONING_CMD_ENV];
+  if (command === void 0 || command.trim().length === 0) {
+    write3(
+      `Cannot measure without a reasoning model to compare against.
+  Pass --reasoning "<command>" or set ${REASONING_CMD_ENV}.
+  The command reads one JSON object on stdin and writes one on stdout;
+  the README has a worked example.
+`
+    );
+    return 1;
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const resolved = resolvePolicy(process.cwd(), root);
+  if (resolved.policy === void 0) {
+    write3(`Cannot measure: ${resolved.source} did not load.
+`);
+    for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
+`);
+    return 1;
+  }
+  const setName = args.set ?? GATE_SET;
+  const set = resolved.policy.sets[setName];
+  if (set === void 0) {
+    write3(`${resolved.source} defines no set named "${setName}". It has: ${Object.keys(resolved.policy.sets).join(", ")}.
+`);
+    return 1;
+  }
+  let fixtures;
+  try {
+    fixtures = loadFixtures(args.fixtures);
+  } catch (err) {
+    write3(`Cannot read fixtures at ${args.fixtures}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  if (fixtures.length === 0) {
+    write3(`${args.fixtures} has no fixtures, so there is nothing to measure.
+`);
+    return 1;
+  }
+  const backend = args.backend ?? resolved.policy.backend;
+  const adapter = adapterFor4(backend);
+  if (typeof adapter === "string") {
+    write3(`${adapter}
+`);
+    return 1;
+  }
+  const problem = await startIfNeeded3(adapter);
+  if (problem !== void 0) {
+    write3(`Cannot measure with ${adapter.name}: ${problem}
+`);
+    return 1;
+  }
+  const measurement = await measure(fixtures, {
+    setName,
+    set,
+    mode: resolved.policy.mode,
+    adapter,
+    reasoning: new CommandReasoning(command),
+    timeoutMs: Math.max(resolved.policy.timeoutMs, 3e4),
+    ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
+    onProgress: (phase, done, total) => {
+      if (!args.json) process.stderr.write(`\r  ${phase}: ${done}/${total}          `);
+    }
+  });
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  if (args.json === true) {
+    write3(`${JSON.stringify(measurement, null, 2)}
+`);
+    return 0;
+  }
+  write3(formatMeasurement(measurement));
+  return measurement.reasoningFailures === measurement.fixtures ? 1 : 0;
+}
+function adapterFor4(backend) {
+  if (backend === "mock") return new MockAdapter();
+  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      return "Cannot measure with jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+  return `Unknown backend "${backend}".`;
+}
+async function startIfNeeded3(adapter) {
   const start = adapter.start;
   if (typeof start !== "function") return void 0;
   try {
@@ -10673,7 +11229,7 @@ function isRecord7(value) {
 }
 
 // src/io/skills.ts
-var import_node_fs9 = require("node:fs");
+var import_node_fs10 = require("node:fs");
 var import_node_os2 = require("node:os");
 var import_node_path10 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
@@ -10684,7 +11240,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs9.existsSync)(path)) return;
+    if (!(0, import_node_fs10.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -10780,7 +11336,7 @@ function installedPluginSkills(file) {
 }
 function desktopManifests(home) {
   const root = (0, import_node_path10.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs9.existsSync)(root)) return [];
+  if (!(0, import_node_fs10.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
@@ -10788,7 +11344,7 @@ function desktopManifests(home) {
       if (++visited > MAX_SESSION_DIRS) return found;
       const session = (0, import_node_path10.join)(root, outer, inner);
       const rpm = (0, import_node_path10.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs9.existsSync)(rpm)) {
+      if ((0, import_node_fs10.existsSync)(rpm)) {
         found.push({
           path: rpm,
           gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path10.join)(session, "rpm", `plugin_${name}`, "skills"))
@@ -10796,7 +11352,7 @@ function desktopManifests(home) {
       }
       for (const bucket of nestedBuckets((0, import_node_path10.join)(session, "skills-plugin"))) {
         const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
-        if ((0, import_node_fs9.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+        if ((0, import_node_fs10.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
@@ -10816,14 +11372,14 @@ function nestedBuckets(dir) {
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs9.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs9.readFileSync)(file, "utf8");
+    return (0, import_node_fs10.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -10836,7 +11392,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs9.statSync)(source);
+      const stat = (0, import_node_fs10.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -10851,7 +11407,7 @@ function projectSkillsDir(cwd) {
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs9.existsSync)((0, import_node_path10.join)(current, ".git"))) return current;
+    if ((0, import_node_fs10.existsSync)((0, import_node_path10.join)(current, ".git"))) return current;
     const parent = (0, import_node_path10.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
@@ -10860,7 +11416,7 @@ function findRepoRoot2(from) {
 }
 
 // src/commands/skills.ts
-function parseArgs3(argv) {
+function parseArgs4(argv) {
   return { json: argv.includes("--json"), verbose: argv.includes("--verbose") || argv.includes("-v") };
 }
 function skills(options, cwd = process.cwd()) {
@@ -10973,8 +11529,10 @@ async function main(argv) {
       return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
     case "judge":
       return judge2(parseArgs2(argv.slice(3)), (text) => process.stdout.write(text));
+    case "measure":
+      return measure2(parseArgs3(argv.slice(3)), (text) => process.stdout.write(text));
     case "skills":
-      process.stdout.write(skills(parseArgs3(argv.slice(3))));
+      process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
       process.stdout.write("0.1.0\n");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
 import { AdapterError, type Adapter, type DecideRequest, type DecideResponse } from "../src/adapters/types.js";
 import { formatRun, judge, tally } from "../src/judge.js";
+import { itemState } from "../src/engine/item.js";
 import { loadPolicy } from "../src/engine/policy.js";
 import type { PolicySet } from "../src/engine/types.js";
 
@@ -36,7 +37,8 @@ const POLICY = (() => {
 
 const SET = POLICY.sets["content"] as PolicySet;
 
-const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, item: { text: `draft ${i}` } }));
+const stated = (id: string, item: Record<string, unknown>) => ({ id, state: itemState.build(item) });
+const items = (n: number) => Array.from({ length: n }, (_, i) => stated(`i${i}`, { text: `draft ${i}` }));
 
 const run = (answers: Record<string, number>, count = 1, adapter?: Adapter) =>
   judge(items(count), {
@@ -112,7 +114,7 @@ describe("the batch judge", () => {
   });
 
   it("redacts the state, so a credential in the batch does not leave with it", async () => {
-    const result = await judge([{ id: "x", item: { text: "token sk-abcdefghijklmnopqrstuvwxyz012345" } }], {
+    const result = await judge([stated("x", { text: "token sk-abcdefghijklmnopqrstuvwxyz012345" })], {
       setName: "content",
       set: SET,
       mode: POLICY.mode,
