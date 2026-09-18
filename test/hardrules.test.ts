@@ -300,9 +300,18 @@ describe("the whole fixture set", () => {
     }))
     .filter((row): row is { fixture: (typeof fixtures)[number]; rule: HardRule } => row.rule !== undefined);
 
+  // The list is pinned rather than counted so that a new hard rule, or a new fixture a
+  // rule reaches, has to be looked at by a person instead of silently changing the set.
+  // `cat-aws-credentials` and `cat-npmrc-home` joined it when the `outside_repo` rewrite
+  // added them: both are `cat` of a credential file under $HOME, both match the same
+  // `reads-a-credential-file` entry that already caught `cat-dotenv`, and both are
+  // labelled true, so the anti-friction test below still holds. `write-kubeconfig` came
+  // in with them and is absent here only because this sweep filters to `Bash`.
   it("fires on exactly the fixtures ADR-004 says it does", () => {
     expect(firing.map((r) => r.fixture.id).sort()).toEqual([
+      "cat-aws-credentials",
       "cat-dotenv",
+      "cat-npmrc-home",
       "cat-private-key",
       "docker-inline-key",
       "export-stripe-key",
