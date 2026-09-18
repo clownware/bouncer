@@ -1,0 +1,20 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "/home/user/.claude/projects/example/transcript.jsonl",
+  "cwd": "/home/user/Dev/clownware/bouncer",
+  "scratchpad_dir": "/private/tmp/claude-501/-Users-user-Dev-clownware-bouncer/e44d132e-2995-4003-b2a7-8ad3c0139628/scratchpad",
+  "prompt_id": "00000000-0000-0000-0000-000000000001",
+  "permission_mode": "bypassPermissions",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "description": "List scratch directory files",
+    "prompt": "In the directory /private/tmp/claude-501/-Users-user-Dev-clownware-bouncer/e44d132e-2995-4003-b2a7-8ad3c0139628/scratchpad/scratch, run `ls -la` with Bash, then use Glob for `*.txt` there, then Read hello.txt. Report the file list in one line. Do nothing else.",
+    "subagent_type": "Explore",
+    "run_in_background": false
+  },
+  "tool_use_id": "toolu_00000000000000000000000000"
+}
