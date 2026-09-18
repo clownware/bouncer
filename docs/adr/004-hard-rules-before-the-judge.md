@@ -1,8 +1,8 @@
 # ADR-004: Hard rules before the judge
 
-- **Status:** proposed
+- **Status:** proposed — blocked on one capture, see "What is verified, and what is not"
 - **Date:** 2026-09-18
-- **Context for:** v0.1
+- **Context for:** v0.1, and `seatbelt` for v0.2
 
 ## Decision
 
@@ -17,6 +17,11 @@ the command is obviously not. Between them sits everything genuinely ambiguous, 
 what the judge is for.
 
 **The judge decides the ambiguous middle. The edges are code.**
+
+And a fourth mode, `seatbelt`, in which a hard rule denies, a judgment only denies if it
+clears a `deny` threshold the user set, and nothing else is emitted at all. It is the mode
+for users running `--dangerously-skip-permissions`, for whom `ask` is not a verdict that
+means anything.
 
 ## Why
 
@@ -123,13 +128,99 @@ The four run-7 misses, plus five the judge already got right and now cannot get 
   question's criteria; adding a deterministic rule underneath it in the same release would
   make run 8 unreadable.
 
+## The population this is actually for
+
+The primary user runs `--dangerously-skip-permissions`. That changes what the product is.
+
+For a user who gets permission prompts, Bouncer's value is *fewer* prompts: the fast path
+removes the obvious ones, and `ask` adds one back where the policy says so. For a user in
+bypass the baseline is already zero prompts, so `ask` is meaningless — the prompt it forces
+is the one they turned off — and the only verdict that does anything is `deny`. What they
+want is not a quieter permission system. It is a net: nothing in the way, until something
+that should never happen is about to.
+
+CLAUDE.md's rule that **adding friction is the failure mode** holds for both, and means a
+different measurement for each:
+
+| population | baseline | what Bouncer must deliver | failure mode |
+|---|---|---|---|
+| prompted (`default`, `acceptEdits`) | prompts on some calls | strictly fewer prompts than not installing it | prompting more often than the baseline |
+| bypass (`--dangerously-skip-permissions`) | no prompts, no net | zero prompts **and** a net | any interruption at all, since the baseline has none |
+
+The bypass column is the stricter of the two. It is also the one hard rules are built for:
+a deterministic rule is the only kind of verdict worth blocking a bypass user's tool call
+on, because it is the only kind whose false-positive rate is a property of the rule rather
+than of a model's answer on the day.
+
+## What is verified, and what is not
+
+**PreToolUse hooks fire under `--dangerously-skip-permissions`. Confirmed from captured
+payloads.** Six of the seven `PreToolUse` fixtures in `test/fixtures/payloads/` carry
+`"permission_mode": "bypassPermissions"` — `pretooluse-bash.json`, `-edit.json`,
+`-write.json`, `-notebookedit.json`, `-read.json`, `-agent.json`. Those files exist because
+a real hook received real stdin while the session was running under the flag, which is the
+fact itself rather than a report of it. ADR-001 records the same thing from the same run.
+
+**Whether a hook `deny` is honoured under that flag is not verified, and nothing in this
+repository can verify it.** `scripts/capture-hook.mjs` is inert by construction — it always
+exits 0 with empty stdout — so no payload it recorded ever exercised a decision. This is
+the same gap that leaves `permissionDecision: "defer"` listed as unverified in ADR-001, and
+the test suite does not close it either: every deny test asserts what Bouncer puts on
+stdout, not what Claude Code does with it.
+
+`seatbelt` rests entirely on that answer. A mode whose only verdict is `deny`, in a
+permission mode where `deny` is ignored, is a mode that does nothing at all. So
+`scripts/deny-probe-hook.mjs` and section 5 of `scripts/CAPTURE.md` exist: a hook that
+denies exactly one sentinel `Bash` command and passes everything else, run under the flag,
+answers it in about two minutes. **This ADR is not accepted until that result is recorded
+here with its date.** Reading it off the documentation instead would be the precise mistake
+CLAUDE.md warns about: the fixtures are recorded reality, the docs are a description of it.
+
+## `seatbelt`: a fourth mode
+
+(The modes are `observe`, `guard` and `full`; ADR-003 renamed the PRD's `enforce` to
+`guard` when it split off `full`. `seatbelt` is a fourth, not a replacement.)
+
+| Mode | `allow` | hard-rule `ask` | judged `ask` | `deny` | For |
+|---|---|---|---|---|---|
+| `observe` *(default)* | — | — | — | — | everyone, first |
+| `guard` | — | ask | ask | deny | prompted users |
+| `full` | allow | ask | ask | deny | prompted users, once calibrated |
+| `seatbelt` | — | **deny** | — | deny | bypass users |
+
+Two things are happening in that row, and the asymmetry is the whole design:
+
+- **A hard-rule `ask` is promoted to `deny`.** The entries ship as `ask` because in `guard`
+  a prompt is the proportionate response and ADR-003 wants no `deny` on day one. In
+  `seatbelt` a prompt is not available, and a deterministic rule is exactly the kind of
+  verdict worth blocking on.
+- **Every judgment-derived `ask` is dropped to nothing.** A probability of 0.63 is not a
+  reason to block a tool call in a session the user configured to never stop. The judge
+  still runs, still logs, and still feeds calibration; it simply does not get to interrupt.
+
+A judgment does block when it clears a `deny` rule the user enabled in `gate.rules` — those
+ship commented out, so `seatbelt` out of the box is hard rules and nothing else. That is a
+coherent default rather than a degenerate one: a net under the handful of things that are
+never okay, and silence everywhere else.
+
+In the engine this is one row in `emitFor`, which is the argument that the mode is the
+right shape for the idea.
+
 ## Consequences
 
 - **Hard rules skip the judge, not the mode.** In `observe` a matched hard rule emits
   nothing, exactly as every other verdict does. ADR-003's guarantee — that Bouncer as
   shipped is indistinguishable from not installing it — is unchanged, and the entries only
-  become visible when the user moves to `guard`. Everything ships as `ask`; no hard rule
-  ships as `deny`, for ADR-003's reasons.
+  become visible when the user moves off it. Every entry ships as `ask`; the promotion to
+  `deny` is `seatbelt`'s doing, not the entry's, so no policy file has to be rewritten to
+  change populations.
+- **`seatbelt` is the first mode in which Bouncer can block something.** ADR-003 argued
+  against `deny` on the grounds that a false positive hands a reason back to the model,
+  which then quietly does something else. That argument is about a prompted user, whose
+  alternative was one keystroke. For a bypass user the alternative is that the command
+  simply runs: a false-positive `deny` costs them a retry, and a false negative costs them
+  the thing the rule exists to prevent. The trade is different enough to reverse, and it
+  reverses only for verdicts that came from a rule rather than a probability.
 - **Hard rules outrank the fast path.** They are evaluated first. The fast path is an
   allowlist whose entries must be safe for every argument, and a deterministic backstop
   that runs after it could not backstop anything.
