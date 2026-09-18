@@ -133,6 +133,14 @@ against each other's criteria, so the noul was being asked whether the user had 
 something down for this while being shown nothing the user had written down. A question
 that reasons about the registry has to be able to see it. Cost is about 200 tokens.
 
+**What that comparison establishes, and what it does not.** Both sides used the probe's own
+wording of `needs_skill`, not the text in decision 2, and only the state varied between
+them. So the *delta* is a controlled result and carries the decision. The absolute 0.61 is
+not comparable to the 0.70 threshold in the policy block below, because it answers a
+differently worded question — an earlier draft of this ADR read it as the router abstaining
+on a clear positive, which it is not evidence of. Comparing a number across a changed
+question is the mistake that invalidated the run 1 versus run 2 comparison.
+
 ```json
 {"request":"<redacted prompt, capped>","project":"bouncer","git_branch":"main",
  "skills_available":["brand-review","code-review","…"],
@@ -156,40 +164,65 @@ context, and the prompt is the user's own text.
 
 ### 4. Discovery completeness is a correctness requirement, not an optimisation
 
-`name` and `description` from the YAML frontmatter of every `SKILL.md` under the user's
-skills directory, the project's, and installed plugins'. `skills: auto` in the PRD, and it
-stays the default; an explicit list is supported for users who want to route over a
-subset.
+The registry is the namespaced name and one-line description of every skill the model can
+actually load. `skills: auto` in the PRD, and it stays the default; an explicit list is
+supported for users who want to route over a subset. Where those come from is the survey
+below, and the short answer is manifests rather than a walk of every `SKILL.md` on disk.
 
 **A `choice` question cannot abstain**, and that turns an incomplete registry from a gap
 into a confident wrong answer. When the right option is absent the distribution
 renormalises over what was offered, and the best of a bad set comes back looking certain.
-Measured 2026-09-18: a brand-voice copy review returned `ux-optimization` at **0.65**
-because `brand-review` was not in the registry at all — though it is an installed skill in
-the session that ran the probe. That is exactly the expensive event this design exists to
-prevent, and a short registry produces it *by construction* rather than by bad luck. No
-threshold rescues it: the margin gate sees a clean winner and fires.
+Measured 2026-09-18: a brand-voice copy review returned `ux-optimization` at **0.65
+against 0.16 for the runner-up** because `brand-review` was not in the registry at all —
+though it is an installed skill in the session that ran the probe. Read that margin again:
+0.49 is a wide, clean win, and margin is this design's own uncertainty signal. Every guard
+in decision 2 passed, on a wrong answer. A short registry produces the expensive event *by
+construction* rather than by bad luck, and no threshold anywhere rescues it. That is the
+strongest single argument in this document that discovery is a correctness requirement and
+not a coverage nicety.
 
-So three things are settled before any router code:
+#### Where the skills actually are
 
-1. **Where app-bundled plugin skills actually live.** Scanning the two documented
-   locations missed `brand-review` entirely, so some skills Claude Code loads are
-   somewhere this ADR's discovery never looks. Find it, or the registry is short on every
-   run. Read one rather than assume.
-2. **Dedupe on name.** That same scan found 108 `SKILL.md` files collapsing to 42 distinct
-   names, 29 of them duplicated across a marketplace clone and versioned cache copies.
-   Duplicate options split probability mass between identical entries and depress the
-   margin, which reads as uncertainty rather than as a bug.
-3. **Filter by `enabledPlugins`.** A skill from a marketplace entry the user has not
-   enabled cannot be loaded, so offering it as an option can only produce a suggestion
-   nobody can act on.
+Surveyed on one macOS machine, 2026-09-18. The two documented locations hold 42 skills.
+The desktop app provisions **another 60-odd somewhere else**, and `brand-review` is one of
+them: roughly sixty percent of the registry was missing. (The survey reported that second
+figure as both 62 and 63; it is written loosely here on purpose, and pinning it exactly is
+part of building discovery rather than a detail to inherit.)
 
-Only after that is discovery an optimisation problem. It is ~100 file reads on a hot path
-with an 80 ms budget (ADR-002), so it is cached in the session state file the breaker
-already writes, keyed on the skills directories' mtimes. **Still needs `npm run bench`**
-with a realistic registry: if cold discovery costs more than a few milliseconds the cache
-is load-bearing rather than an optimisation, and ADR-002's finding that caching the parsed
-policy bought nothing does not transfer — that was one file and this is a hundred.
+| source | what it holds | how to read it |
+|---|---|---|
+| `~/.claude/skills/` | user skills | directory walk |
+| `~/.claude/plugins/installed_plugins.json` | CLI-installed plugins, one `installPath` per version | authoritative list, filtered by `enabledPlugins` in settings |
+| `~/Library/Application Support/Claude/local-agent-mode-sessions/<id>/<id>/rpm/manifest.json` | desktop-app plugins: id, name, marketplace | walk `rpm/plugin_<id>/skills/` per entry |
+| the same tree, `skills-plugin/<id>/<id>/manifest.json` | Anthropic-managed skills, names and descriptions already listed | no file walk needed |
+| `<project>/.claude/skills/` | project skills | directory walk |
+
+Four things follow.
+
+1. **Read manifests, not directories.** The 108-file count came from walking a marketplace
+   clone and every cached version. `installed_plugins.json` names the one live path per
+   plugin, so reading manifests removes the duplicate problem at its source rather than
+   patching it afterwards with name collapsing. Duplicate options would otherwise split
+   probability mass between identical entries and depress the margin, which reads as
+   uncertainty rather than as the bug it is.
+2. **Option names must be the namespaced names the model sees**, `marketing:brand-review`
+   and `anthropic-skills:docs`, not bare names. A suggestion naming `brand-review` names
+   something the model has never heard of.
+3. **The desktop layout is undocumented, macOS-specific, and not passed on argv or env.**
+   The path has been stable since February and the manifests were refreshed this week, so
+   it is usable, but it is a private layout this repo is reading over the app's shoulder.
+   That buys a test fixture of those manifest files and a documented degradation: a
+   CLI-only user simply gets a smaller registry, and the router is quieter rather than
+   wrong. Two unknowns remain — whether `installationPreference: "available"` means enabled
+   or merely installable, and where the Windows equivalent lives.
+4. **Cache on manifest mtimes, not directory mtimes.** Three manifest files cover roughly
+   170 skill files, which is what makes ADR-002's caching argument transfer: watching three
+   paths is cheap and precise, where walking a hundred on every prompt is neither. **Still
+   needs `npm run bench`** to confirm the cold path fits the 80 ms budget.
+
+**The acceptance test is the one that would have failed this week:** a registry built on a
+machine with the desktop app running contains `marketing:brand-review`. Namespaced, from a
+manifest, deduped, and not from a directory walk.
 
 ### 5. Observe mode does **not** call the classifier
 
@@ -268,9 +301,11 @@ like a rule. The description is not repeated; it is already in context.
 2. **Never modify the prompt.** ADR-001 refused `updatedInput` on the gate: gating is a
    claim about risk, rewriting is a claim about intent. Rewriting a human's prompt is the
    same claim with a human on the other end of it.
-3. **Never name a skill that is not in the discovered registry.** Structural, since the
-   options are the registry, but it gets a test: a suggestion for a skill that does not
-   exist is a wasted tool call and a confused model.
+3. **Never name a skill the model cannot act on.** Two ways to break this: naming
+   something outside the discovered registry (structural, since the options *are* the
+   registry, but it still gets a test), and naming it in a form the model does not use.
+   The model sees `marketing:brand-review`; a suggestion for `brand-review` is a wasted
+   tool call and a confused model.
 4. **Never suggest more than one skill per prompt.** Two suggestions is a shortlist, a
    shortlist is a decision handed back to the model, and the model already had that
    decision.
@@ -398,18 +433,17 @@ router:
     margin:      { p: ">=0.20" }   # top minus runner-up
 ```
 
-**These three numbers are placeholders and one of them is already in doubt.** In the
-probe behind decision 3, a prompt that plainly wanted a brand-voice review scored 0.61 on
-`needs_skill` even *after* the names were added to the state — below the 0.70 written
-above, so the router as specified would have abstained on a clear positive. That is either
-a threshold set too high or a question worded too narrowly, and one prompt cannot tell
-which.
+**These three numbers are placeholders, and 0.70 stays where it is.** The temptation was
+to lower it: the probe behind decision 3 scored a plainly skill-requiring prompt at 0.61.
+But that probe asked its own wording of `needs_skill`, not the text above, so the number
+says nothing about this threshold — and moving a threshold to fit one observation of a
+different question is two mistakes at once.
 
-It is deliberately not being tuned here. Moving a threshold or rewording a question to fit
-a single observation is the mistake the gate's calibration discipline exists to prevent,
-and it invalidates any table already published against the old text. The offline harness
-over the fixture set is what settles all three numbers, which is another reason the order
-of work puts `suggest` last.
+The coverage floor in the DoD is the right instrument instead. If 0.70 is too high, the
+offline table shows it as coverage under 0.25 on fixtures labelled as needing a skill, and
+the threshold then moves on evidence with a number attached. That is the same bargain the
+gate made: enforcement is a deliberate act with a calibration run behind it. It is also
+another reason the order of work puts `suggest` last.
 
 ## Prior art: fast-jev-compaction
 
@@ -447,7 +481,10 @@ where this repo keeps reasoning.
 ## Order of work
 
 1. **Discovery** (decision 4). Every downstream number is wrong if the registry is short,
-   so nothing else is worth measuring first.
+   so nothing else is worth measuring first. The sources table is the acceptance criteria
+   and `marketing:brand-review` is the test. Carries two open questions to answer while
+   building it: what `installationPreference: "available"` means, and where the Windows
+   equivalent of the desktop tree lives. Neither blocks the macOS path.
 2. **The `needs_skill` state change** (decision 3) and the `UserPromptSubmit` stdout
    capture (decision 1).
 3. **Observe mode and the offline harness**, including the registry fingerprint
