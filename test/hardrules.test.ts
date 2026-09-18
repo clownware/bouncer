@@ -218,7 +218,7 @@ describe("emitFor with seatbelt", () => {
     // bypass there is no prompt to suppress, but the same policy is read by other modes,
     // and `undefined` is the only value that means "no decision".
     const policy = shippedPolicy("seatbelt");
-    const decision = evaluate(policy, { destructive: 0.5 });
+    const decision = evaluate(policy.gate, policy.mode, { destructive: 0.5 });
     expect(decision.verdict).toBe("ask");
     expect(decision.emit).toBeUndefined();
   });

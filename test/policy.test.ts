@@ -327,3 +327,104 @@ gate:
     expect(Object.keys(policy?.gate.probeQuestions ?? {})).toEqual(["outside_repo_v2", "home_dir_tool_cache"]);
   });
 });
+
+// docs/adr/009 decision 1: the file names several sets, and `gate:` at the top level is a
+// permanent alias rather than a deprecated spelling.
+describe("named policy sets", () => {
+  const CONTENT_SET = `
+version: 1
+policies:
+  content:
+    questions:
+      on_brand:
+        instructions: "The draft sounds like the brand's own voice."
+    rules:
+      - when: { on_brand: { p: "<0.40" } }
+        then: ask
+      - default: allow
+`;
+
+  it("reads a set under policies: that is not the gate", () => {
+    const { policy } = loadPolicy(CONTENT_SET);
+    expect(Object.keys(policy?.sets ?? {})).toEqual(["content"]);
+    expect(policy?.sets["content"]?.rules).toHaveLength(2);
+  });
+
+  it("gives a file with no gate set an empty gate rather than refusing to load", () => {
+    // The hook reads policy.gate on the hot path of every tool call. An empty `tools` list
+    // already means "not gated", so a judge-only policy is silent rather than undefined.
+    const { policy } = loadPolicy(CONTENT_SET);
+    expect(policy?.gate.tools).toEqual([]);
+    expect(policy?.gate.rules).toEqual([]);
+  });
+
+  it("does not warn about tools on a file that never claimed to have a gate", () => {
+    expect(warnings(CONTENT_SET).map((d) => d.path)).not.toContain("gate.tools");
+    expect(warnings(CONTENT_SET).map((d) => d.path)).not.toContain("policies.gate.tools");
+  });
+
+  it("reads a top-level gate: as policies.gate, with no deprecation warning", () => {
+    const { policy, diagnostics } = loadPolicy(MINIMAL);
+    // Equality, not identity: a policy read back from the on-disk cache (docs/adr/007) is
+    // two structurally equal objects rather than one, and nothing may depend on which.
+    expect(policy?.sets["gate"]).toEqual(policy?.gate);
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("reads the same gate whichever way the file spells it", () => {
+    const nested = `
+version: 1
+policies:
+  gate:
+    tools: [Bash]
+    questions:
+      destructive:
+        instructions: "It destroys something."
+    rules:
+      - when: { destructive: { p: ">=0.8" } }
+        then: ask
+      - default: allow
+`;
+    expect(loadPolicy(nested).policy?.gate).toEqual(loadPolicy(MINIMAL).policy?.gate);
+  });
+
+  it("refuses a file that spells the gate both ways", () => {
+    const both = `${MINIMAL}
+policies:
+  content:
+    questions:
+      on_brand:
+        instructions: "It sounds like us."
+    rules:
+      - default: allow
+`;
+    expect(errors(both)[0]?.message).toMatch(/both a top-level/);
+  });
+
+  it("refuses gate-only keys on another set, because there they would never fire", () => {
+    const source = CONTENT_SET.replace("  content:\n", "  content:\n    hard_rules: []\n");
+    const [error] = errors(source);
+    expect(error?.path).toBe("policies.content.hard_rules");
+    expect(error?.message).toMatch(/only the `gate` set/);
+  });
+
+  it.each(["tools", "fast_path"])("refuses gate-only key %s on another set", (key) => {
+    const source = CONTENT_SET.replace("  content:\n", `  content:\n    ${key}: [x]\n`);
+    expect(errors(source)[0]?.path).toBe(`policies.content.${key}`);
+  });
+
+  it("points a diagnostic at the path the user actually wrote", () => {
+    const source = CONTENT_SET.replace('{ on_brand: { p: "<0.40" } }', '{ nonexistent: { p: "<0.40" } }');
+    const [error] = errors(source);
+    expect(error?.path).toBe("policies.content.rules[0].when.nonexistent");
+    expect(error?.message).toMatch(/policies\.content\.questions/);
+  });
+
+  it("refuses an empty policies block", () => {
+    expect(errors("version: 1\npolicies: {}\n")[0]?.path).toBe("policies");
+  });
+
+  it("still names gate: in the message when the file has neither block", () => {
+    expect(errors("version: 1\n")[0]?.message).toMatch(/`gate:` block or a `policies:` block/);
+  });
+});

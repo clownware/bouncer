@@ -6,7 +6,7 @@
 
 import { matchHardRule } from "./hardrules.js";
 import { satisfies } from "./policy.js";
-import { ANY_QUESTION, type HardRule, type Mode, type Policy, type Verdict } from "./types.js";
+import { ANY_QUESTION, type HardRule, type Mode, type Policy, type PolicySet, type Verdict } from "./types.js";
 
 export type Reason =
   /** A rule matched. */
@@ -51,11 +51,11 @@ export function shortCircuit(
   input: { readonly tool: string; readonly command: string; readonly permissionMode?: string },
 ): Decision | undefined {
   if (input.permissionMode !== undefined && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+    return decide(policy.mode, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
   }
 
   if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy, "allow", { kind: "tool-not-gated", tool: input.tool });
+    return decide(policy.mode, "allow", { kind: "tool-not-gated", tool: input.tool });
   }
 
   const hard = matchHardRule(policy.gate.hardRules, input.command);
@@ -65,7 +65,7 @@ export function shortCircuit(
 
   const prefix = matchFastPath(policy.gate.fastPath, input.command);
   if (prefix !== undefined) {
-    return decide(policy, "allow", { kind: "fast-path", prefix });
+    return decide(policy.mode, "allow", { kind: "fast-path", prefix });
   }
 
   return undefined;
@@ -82,17 +82,23 @@ function decideHard(policy: Policy, rule: HardRule): Decision {
 }
 
 /**
- * Applies the rules to the classifier's answers.
+ * Applies a policy set's rules to the classifier's answers.
+ *
+ * Takes the set rather than the whole `Policy`, and the mode rather than reading it off
+ * one. Until v0.3 this reached through `policy.gate.rules`, which is exactly the
+ * hook-shaped reach-through ADR-008 said must not exist below the entrypoint — it was
+ * invisible while the gate was the only consumer, and `bouncer judge` is what made it
+ * visible. See docs/adr/009 on what the second consumer bent.
  *
  * `answers` maps question name to probability. A question the classifier did not answer
  * is skipped rather than treated as zero: a missing answer is an absence of evidence, and
  * reading it as "definitely not destructive" would be exactly the wrong default.
  */
-export function evaluate(policy: Policy, answers: Readonly<Record<string, number>>): Decision {
-  for (const rule of policy.gate.rules) {
+export function evaluate(set: PolicySet, mode: Mode, answers: Readonly<Record<string, number>>): Decision {
+  for (const rule of set.rules) {
     if (rule.condition === undefined) {
       // The terminal `default` rule.
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
     }
 
     const { question, comparison } = rule.condition;
@@ -100,7 +106,7 @@ export function evaluate(policy: Policy, answers: Readonly<Record<string, number
     if (question === ANY_QUESTION) {
       for (const [name, p] of Object.entries(answers)) {
         if (satisfies(p, comparison)) {
-          return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p });
+          return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p });
         }
       }
       continue;
@@ -109,7 +115,7 @@ export function evaluate(policy: Policy, answers: Readonly<Record<string, number
     const p = answers[question];
     if (p === undefined) continue;
     if (satisfies(p, comparison)) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
     }
   }
 
@@ -118,8 +124,8 @@ export function evaluate(policy: Policy, answers: Readonly<Record<string, number
   return { verdict: "allow", reason: { kind: "no-rule-matched" }, emit: undefined };
 }
 
-function decide(policy: Policy, verdict: Verdict, reason: Reason): Decision {
-  return { verdict, reason, emit: emitFor(policy.mode, verdict) };
+function decide(mode: Mode, verdict: Verdict, reason: Reason): Decision {
+  return { verdict, reason, emit: emitFor(mode, verdict) };
 }
 
 /**

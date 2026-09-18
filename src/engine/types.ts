@@ -118,6 +118,12 @@ export interface BuiltState {
  * Implementations must be pure: no I/O, so they stay testable and so a state can be
  * rebuilt from a log line years later. Facts that need the filesystem — whether a target
  * file exists — are stat'd by the caller and passed in.
+ *
+ * **A builder redacts, and a consumer may assume it did.** `redactedKinds` implied that
+ * contract without stating it, which was fine while `toolCallState` was the only
+ * implementation and is not fine now that there are two: `judge` writes states into a
+ * standalone manifest, and "who redacted this" cannot be a thing each consumer remembers.
+ * Every string a builder puts in `text` has been through `redact()`. See docs/adr/009.
  */
 export interface StateBuilder<TItem> {
   /** Recorded on the item so a replay knows what shape of state it is reading. */
@@ -184,6 +190,9 @@ export interface CalibrationPolicy {
   readonly accuracyBar: number;
 }
 
+/** The set name the PreToolUse gate looks up, and the only one that may carry `tools`. */
+export const GATE_SET = "gate";
+
 export interface Policy {
   readonly version: 1;
   readonly backend: string;
@@ -191,9 +200,37 @@ export interface Policy {
   readonly timeoutMs: number;
   readonly onError: OnError;
   readonly skipPermissionModes: readonly string[];
+  /**
+   * Every named set in the file, including `gate`.
+   *
+   * The file spells these under `policies:`, or — for the gate alone — as a top-level
+   * `gate:`, which is a permanent alias rather than a deprecated spelling. See docs/adr/009
+   * decision 1 for why a deprecation warning on a working file is friction with nothing
+   * behind it.
+   */
+  readonly sets: Readonly<Record<string, PolicySet>>;
+  /**
+   * The gate's set, or an empty gate when the file defines none.
+   *
+   * Deliberately not optional. The hook reads `policy.gate.tools` on the hot path of every
+   * tool call, and an empty `tools` list already means exactly the right thing — the tool
+   * is not gated, so nothing is emitted. Making the field optional would trade a correct
+   * fail-safe for an `undefined` check in the one place in this codebase that must never
+   * throw. A judge-only policy file therefore loads, and the gate is silent.
+   */
   readonly gate: GatePolicy;
   readonly calibration: CalibrationPolicy;
 }
+
+/** The gate a policy gets when the file names no gate set: gated on nothing. */
+export const EMPTY_GATE: GatePolicy = {
+  tools: [],
+  fastPath: [],
+  hardRules: [],
+  questions: {},
+  probeQuestions: {},
+  rules: [],
+};
 
 /** A problem with the policy file. `warnings` do not prevent loading; `errors` do. */
 export interface Diagnostic {

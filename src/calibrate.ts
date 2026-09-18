@@ -221,7 +221,7 @@ export async function score(
     // would only ever turn an `ask` into an `allow`, and doing it in the same run as this
     // change would make two things move at once.
     const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
-    const decision = hard === undefined ? evaluate(policy, answers) : undefined;
+    const decision = hard === undefined ? evaluate(policy.gate, policy.mode, answers) : undefined;
 
     const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
     const verdictReason = hard !== undefined

@@ -7887,6 +7887,15 @@ var import_yaml = __toESM(require_dist(), 1);
 
 // src/engine/types.ts
 var ANY_QUESTION = "any";
+var GATE_SET = "gate";
+var EMPTY_GATE = {
+  tools: [],
+  fastPath: [],
+  hardRules: [],
+  questions: {},
+  probeQuestions: {},
+  rules: []
+};
 
 // src/engine/policy.ts
 var MODES = ["observe", "guard", "full", "seatbelt"];
@@ -7898,6 +7907,7 @@ var HARD_RULE_PREDICATES = [
   "path_labelled",
   "redacts_as"
 ];
+var GATE_ONLY_KEYS = ["tools", "fast_path", "hard_rules"];
 var VERDICTS = ["allow", "ask", "deny"];
 var ON_ERROR = ["passthrough", "deny"];
 var DEFAULT_TIMEOUT_MS = 800;
@@ -7961,28 +7971,18 @@ function loadPolicy(source) {
   if (confidenceFloor < 0.5) {
     error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
   }
-  const gateRaw = raw["gate"];
-  if (!isRecord(gateRaw)) {
-    error("gate", "missing or not a mapping");
-    return { diagnostics };
-  }
-  const tools = readStringList(gateRaw["tools"], [], "gate.tools", error);
-  if (tools.length === 0) {
-    warn("gate.tools", "no tools listed, so the gate will never run");
-  }
-  const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
-  const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
-  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
-  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
-  for (const name of Object.keys(probeQuestions)) {
-    if (name in questions) {
-      error(
-        `gate.probe_questions.${name}`,
-        `"${name}" is already a question in gate.questions \u2014 answers come back keyed by name, so the two would collide`
-      );
+  const located = locateSets(raw, error);
+  if (located === void 0) return { diagnostics };
+  const sets = {};
+  let gate;
+  for (const { name, path, body } of located) {
+    if (name === GATE_SET) {
+      gate = readGate(body, path, error, warn);
+      sets[name] = gate;
+    } else {
+      sets[name] = readPolicySet(body, path, error, warn);
     }
   }
-  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
   }
@@ -7993,10 +7993,80 @@ function loadPolicy(source) {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, hardRules, questions, probeQuestions, rules },
+    sets,
+    gate: gate ?? EMPTY_GATE,
     calibration: { confidenceFloor, accuracyBar }
   };
   return { policy, diagnostics };
+}
+function locateSets(raw, error) {
+  const policiesRaw = raw["policies"];
+  const gateRaw = raw["gate"];
+  if (policiesRaw !== void 0 && gateRaw !== void 0) {
+    error(
+      "policies",
+      "the file has both a top-level `gate:` and a `policies:` block \u2014 move the gate under `policies:` and delete the top-level one"
+    );
+    return void 0;
+  }
+  if (policiesRaw === void 0) {
+    if (!isRecord(gateRaw)) {
+      error("gate", "missing or not a mapping \u2014 a policy file needs a `gate:` block or a `policies:` block");
+      return void 0;
+    }
+    return [{ name: GATE_SET, path: "gate", body: gateRaw }];
+  }
+  if (!isRecord(policiesRaw)) {
+    error("policies", "must be a mapping of set name to policy set");
+    return void 0;
+  }
+  const located = [];
+  for (const [name, body] of Object.entries(policiesRaw)) {
+    const path = `policies.${name}`;
+    if (!isRecord(body)) {
+      error(path, "must be a mapping with `questions` and `rules`");
+      continue;
+    }
+    located.push({ name, path, body });
+  }
+  if (located.length === 0) {
+    error("policies", "names no policy sets");
+    return void 0;
+  }
+  return located;
+}
+function readGate(raw, path, error, warn) {
+  const tools = readStringList(raw["tools"], [], `${path}.tools`, error);
+  if (tools.length === 0) {
+    warn(`${path}.tools`, "no tools listed, so the gate will never run");
+  }
+  const fastPath = readStringList(raw["fast_path"], [], `${path}.fast_path`, error);
+  const hardRules = readHardRules(raw["hard_rules"], path, error, warn);
+  return { tools, fastPath, hardRules, ...readPolicySet(raw, path, error, warn, true) };
+}
+function readPolicySet(raw, path, error, warn, isGate = false) {
+  if (!isGate) {
+    for (const key of GATE_ONLY_KEYS) {
+      if (raw[key] !== void 0) {
+        error(
+          `${path}.${key}`,
+          `only the \`gate\` set can use \`${key}\` \u2014 it reasons about a tool call, and here it would load correctly and never fire`
+        );
+      }
+    }
+  }
+  const questions = readQuestions(raw["questions"], `${path}.questions`, true, error);
+  const probeQuestions = readQuestions(raw["probe_questions"], `${path}.probe_questions`, false, error);
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `${path}.probe_questions.${name}`,
+        `"${name}" is already a question in ${path}.questions \u2014 answers come back keyed by name, so the two would collide`
+      );
+    }
+  }
+  const rules = readRules(raw["rules"], path, questions, probeQuestions, error, warn);
+  return { questions, probeQuestions, rules };
 }
 function readQuestions(raw, basePath, required, error) {
   const questions = {};
@@ -8046,16 +8116,16 @@ function readQuestions(raw, basePath, required, error) {
   }
   return questions;
 }
-function readHardRules(raw, error, warn) {
+function readHardRules(raw, basePath, error, warn) {
   const rules = [];
   if (raw === void 0) return rules;
   if (!Array.isArray(raw)) {
-    error("gate.hard_rules", "must be a list");
+    error(`${basePath}.hard_rules`, "must be a list");
     return rules;
   }
   const seen = /* @__PURE__ */ new Set();
   raw.forEach((entry, i) => {
-    const path = `gate.hard_rules[${i}]`;
+    const path = `${basePath}.hard_rules[${i}]`;
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
       return;
@@ -8081,7 +8151,7 @@ function readHardRules(raw, error, warn) {
       return;
     }
     if (then === "allow") {
-      error(`${path}.then`, "must be `ask` or `deny`; `gate.fast_path` is where allow-without-judging lives");
+      error(`${path}.then`, `must be \`ask\` or \`deny\`; \`${basePath}.fast_path\` is where allow-without-judging lives`);
       return;
     }
     if (then === "deny") {
@@ -8137,16 +8207,16 @@ function readHardRules(raw, error, warn) {
   });
   return rules;
 }
-function readRules(raw, questions, probeQuestions, error, warn) {
+function readRules(raw, basePath, questions, probeQuestions, error, warn) {
   const rules = [];
   if (!Array.isArray(raw)) {
-    error("gate.rules", "missing or not a list");
+    error(`${basePath}.rules`, "missing or not a list");
     return rules;
   }
   let terminalAt;
   raw.forEach((entry, i) => {
     const index = i + 1;
-    const path = `gate.rules[${i}]`;
+    const path = `${basePath}.rules[${i}]`;
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
       return;
@@ -8187,7 +8257,7 @@ function readRules(raw, questions, probeQuestions, error, warn) {
     if (question !== ANY_QUESTION && !(question in questions)) {
       error(
         `${path}.when.${question}`,
-        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to gate.questions to act on it` : `no question named "${question}" is defined in gate.questions`
+        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to ${basePath}.questions to act on it` : `no question named "${question}" is defined in ${basePath}.questions`
       );
       return;
     }
@@ -8207,7 +8277,7 @@ function readRules(raw, questions, probeQuestions, error, warn) {
     rules.push({ condition, verdict: then, index });
   });
   if (terminalAt === void 0 && rules.length > 0) {
-    warn("gate.rules", "no `default` rule, so a tool call matching nothing gets no decision");
+    warn(`${basePath}.rules`, "no `default` rule, so an item matching nothing gets no decision");
   }
   return rules;
 }
@@ -8668,10 +8738,10 @@ function pathsIn(token) {
 // src/engine/evaluate.ts
 function shortCircuit(policy, input) {
   if (input.permissionMode !== void 0 && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+    return decide(policy.mode, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
   }
   if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy, "allow", { kind: "tool-not-gated", tool: input.tool });
+    return decide(policy.mode, "allow", { kind: "tool-not-gated", tool: input.tool });
   }
   const hard = matchHardRule(policy.gate.hardRules, input.command);
   if (hard !== void 0) {
@@ -8679,7 +8749,7 @@ function shortCircuit(policy, input) {
   }
   const prefix = matchFastPath(policy.gate.fastPath, input.command);
   if (prefix !== void 0) {
-    return decide(policy, "allow", { kind: "fast-path", prefix });
+    return decide(policy.mode, "allow", { kind: "fast-path", prefix });
   }
   return void 0;
 }
@@ -8691,16 +8761,16 @@ function decideHard(policy, rule) {
     emit: emitFor(policy.mode, rule.verdict, true)
   };
 }
-function evaluate(policy, answers) {
-  for (const rule of policy.gate.rules) {
+function evaluate(set, mode, answers) {
+  for (const rule of set.rules) {
     if (rule.condition === void 0) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
     }
     const { question, comparison } = rule.condition;
     if (question === ANY_QUESTION) {
       for (const [name, p2] of Object.entries(answers)) {
         if (satisfies(p2, comparison)) {
-          return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
+          return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
         }
       }
       continue;
@@ -8708,13 +8778,13 @@ function evaluate(policy, answers) {
     const p = answers[question];
     if (p === void 0) continue;
     if (satisfies(p, comparison)) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
     }
   }
   return { verdict: "allow", reason: { kind: "no-rule-matched" }, emit: void 0 };
 }
-function decide(policy, verdict, reason) {
-  return { verdict, reason, emit: emitFor(policy.mode, verdict) };
+function decide(mode, verdict, reason) {
+  return { verdict, reason, emit: emitFor(mode, verdict) };
 }
 function emitFor(mode, verdict, fromHardRule = false) {
   if (mode === "observe") return void 0;
@@ -8804,7 +8874,7 @@ var import_node_path4 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs2 = require("node:fs");
 var import_node_path3 = require("node:path");
-var CACHE_VERSION = 2;
+var CACHE_VERSION = 3;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -9092,7 +9162,7 @@ async function runPreToolUse(payload, options = {}) {
       if (name in policy.gate.probeQuestions) probes[name] = p;
       else answers[name] = p;
     }
-    const decision = evaluate(policy, answers);
+    const decision = evaluate(policy.gate, policy.mode, answers);
     const escalation = escalationFor(policy.gate, decision, answers, itemId);
     const next = record(breakerState, {
       failed: false,
@@ -9486,7 +9556,7 @@ async function score(fixtures, policy, adapter, onProgress) {
       if (value !== void 0) answers[name] = value;
     }
     const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
-    const decision = hard === void 0 ? evaluate(policy, answers) : void 0;
+    const decision = hard === void 0 ? evaluate(policy.gate, policy.mode, answers) : void 0;
     const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
     const verdictReason = hard !== void 0 ? { question: hard.name, p: Number.NaN, source: "hard_rule" } : {
       question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
