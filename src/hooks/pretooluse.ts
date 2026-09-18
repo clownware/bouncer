@@ -170,10 +170,17 @@ export async function runPreToolUse(
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: policy.timeoutMs });
     const adapterMs = now() - adapterStarted;
 
+    // Judgments and probes arrive in one map, keyed by the names the request used, and
+    // are separated here — before anything reads them. `evaluate` is handed the judgments
+    // alone, so a probe cannot reach a rule even through `any`, which iterates every
+    // answer it is given.
     const answers: Record<string, number> = {};
+    const probes: Record<string, number> = {};
     for (const [name, answer] of Object.entries(response.answers)) {
       const p = noulProbability(answer);
-      if (p !== undefined) answers[name] = p;
+      if (p === undefined) continue;
+      if (name in policy.gate.probeQuestions) probes[name] = p;
+      else answers[name] = p;
     }
 
     const decision = evaluate(policy, answers);
@@ -188,6 +195,7 @@ export async function runPreToolUse(
       ...base,
       ...verdictFields(decision),
       answers,
+      ...(Object.keys(probes).length > 0 ? { probes } : {}),
       state: state.text,
       redacted_kinds: state.redactedKinds,
       latency_ms: { total: now() - started, adapter: adapterMs },
@@ -318,14 +326,30 @@ function sourceOf(decision: Decision): NonNullable<DecisionRecord["source"]> {
   }
 }
 
+/**
+ * The fan-out: every gate question, then every probe question, in one request.
+ *
+ * Probes ride along rather than going in a second call on purpose. A second call would
+ * double the latency the hook is budgeted for and be the first thing to drop under load,
+ * which is exactly when the traffic is most worth measuring. In one call they cost their
+ * own input tokens and nothing else — Jev evaluates a fan-out in parallel, and output
+ * tokens are free.
+ *
+ * The one real limit is the documented 64k ceiling on state plus all questions. A policy
+ * would need a great many probes to approach it; if one ever does, the classifier rejects
+ * the request and `on_error` applies, which is the same non-blocking path as any other
+ * adapter failure.
+ */
 function questionsFor(policy: Policy): Record<string, Question> {
   const questions: Record<string, Question> = {};
-  for (const [name, question] of Object.entries(policy.gate.questions)) {
-    questions[name] = {
-      type: "noul",
-      instructions: question.instructions,
-      ...(question.criteria !== undefined ? { criteria: question.criteria } : {}),
-    };
+  for (const source of [policy.gate.questions, policy.gate.probeQuestions]) {
+    for (const [name, question] of Object.entries(source)) {
+      questions[name] = {
+        type: "noul",
+        instructions: question.instructions,
+        ...(question.criteria !== undefined ? { criteria: question.criteria } : {}),
+      };
+    }
   }
   return questions;
 }

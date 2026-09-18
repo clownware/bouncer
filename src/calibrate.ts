@@ -21,6 +21,7 @@ import { buildState, commandOf } from "./engine/state.js";
 import { evaluate } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
 import type { CalibrationPolicy, Policy, Verdict } from "./engine/types.js";
+import type { DecisionRecord } from "./io/log.js";
 
 export interface Fixture {
   readonly id: string;
@@ -68,6 +69,14 @@ export interface Scored {
     readonly p: number;
     readonly source: "hard_rule" | "rule";
   };
+  /**
+   * True when this row scores a `gate.probe_questions` entry rather than a live one.
+   *
+   * Probe rows are kept out of the gate table, out of the "N of N clear the bar" line and
+   * out of the verdict comparison. A probe changed no verdict, so counting it toward the
+   * release gate would let an experiment decide whether the product ships.
+   */
+  readonly probe: boolean;
 }
 
 /**
@@ -173,6 +182,14 @@ export async function score(
     questions[name] = { type: "noul", instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) };
   }
 
+  // Probes go in the same fan-out here for the same reason they do in the hook: a run
+  // that asked them separately would not be measuring what production asks. They are
+  // scored only where a fixture labels them, and never enter the verdict below.
+  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
+  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
+    questions[name] = { type: "noul", instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) };
+  }
+
   const results: Scored[] = [];
 
   for (const [i, fixture] of fixtures.entries()) {
@@ -190,6 +207,7 @@ export async function score(
     // reads all of them, so a verdict computed from a subset would not be the real one.
     const answers: Record<string, number> = {};
     for (const name of Object.keys(questions)) {
+      if (probeNames.has(name)) continue;
       const value = noulProbability(response.answers[name]);
       if (value !== undefined) answers[name] = value;
     }
@@ -231,6 +249,7 @@ export async function score(
         confidence: Math.max(p, 1 - p),
         verdict,
         verdictReason,
+        probe: probeNames.has(question),
       });
     }
 
@@ -243,6 +262,7 @@ export async function score(
 export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {
   const byQuestion = new Map<string, Scored[]>();
   for (const s of scored) {
+    if (s.probe) continue;
     const list = byQuestion.get(s.question) ?? [];
     list.push(s);
     byQuestion.set(s.question, list);
@@ -284,6 +304,9 @@ export function report(scored: readonly Scored[], calibration: CalibrationPolicy
 export function disagreements(scored: readonly Scored[]): Disagreement[] {
   const byFixture = new Map<string, Scored[]>();
   for (const s of scored) {
+    // A probe answered nothing about this fixture's verdict, so letting one into
+    // `anyTrue` would invent a `missed` out of a question no rule consulted.
+    if (s.probe) continue;
     const list = byFixture.get(s.fixture.id) ?? [];
     list.push(s);
     byFixture.set(s.fixture.id, list);
@@ -322,6 +345,41 @@ export function disagreements(scored: readonly Scored[]): Disagreement[] {
   return out.sort(
     (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id),
   );
+}
+
+/**
+ * How the probes did, where a fixture labelled one.
+ *
+ * Deliberately not a `QuestionReport`: there is no gate row and no pass/fail. A probe is a
+ * candidate, and the only useful thing to say about it is how its answers compare to the
+ * labels next to the question it is a candidate to replace.
+ */
+export interface ProbeReport {
+  readonly question: string;
+  readonly n: number;
+  readonly accuracy: number;
+  readonly brier: number;
+  readonly misses: readonly Scored[];
+}
+
+export function probeReport(scored: readonly Scored[]): ProbeReport[] {
+  const byQuestion = new Map<string, Scored[]>();
+  for (const s of scored) {
+    if (!s.probe) continue;
+    const list = byQuestion.get(s.question) ?? [];
+    list.push(s);
+    byQuestion.set(s.question, list);
+  }
+
+  return [...byQuestion.entries()]
+    .map(([question, items]) => ({
+      question,
+      n: items.length,
+      accuracy: items.filter((i) => i.correct).length / items.length,
+      brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
+      misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence),
+    }))
+    .sort((a, b) => a.question.localeCompare(b.question));
 }
 
 /** `outside_repo 0.77`, or `hard rule reads-a-credential-file` when there is no number. */
@@ -384,6 +442,21 @@ export function formatReport(
       ? `Every question clears the bar (${reports.length} of ${reports.length}).`
       : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`,
   );
+
+  const probes = probeReport(scored);
+  if (probes.length > 0) {
+    lines.push(
+      "",
+      "Probes (gate.probe_questions). Asked in the same call, read by no rule, counted",
+      "toward no gate — this is what they would have said:",
+      "",
+    );
+    lines.push("| probe | n | accuracy | Brier |");
+    lines.push("|---|---|---|---|");
+    for (const r of probes) {
+      lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} |`);
+    }
+  }
 
   const disagreed = disagreements(scored);
   lines.push("", "What the policy would actually do, where that differs from the labels:", "");

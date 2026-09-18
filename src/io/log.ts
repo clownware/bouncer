@@ -52,6 +52,17 @@ export interface DecisionRecord {
   readonly source?: "hard_rule" | "fast_path" | "judge";
   /** Raw probability per question. The thing calibration is computed from. */
   readonly answers?: Readonly<Record<string, number>>;
+  /**
+   * Answers to `gate.probe_questions`, which no rule read and which changed nothing about
+   * `verdict`. Absent when the policy defines no probes.
+   *
+   * Shaped exactly like `answers` — a bare probability per question name — because the two
+   * differ in what was allowed to read them, not in what was measured. Which key an answer
+   * sits under is what says that, and it stays true for a line read years later: an answer
+   * recorded here could not have moved the verdict on this call, whatever the policy does
+   * with that question now.
+   */
+  readonly probes?: Readonly<Record<string, number>>;
   readonly state?: string;
   readonly redacted_kinds?: readonly string[];
   readonly latency_ms: { readonly total: number; readonly adapter?: number };
@@ -92,6 +103,28 @@ function rotateIfOversized(file: string): void {
   }
   if (size < MAX_LOG_BYTES) return;
   renameSync(file, `${file}.1`);
+}
+
+/**
+ * Parses a whole log, oldest first, skipping lines that do not parse.
+ *
+ * Separate from `tail` because calibration wants every record in order rather than the
+ * last N newest-first, and because it takes the text: a log named on the command line is
+ * not necessarily the one in the data directory.
+ */
+export function parseLog(source: string): DecisionRecord[] {
+  const records: DecisionRecord[] = [];
+
+  for (const line of source.split("\n")) {
+    if (line.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(line) as DecisionRecord);
+    } catch {
+      // A truncated final line is expected if a write was interrupted. Skip it.
+    }
+  }
+
+  return records;
 }
 
 /** Reads the most recent records, newest first. Returns [] if the log is unreadable. */

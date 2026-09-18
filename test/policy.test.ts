@@ -241,3 +241,89 @@ describe("a policy with no calibration section", () => {
     expect(result.policy?.calibration).toEqual({ confidenceFloor: 0.8, accuracyBar: 0.85 });
   });
 });
+
+describe("probe questions", () => {
+  const WITH_PROBES = `${MINIMAL}
+  probe_questions:
+    destructive_v2:
+      instructions: "It throws away work."
+      criteria:
+        "true": "rm -rf"
+        "false": "git commit"
+`;
+
+  it("loads them into their own block, leaving the gate questions alone", () => {
+    const gate = loadPolicy(WITH_PROBES).policy?.gate;
+    expect(Object.keys(gate?.questions ?? {})).toEqual(["destructive"]);
+    expect(gate?.probeQuestions["destructive_v2"]?.instructions).toBe("It throws away work.");
+    expect(gate?.probeQuestions["destructive_v2"]?.criteria).toEqual({ true: "rm -rf", false: "git commit" });
+  });
+
+  // The zero-probe case is the one that has to stay exactly as it was, so it is asserted
+  // rather than assumed: every policy written before probes existed is this case.
+  it("is an empty block when the policy does not mention it", () => {
+    const gate = loadPolicy(MINIMAL).policy?.gate;
+    expect(gate?.probeQuestions).toEqual({});
+  });
+
+  it("validates a probe the same way as a question", () => {
+    const source = `${MINIMAL}
+  probe_questions:
+    broken: {}
+`;
+    expect(errors(source).map((d) => d.path)).toContain("gate.probe_questions.broken.instructions");
+  });
+
+  it("rejects a probe reusing a gate question's name, since the answers would collide", () => {
+    const source = `${MINIMAL}
+  probe_questions:
+    destructive:
+      instructions: "The same name."
+`;
+    const [error] = errors(source);
+    expect(error?.path).toBe("gate.probe_questions.destructive");
+    expect(error?.message).toMatch(/already a question/);
+  });
+
+  it("rejects the reserved name", () => {
+    const source = `${MINIMAL}
+  probe_questions:
+    any:
+      instructions: "Reserved."
+`;
+    expect(errors(source).map((d) => d.path)).toContain("gate.probe_questions.any");
+  });
+
+  // A rule naming a probe would load, read nothing and never fire. Refusing it is what
+  // makes "a probe never affects a verdict" a property of the policy rather than a habit.
+  it("rejects a rule that names a probe, and says why", () => {
+    const source = `
+version: 1
+gate:
+  tools: [Bash]
+  questions:
+    destructive:
+      instructions: "It destroys something."
+  probe_questions:
+    destructive_v2:
+      instructions: "It throws away work."
+  rules:
+    - when: { destructive_v2: { p: ">=0.8" } }
+      then: ask
+    - default: allow
+`;
+    const [error] = errors(source);
+    expect(error?.path).toBe("gate.rules[0].when.destructive_v2");
+    expect(error?.message).toMatch(/probe question/);
+  });
+
+  it("still says a rule names nothing at all when the question simply does not exist", () => {
+    const source = MINIMAL.replace("destructive: { p:", "nonexistent: { p:");
+    expect(errors(source)[0]?.message).toMatch(/no question named/);
+  });
+
+  it("carries the shipped probes", () => {
+    const { policy } = loadPolicy(readFileSync("policy/default.yaml", "utf8"));
+    expect(Object.keys(policy?.gate.probeQuestions ?? {})).toEqual(["outside_repo_v2", "home_dir_tool_cache"]);
+  });
+});

@@ -97,6 +97,21 @@ export interface GatePolicy {
   readonly fastPath: readonly string[];
   readonly hardRules: readonly HardRule[];
   readonly questions: Readonly<Record<string, Question>>;
+  /**
+   * Questions asked in the same call as `questions` and read by nothing.
+   *
+   * Output tokens are free and Jev answers a fan-out in parallel, so an extra question
+   * costs a few hundred input tokens and no measurable latency. That makes it nearly free
+   * to ask a candidate rewording alongside the one in force and find out, from real
+   * traffic, whether it would have done better — without a second live run and without
+   * putting an unproven question anywhere near a verdict.
+   *
+   * The guarantee is structural rather than a convention: probe answers are split out
+   * before `evaluate()` is called, so no rule can read one even by accident, including the
+   * `any` rule that iterates every answer it is given. They reach `decisions.jsonl` and
+   * stop there.
+   */
+  readonly probeQuestions: Readonly<Record<string, Question>>;
   readonly rules: readonly Rule[];
 }
 

@@ -8286,8 +8286,17 @@ function loadPolicy(source) {
   }
   const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
   const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
-  const questions = readQuestions(gateRaw["questions"], error);
-  const rules = readRules(gateRaw["rules"], questions, error, warn);
+  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
+  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `gate.probe_questions.${name}`,
+        `"${name}" is already a question in gate.questions \u2014 answers come back keyed by name, so the two would collide`
+      );
+    }
+  }
+  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
   }
@@ -8298,19 +8307,20 @@ function loadPolicy(source) {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, hardRules, questions, rules },
+    gate: { tools, fastPath, hardRules, questions, probeQuestions, rules },
     calibration: { confidenceFloor, accuracyBar }
   };
   return { policy, diagnostics };
 }
-function readQuestions(raw, error) {
+function readQuestions(raw, basePath, required, error) {
   const questions = {};
+  if (raw === void 0 && !required) return questions;
   if (!isRecord2(raw)) {
-    error("gate.questions", "missing or not a mapping");
+    error(basePath, "missing or not a mapping");
     return questions;
   }
   for (const [name, value] of Object.entries(raw)) {
-    const path = `gate.questions.${name}`;
+    const path = `${basePath}.${name}`;
     if (name === ANY_QUESTION) {
       error(path, `"${ANY_QUESTION}" is reserved for rules that match any question`);
       continue;
@@ -8345,8 +8355,8 @@ function readQuestions(raw, error) {
     }
     questions[name] = question;
   }
-  if (Object.keys(questions).length === 0) {
-    error("gate.questions", "at least one question is required");
+  if (required && Object.keys(questions).length === 0) {
+    error(basePath, "at least one question is required");
   }
   return questions;
 }
@@ -8441,7 +8451,7 @@ function readHardRules(raw, error, warn) {
   });
   return rules;
 }
-function readRules(raw, questions, error, warn) {
+function readRules(raw, questions, probeQuestions, error, warn) {
   const rules = [];
   if (!Array.isArray(raw)) {
     error("gate.rules", "missing or not a list");
@@ -8489,7 +8499,10 @@ function readRules(raw, questions, error, warn) {
     }
     const [question, conditionRaw] = entries[0];
     if (question !== ANY_QUESTION && !(question in questions)) {
-      error(`${path}.when.${question}`, `no question named "${question}" is defined in gate.questions`);
+      error(
+        `${path}.when.${question}`,
+        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to gate.questions to act on it` : `no question named "${question}" is defined in gate.questions`
+      );
       return;
     }
     if (!isRecord2(conditionRaw) || typeof conditionRaw["p"] !== "string") {
@@ -8945,9 +8958,12 @@ async function runPreToolUse(payload, options = {}) {
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: policy.timeoutMs });
     const adapterMs = now() - adapterStarted;
     const answers = {};
+    const probes = {};
     for (const [name, answer] of Object.entries(response.answers)) {
       const p = noulProbability(answer);
-      if (p !== void 0) answers[name] = p;
+      if (p === void 0) continue;
+      if (name in policy.gate.probeQuestions) probes[name] = p;
+      else answers[name] = p;
     }
     const decision = evaluate(policy, answers);
     const next = record(breakerState, {
@@ -8960,6 +8976,7 @@ async function runPreToolUse(payload, options = {}) {
       ...base,
       ...verdictFields(decision),
       answers,
+      ...Object.keys(probes).length > 0 ? { probes } : {},
       state: state.text,
       redacted_kinds: state.redactedKinds,
       latency_ms: { total: now() - started, adapter: adapterMs },
@@ -9049,12 +9066,14 @@ function sourceOf(decision) {
 }
 function questionsFor(policy) {
   const questions = {};
-  for (const [name, question] of Object.entries(policy.gate.questions)) {
-    questions[name] = {
-      type: "noul",
-      instructions: question.instructions,
-      ...question.criteria !== void 0 ? { criteria: question.criteria } : {}
-    };
+  for (const source of [policy.gate.questions, policy.gate.probeQuestions]) {
+    for (const [name, question] of Object.entries(source)) {
+      questions[name] = {
+        type: "noul",
+        instructions: question.instructions,
+        ...question.criteria !== void 0 ? { criteria: question.criteria } : {}
+      };
+    }
   }
   return questions;
 }
@@ -9292,6 +9311,10 @@ async function score(fixtures, policy, adapter, onProgress) {
   for (const [name, q] of Object.entries(policy.gate.questions)) {
     questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
   }
+  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
+  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
+    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+  }
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
     const state = buildState({
@@ -9304,6 +9327,7 @@ async function score(fixtures, policy, adapter, onProgress) {
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
     const answers = {};
     for (const name of Object.keys(questions)) {
+      if (probeNames.has(name)) continue;
       const value = noulProbability(response.answers[name]);
       if (value !== void 0) answers[name] = value;
     }
@@ -9328,7 +9352,8 @@ async function score(fixtures, policy, adapter, onProgress) {
         correct: predicted === expected,
         confidence: Math.max(p, 1 - p),
         verdict,
-        verdictReason
+        verdictReason,
+        probe: probeNames.has(question)
       });
     }
     onProgress?.(i + 1, fixtures.length);
@@ -9338,6 +9363,7 @@ async function score(fixtures, policy, adapter, onProgress) {
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
   for (const s of scored) {
+    if (s.probe) continue;
     const list = byQuestion.get(s.question) ?? [];
     list.push(s);
     byQuestion.set(s.question, list);
@@ -9363,6 +9389,7 @@ function report(scored, calibration) {
 function disagreements(scored) {
   const byFixture = /* @__PURE__ */ new Map();
   for (const s of scored) {
+    if (s.probe) continue;
     const list = byFixture.get(s.fixture.id) ?? [];
     list.push(s);
     byFixture.set(s.fixture.id, list);
@@ -9395,6 +9422,22 @@ function disagreements(scored) {
   return out.sort(
     (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id)
   );
+}
+function probeReport(scored) {
+  const byQuestion = /* @__PURE__ */ new Map();
+  for (const s of scored) {
+    if (!s.probe) continue;
+    const list = byQuestion.get(s.question) ?? [];
+    list.push(s);
+    byQuestion.set(s.question, list);
+  }
+  return [...byQuestion.entries()].map(([question, items]) => ({
+    question,
+    n: items.length,
+    accuracy: items.filter((i) => i.correct).length / items.length,
+    brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
+    misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
+  })).sort((a, b) => a.question.localeCompare(b.question));
 }
 function describeSource(d) {
   return Number.isNaN(d.p) ? `hard rule ${d.question}` : `${d.question} ${d.p.toFixed(2)}`;
@@ -9434,6 +9477,20 @@ function formatReport(reports, backend, calibration, scored = []) {
     "",
     failing.length === 0 ? `Every question clears the bar (${reports.length} of ${reports.length}).` : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`
   );
+  const probes = probeReport(scored);
+  if (probes.length > 0) {
+    lines.push(
+      "",
+      "Probes (gate.probe_questions). Asked in the same call, read by no rule, counted",
+      "toward no gate \u2014 this is what they would have said:",
+      ""
+    );
+    lines.push("| probe | n | accuracy | Brier |");
+    lines.push("|---|---|---|---|");
+    for (const r of probes) {
+      lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} |`);
+    }
+  }
   const disagreed = disagreements(scored);
   lines.push("", "What the policy would actually do, where that differs from the labels:", "");
   if (disagreed.length === 0) {

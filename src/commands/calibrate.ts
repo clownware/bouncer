@@ -10,7 +10,8 @@
 // Both runs go through the same `score()`, so the comparison is of the backends and not of
 // two code paths that happen to agree.
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
