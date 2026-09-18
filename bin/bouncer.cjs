@@ -7357,7 +7357,7 @@ var require_dist = __commonJS({
 });
 
 // src/hooks/pretooluse.ts
-var import_node_fs4 = require("node:fs");
+var import_node_fs5 = require("node:fs");
 
 // src/adapters/types.ts
 var AdapterError = class extends Error {
@@ -8738,14 +8738,81 @@ function record(state, outcome) {
 }
 
 // src/io/config.ts
-var import_node_fs2 = require("node:fs");
+var import_node_fs3 = require("node:fs");
 var import_node_os = require("node:os");
+var import_node_path4 = require("node:path");
+
+// src/io/policycache.ts
+var import_node_fs2 = require("node:fs");
 var import_node_path3 = require("node:path");
+var CACHE_VERSION = 1;
+var DIR = "policy-cache";
+function loadPolicyCached(dir, path, source) {
+  if (disabled()) return loadPolicy(source);
+  const file = fileFor(dir, path);
+  const hit = read2(file, source);
+  if (hit !== void 0) return hit;
+  const result = loadPolicy(source);
+  write2(file, source, result);
+  return result;
+}
+function disabled() {
+  const value = process.env["BOUNCER_NO_CACHE"];
+  return value !== void 0 && value.length > 0 && value !== "0";
+}
+function read2(file, source) {
+  let entry;
+  try {
+    entry = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+  if (!isRecord3(entry)) return void 0;
+  if (entry["version"] !== CACHE_VERSION) return void 0;
+  if (entry["source"] !== source) return void 0;
+  const result = entry["result"];
+  if (!isRecord3(result)) return void 0;
+  if (!Array.isArray(result["diagnostics"])) return void 0;
+  const policy = result["policy"];
+  if (policy !== void 0 && !(isRecord3(policy) && isRecord3(policy["gate"]))) return void 0;
+  return result;
+}
+function write2(file, source, result) {
+  const entry = { version: CACHE_VERSION, source, result };
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    (0, import_node_fs2.mkdirSync)(dirOf(file), { recursive: true });
+    (0, import_node_fs2.writeFileSync)(temp, JSON.stringify(entry), "utf8");
+    (0, import_node_fs2.renameSync)(temp, file);
+  } catch {
+    try {
+      (0, import_node_fs2.unlinkSync)(temp);
+    } catch {
+    }
+  }
+}
+function fileFor(dir, path) {
+  let hash = 2166136261;
+  for (const char of path) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return (0, import_node_path3.join)(dir, DIR, `${hash.toString(16).padStart(8, "0")}.json`);
+}
+function dirOf(file) {
+  const cut = file.lastIndexOf("/");
+  return cut <= 0 ? file : file.slice(0, cut);
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/io/config.ts
 function resolvePolicy(cwd, pluginRoot2) {
   for (const candidate of policyCandidates(cwd, pluginRoot2)) {
     const source = tryRead(candidate);
     if (source === void 0) continue;
-    return { ...loadPolicy(source), source: candidate };
+    return { ...loadPolicyCached(dataDir(), candidate, source), source: candidate };
   }
   return {
     diagnostics: [{ severity: "error", path: "", message: "no policy file found" }],
@@ -8755,20 +8822,20 @@ function resolvePolicy(cwd, pluginRoot2) {
 function policyCandidates(cwd, pluginRoot2) {
   const candidates = [];
   const override = process.env["BOUNCER_POLICY"];
-  if (override !== void 0 && override.length > 0) candidates.push((0, import_node_path3.resolve)(override));
+  if (override !== void 0 && override.length > 0) candidates.push((0, import_node_path4.resolve)(override));
   const repoRoot = findRepoRoot(cwd);
   if (repoRoot !== void 0) {
-    candidates.push((0, import_node_path3.join)(repoRoot, ".bouncer.yaml"), (0, import_node_path3.join)(repoRoot, ".bouncer.yml"));
+    candidates.push((0, import_node_path4.join)(repoRoot, ".bouncer.yaml"), (0, import_node_path4.join)(repoRoot, ".bouncer.yml"));
   }
-  candidates.push((0, import_node_path3.join)((0, import_node_os.homedir)(), ".bouncer", "bouncer.yaml"));
-  if (pluginRoot2 !== void 0) candidates.push((0, import_node_path3.join)(pluginRoot2, "policy", "default.yaml"));
+  candidates.push((0, import_node_path4.join)((0, import_node_os.homedir)(), ".bouncer", "bouncer.yaml"));
+  if (pluginRoot2 !== void 0) candidates.push((0, import_node_path4.join)(pluginRoot2, "policy", "default.yaml"));
   return candidates;
 }
 function findRepoRoot(from) {
-  let current = (0, import_node_path3.resolve)(from);
+  let current = (0, import_node_path4.resolve)(from);
   for (; ; ) {
-    if ((0, import_node_fs2.existsSync)((0, import_node_path3.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path3.dirname)(current);
+    if ((0, import_node_fs3.existsSync)((0, import_node_path4.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path4.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -8776,15 +8843,15 @@ function findRepoRoot(from) {
 function dataDir() {
   const fromPlugin = process.env["CLAUDE_PLUGIN_DATA"];
   if (fromPlugin !== void 0 && fromPlugin.length > 0) return fromPlugin;
-  return (0, import_node_path3.join)((0, import_node_os.homedir)(), ".bouncer");
+  return (0, import_node_path4.join)((0, import_node_os.homedir)(), ".bouncer");
 }
 function pluginRoot() {
   const fromEnv = process.env["CLAUDE_PLUGIN_ROOT"];
   if (fromEnv !== void 0 && fromEnv.length > 0) return fromEnv;
   const script = process.argv[1];
   if (script === void 0 || script.length === 0) return void 0;
-  const candidate = (0, import_node_path3.resolve)((0, import_node_path3.dirname)(script), "..");
-  return (0, import_node_fs2.existsSync)((0, import_node_path3.join)(candidate, "policy", "default.yaml")) ? candidate : void 0;
+  const candidate = (0, import_node_path4.resolve)((0, import_node_path4.dirname)(script), "..");
+  return (0, import_node_fs3.existsSync)((0, import_node_path4.join)(candidate, "policy", "default.yaml")) ? candidate : void 0;
 }
 function apiKey() {
   for (const name of ["BOUNCER_TYPESAFE_API_KEY", "TYPESAFE_API_KEY"]) {
@@ -8798,7 +8865,7 @@ function errorsIn(diagnostics) {
 }
 function tryRead(path) {
   try {
-    return (0, import_node_fs2.readFileSync)(path, "utf8");
+    return (0, import_node_fs3.readFileSync)(path, "utf8");
   } catch {
     return void 0;
   }
@@ -8817,17 +8884,17 @@ function localBackend() {
 }
 
 // src/io/log.ts
-var import_node_fs3 = require("node:fs");
-var import_node_path4 = require("node:path");
+var import_node_fs4 = require("node:fs");
+var import_node_path5 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
 function append(dir, record2) {
   try {
-    (0, import_node_fs3.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs4.mkdirSync)(dir, { recursive: true });
     const safe = record2.state !== void 0 ? { ...record2, state: redact(record2.state).text } : record2;
-    const file = (0, import_node_path4.join)(dir, LOG_FILE);
+    const file = (0, import_node_path5.join)(dir, LOG_FILE);
     rotateIfOversized(file);
-    (0, import_node_fs3.appendFileSync)(file, `${JSON.stringify(safe)}
+    (0, import_node_fs4.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
   } catch {
   }
@@ -8835,17 +8902,17 @@ function append(dir, record2) {
 function rotateIfOversized(file) {
   let size;
   try {
-    size = (0, import_node_fs3.statSync)(file).size;
+    size = (0, import_node_fs4.statSync)(file).size;
   } catch {
     return;
   }
   if (size < MAX_LOG_BYTES) return;
-  (0, import_node_fs3.renameSync)(file, `${file}.1`);
+  (0, import_node_fs4.renameSync)(file, `${file}.1`);
 }
 function tail(dir, count) {
   let raw;
   try {
-    raw = (0, import_node_fs3.readFileSync)((0, import_node_path4.join)(dir, LOG_FILE), "utf8");
+    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, LOG_FILE), "utf8");
   } catch {
     return [];
   }
@@ -8883,7 +8950,7 @@ async function runPreToolUse(payload, options = {}) {
       systemMessage: `bouncer: not enforcing \u2014 ${resolved.source} ${first ? `has a problem at ${first.path || "the top level"}: ${first.message}` : "could not be loaded"}`
     };
   }
-  const toolInput = isRecord3(payload.tool_input) ? payload.tool_input : {};
+  const toolInput = isRecord4(payload.tool_input) ? payload.tool_input : {};
   const agentType = typeof payload["agent_type"] === "string" ? payload["agent_type"] : void 0;
   const permissionMode = typeof payload.permission_mode === "string" ? payload.permission_mode : void 0;
   const base = {
@@ -9094,12 +9161,12 @@ function targetExistsFor(tool, toolInput, options) {
 }
 function defaultTargetExists(path) {
   try {
-    return (0, import_node_fs4.existsSync)(path);
+    return (0, import_node_fs5.existsSync)(path);
   } catch {
     return void 0;
   }
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -9268,10 +9335,10 @@ function bar(p) {
 }
 
 // src/commands/calibrate.ts
-var import_node_path5 = require("node:path");
+var import_node_path6 = require("node:path");
 
 // src/calibrate.ts
-var import_node_fs5 = require("node:fs");
+var import_node_fs6 = require("node:fs");
 var BUCKETS = [
   [0.5, 0.6],
   [0.6, 0.7],
@@ -9304,7 +9371,7 @@ function parseFixtures(source) {
   return fixtures;
 }
 function loadFixtures(path) {
-  return parseFixtures((0, import_node_fs5.readFileSync)(path, "utf8"));
+  return parseFixtures((0, import_node_fs6.readFileSync)(path, "utf8"));
 }
 async function score(fixtures, policy, adapter, onProgress) {
   const questions = {};
@@ -9656,22 +9723,22 @@ function parseArgs(argv) {
     json: argv.includes("--json")
   };
 }
-async function calibrate(args, write2) {
+async function calibrate(args, write3) {
   const root = pluginRoot() ?? process.cwd();
   const resolved = resolvePolicy(process.cwd(), root);
   if (resolved.policy === void 0) {
-    write2(`Cannot calibrate: ${resolved.source} did not load.
+    write3(`Cannot calibrate: ${resolved.source} did not load.
 `);
-    for (const d of errorsIn(resolved.diagnostics)) write2(`  ${d.path || "(top level)"}: ${d.message}
+    for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
 `);
     return 1;
   }
-  const fixturePath = args.fixtures ?? (0, import_node_path5.join)(root, "fixtures", "gate.jsonl");
+  const fixturePath = args.fixtures ?? (0, import_node_path6.join)(root, "fixtures", "gate.jsonl");
   let fixtures;
   try {
     fixtures = loadFixtures(fixturePath);
   } catch (err) {
-    write2(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}
+    write3(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}
 `);
     return 1;
   }
@@ -9681,7 +9748,7 @@ async function calibrate(args, write2) {
   for (const name of names) {
     const adapter = adapterFor2(name);
     if (typeof adapter === "string") {
-      write2(`${adapter}
+      write3(`${adapter}
 `);
       return 1;
     }
@@ -9690,7 +9757,7 @@ async function calibrate(args, write2) {
   for (const adapter of adapters) {
     const problem = await startIfNeeded(adapter);
     if (problem !== void 0) {
-      write2(`Cannot calibrate against ${adapter.name}: ${problem}
+      write3(`Cannot calibrate against ${adapter.name}: ${problem}
 `);
       return 1;
     }
@@ -9702,7 +9769,7 @@ async function calibrate(args, write2) {
   }
   const [first, second] = runs;
   if (first === void 0) {
-    write2("No backend to run.\n");
+    write3("No backend to run.\n");
     return 1;
   }
   if (args.json === true) {
@@ -9715,16 +9782,16 @@ async function calibrate(args, write2) {
       },
       comparison: compare(first, second, resolved.policy.calibration)
     };
-    write2(`${JSON.stringify(payload, null, 2)}
+    write3(`${JSON.stringify(payload, null, 2)}
 `);
     return 0;
   }
   for (const r of runs) {
-    write2(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
-    write2("\n");
+    write3(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
+    write3("\n");
   }
   if (second !== void 0) {
-    write2(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
+    write3(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
   }
   return 0;
 }
@@ -9811,7 +9878,7 @@ function parseFrontmatter(text) {
   } catch {
     return {};
   }
-  if (!isRecord4(parsed)) return {};
+  if (!isRecord5(parsed)) return {};
   return {
     ...typeof parsed["name"] === "string" ? { name: parsed["name"] } : {},
     ...typeof parsed["description"] === "string" ? { description: parsed["description"] } : {}
@@ -9821,7 +9888,7 @@ function parsePluginManifest(json) {
   const plugins = arrayUnder(json, "plugins");
   const entries = [];
   for (const value of plugins) {
-    if (!isRecord4(value)) continue;
+    if (!isRecord5(value)) continue;
     const name = value["name"];
     if (typeof name !== "string" || name.length === 0) continue;
     const preference = value["installationPreference"];
@@ -9836,7 +9903,7 @@ function parseSkillsManifest(json) {
   const skills2 = arrayUnder(json, "skills");
   const entries = [];
   for (const value of skills2) {
-    if (!isRecord4(value)) continue;
+    if (!isRecord5(value)) continue;
     const name = value["name"] ?? value["skillId"];
     const description = value["description"];
     if (typeof name !== "string" || name.length === 0) continue;
@@ -9889,18 +9956,18 @@ function arrayUnder(json, key) {
   } catch {
     return [];
   }
-  if (!isRecord4(parsed)) return [];
+  if (!isRecord5(parsed)) return [];
   const value = parsed[key];
   return Array.isArray(value) ? value : [];
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // src/io/skills.ts
-var import_node_fs6 = require("node:fs");
+var import_node_fs7 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path6 = require("node:path");
+var import_node_path7 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -9909,7 +9976,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs6.existsSync)(path)) return;
+    if (!(0, import_node_fs7.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -9923,17 +9990,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path6.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path7.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path6.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path7.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path6.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path6.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path7.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path7.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path6.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path7.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -9944,14 +10011,14 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read2((0, import_node_path6.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path7.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
   return skills2;
 }
 function syncedSkills(manifest) {
-  const json = read2(manifest);
+  const json = read3(manifest);
   if (json === void 0) return [];
   return parseSkillsManifest(json).map((skill) => ({
     namespace: SYNCED_SKILL_NAMESPACE,
@@ -9961,14 +10028,14 @@ function syncedSkills(manifest) {
   }));
 }
 function pluginSkills(manifest, _bucket, skillsDirFor) {
-  const json = read2(manifest);
+  const json = read3(manifest);
   if (json === void 0) return [];
   const skills2 = [];
   for (const plugin of parsePluginManifest(json)) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read2((0, import_node_path6.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path7.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -9976,7 +10043,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
   return skills2;
 }
 function installedPluginSkills(file) {
-  const json = read2(file);
+  const json = read3(file);
   if (json === void 0) return [];
   let parsed;
   try {
@@ -9994,9 +10061,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path6.join)(installPath, "skills");
+    const dir = (0, import_node_path7.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read2((0, import_node_path6.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path7.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -10004,51 +10071,51 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path6.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs6.existsSync)(root)) return [];
+  const root = (0, import_node_path7.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs7.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path6.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path7.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path6.join)(root, outer, inner);
-      const rpm = (0, import_node_path6.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs6.existsSync)(rpm)) {
+      const session = (0, import_node_path7.join)(root, outer, inner);
+      const rpm = (0, import_node_path7.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs7.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path6.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path7.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path6.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
-        if ((0, import_node_fs6.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path7.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path7.join)(bucket, "manifest.json");
+        if ((0, import_node_fs7.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path6.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path7.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path6.join)(dir, outer))) {
-      buckets.push((0, import_node_path6.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path7.join)(dir, outer))) {
+      buckets.push((0, import_node_path7.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs6.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
-function read2(file) {
+function read3(file) {
   try {
-    return (0, import_node_fs6.readFileSync)(file, "utf8");
+    return (0, import_node_fs7.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -10061,7 +10128,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs6.statSync)(source);
+      const stat = (0, import_node_fs7.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -10071,13 +10138,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path6.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path7.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs6.existsSync)((0, import_node_path6.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path6.dirname)(current);
+    if ((0, import_node_fs7.existsSync)((0, import_node_path7.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path7.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }

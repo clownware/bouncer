@@ -1,6 +1,6 @@
 # ADR-002: A single bundled JS file on Node, with the bundle committed
 
-- **Status:** accepted
+- **Status:** accepted; item 2 reversed by ADR-007
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -30,6 +30,14 @@ Two conclusions, one of which reversed an earlier recommendation:
    in the bundle costs about 2 ms. An earlier draft proposed a compiled-policy cache keyed
    on mtime; the measurement says that would add a staleness bug for no measurable gain.
    Parse the YAML on every invocation.
+
+   > **Reversed by ADR-007 on 2026-09-18.** Both halves turned out to be wrong once the
+   > policy had rules in it. The 2 ms above was measured on a skeleton policy, and parse
+   > cost tracks YAML node count rather than file size: on the shipped policy the parse is
+   > 22 ms of a 52 ms cold run, and caching it saves 22.6 ms — 32.1 ms on a policy with
+   > thirty user rules in it. The staleness bug belonged to the mtime key, not to caching;
+   > ADR-007 keys on the policy's full text instead, which has no false-hit class at all.
+   > The status line above stands for everything else in this ADR.
 
 Current skeleton measures p95 46.8 ms against an 80 ms budget (`npm run bench`), leaving
 room for policy parsing, state building, and logging before the adapter call.
