@@ -278,7 +278,7 @@ function truncate(description: string): string {
 function fingerprintOf(skills: readonly Skill[]): string {
   let hash = 0x811c9dc5;
   for (const skill of skills) {
-    for (const char of `${skill.qualifiedName} `) {
+    for (const char of `${skill.qualifiedName}\u0000`) {
       hash ^= char.codePointAt(0) ?? 0;
       hash = Math.imul(hash, 0x01000193) >>> 0;
     }
