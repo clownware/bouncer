@@ -3,9 +3,17 @@
 A judgment layer for agents. The first thing it judges is
 [Claude Code](https://claude.com/claude-code) tool calls.
 
-A `PreToolUse` hook classifies each proposed tool call against a policy you own and returns
-allow / ask / deny — using a fast System One model ([TypeSafe Jev](https://typesafe.ai))
-rather than a frontier LLM, so it can run on every call for about four cents a day.
+A `PreToolUse` hook answers a handful of plain-English questions about each proposed tool
+call — using a fast System One model ([TypeSafe Jev](https://typesafe.ai)) rather than a
+frontier LLM, so it can run on every call for about four cents a day. The questions and the
+thresholds live in a YAML file you own.
+
+**If you run `--dangerously-skip-permissions`, this never prompts you.** That is the point,
+not a caveat. Your baseline is zero interruptions, and `seatbelt` mode keeps it at zero: it
+is silent until one of fifteen deterministic rules matches something that is never okay —
+printing a private key, a live credential on the command line, `git stash clear`. Judgments
+still run and still get logged; they just do not get to interrupt you, unless you enable a
+deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes).
 
 > **Status: v0.1, with the v0.2 work on `main`.** The hook runs end to end, it ships
 > observing, and every accuracy number below comes from a live calibration run against Jev
@@ -308,17 +316,23 @@ permission flow. Bouncer being broken is never the reason something dangerous ra
 never the reason your session is unusable.
 
 **Adding friction is treated as a bug.** Even a correct verdict is a regression if it
-prompts you on something that would not have prompted you before. This is why observe mode
-emits nothing rather than `ask` — see [ADR-003](docs/adr/003-fail-to-prompt-and-observe-by-default.md).
+interrupts you where nothing would have interrupted you before. For a prompted user that
+means strictly fewer prompts than not installing it; for a bypass user, whose baseline has
+no interruptions to trade against, it means none at all. This is why observe mode emits
+nothing rather than `ask` — see
+[ADR-003](docs/adr/003-fail-to-prompt-and-observe-by-default.md) — and why `seatbelt` drops
+every judgment-derived `ask` on the floor rather than promoting it.
 
 **No thresholds in code.** The questions are plain English and the thresholds are numbers,
 both living in a YAML file you own and can commit next to your `CLAUDE.md`. Re-tuning the
 policy never means re-asking the model.
 
-**It is a safety net, not a security boundary.** The command text being judged can come
-from a repository you do not control, and the model's own documentation notes that state
-content can be adversarially framed. Bouncer is built to catch Claude's mistakes. It is not
-built to withstand someone deliberately trying to get past it.
+**It catches mistakes; it is not a security boundary.** The job is the thing an agent does
+by accident at 2am, not an adversary. The command text being judged can come from a
+repository you do not control, and the model's own documentation notes that state content
+can be adversarially framed, so Bouncer is built to catch Claude's mistakes and not to
+withstand someone deliberately trying to get past it. Read any deny in this project as a
+mistake caught, not a permission withheld.
 
 ## Performance
 
