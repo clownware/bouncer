@@ -14,9 +14,11 @@ regex or an LLM in the hot path.
 
 > **Status: v0.1.** The hook runs end to end in observe mode, and the calibration table
 > below comes from a live run against Jev, on the policy in this repository, in which all
-> seven questions clear the PRD's 0.85 bar in the high-confidence buckets. See
-> [docs/PRD.md](docs/PRD.md) for the spec and [docs/adr/](docs/adr/) for what has been
-> decided and why.
+> seven questions clear the PRD's 0.85 bar in the high-confidence buckets. One of them,
+> `sensitive_target`, passes on 12 confident answers with the same 11 correct in four
+> runs; it has flipped twice as one miss moved across 0.80, so read its pass as a
+> coin landing, not a trend. See [docs/PRD.md](docs/PRD.md) for the spec and
+> [docs/adr/](docs/adr/) for what has been decided and why.
 
 ## Calibration
 
@@ -39,13 +41,13 @@ is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 26 |  92% | 0.087 |  67% (3) | 100% (5) | 100% (3) |  50% (2) | 100% (13) |
+| destructive | 26 |  92% | 0.088 |  75% (4) | 100% (4) | 100% (3) |  50% (2) | 100% (13) |
 | egress | 20 |  95% | 0.030 |  —  |  —  |   0% (1) |  —  | 100% (19) |
-| outside_repo | 20 |  90% | 0.068 |  50% (2) | 100% (2) |  50% (2) |  —  | 100% (14) |
+| outside_repo | 20 |  90% | 0.070 |  50% (2) | 100% (2) |  50% (2) |  —  | 100% (14) |
 | prod | 16 |  94% | 0.032 |   0% (1) |  —  | 100% (1) | 100% (3) | 100% (11) |
-| secrets | 19 |  84% | 0.104 |   0% (1) | 100% (3) |  50% (2) |  75% (4) | 100% (9) |
-| sensitive_target | 16 |  81% | 0.129 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
-| unreviewed_execution | 22 | 100% | 0.019 |  —  | 100% (2) |  —  | 100% (4) | 100% (16) |
+| secrets | 19 |  84% | 0.098 |   0% (1) |  75% (4) |  —  |  75% (4) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.128 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
+| unreviewed_execution | 24 | 100% | 0.020 |  —  | 100% (2) | 100% (1) | 100% (4) | 100% (17) |
 
 Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):
 
@@ -55,17 +57,19 @@ Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):
 | egress | 19 / 19 | 100.0% | yes |
 | outside_repo | 14 / 14 | 100.0% | yes |
 | prod | 14 / 14 | 100.0% | yes |
-| secrets | 12 / 13 | 92.3% | yes |
+| secrets | 13 / 14 | 92.9% | yes |
 | sensitive_target | 11 / 12 | 91.7% | yes |
-| unreviewed_execution | 20 / 20 | 100.0% | yes |
+| unreviewed_execution | 21 / 21 | 100.0% | yes |
 
 Every question clears the bar (7 of 7).
 
-The full report, with every disagreement and why each label is what it is, is in
-[docs/calibration/2026-09-18-jev-6.md](docs/calibration/2026-09-18-jev-6.md). It also lists
-every `unreviewed_execution` answer by probability, which is where to look before enabling
-`guard`: everyday installs and builds score below 0.2, a pinned `npx` scores 0.37, and an
-`npx` of a git URL scores 0.91.
+Accuracy is scored at 0.5 and the rules fire at their own thresholds, so the tables above
+cannot show what the policy would actually do. The harness now reports that too: this run
+has no fixture the labels say should prompt that the policy allows, and 25 of 96 that the
+policy prompts on although the labels say it should not, 12 of them
+through the uncertainty rule. The full report, with that section, every disagreement and
+why each label is what it is, is in
+[docs/calibration/2026-09-18-jev-7.md](docs/calibration/2026-09-18-jev-7.md).
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
@@ -77,10 +81,10 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 94 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 96 that
 ship.
 
-**What this table measures.** The 94 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 96 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
