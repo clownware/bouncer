@@ -9111,7 +9111,7 @@ async function runPreToolUse(payload, options = {}) {
       latency_ms: { total: now() - started, adapter: adapterMs },
       ...status2.warmup ? { warmup: true } : {}
     });
-    const output = outputFor(decision, policy);
+    const output = outputFor(decision, policy, escalation);
     if (next.message !== void 0) {
       return { ...output ?? {}, systemMessage: next.message };
     }
@@ -9145,23 +9145,25 @@ function standDown(dir, base, state, status2, err, totalMs, policy) {
   }
   return next.message !== void 0 ? { systemMessage: next.message } : void 0;
 }
-function outputFor(decision, policy) {
+function outputFor(decision, policy, escalation) {
   if (decision.emit === void 0) return void 0;
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: decision.emit,
-      permissionDecisionReason: explain(decision, policy)
+      permissionDecisionReason: explain(decision, policy, escalation)
     }
   };
 }
-function explain(decision, policy) {
+function explain(decision, policy, escalation) {
   const { reason } = decision;
   switch (reason.kind) {
     case "rule": {
       if (reason.question === "default") return "bouncer: no rule matched.";
       const instructions = policy.gate.questions[reason.question]?.instructions ?? reason.question;
-      return `bouncer: ${instructions} (${reason.question} ${reason.p.toFixed(2)})`;
+      const also = (escalation?.signals ?? []).filter((s) => !s.decided && s.question !== reason.question).map((s) => `${s.question} ${s.p.toFixed(2)}`);
+      const others = also.length > 0 ? `; also ${also.join(", ")}` : "";
+      return `bouncer: ${instructions} (${reason.question} ${reason.p.toFixed(2)}${others})`;
     }
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
@@ -9368,6 +9370,17 @@ function render(record2) {
     const width = Math.max(...entries.map(([name]) => name.length));
     for (const [name, p] of entries) {
       lines.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
+    }
+  }
+  if (record2.escalation !== void 0 && record2.escalation.signals.length > 0) {
+    lines.push("", `Escalated as ${record2.escalation.verdict}, on:`);
+    for (const signal of record2.escalation.signals) {
+      const mark = signal.decided ? "\u2192" : " ";
+      lines.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
+      lines.push(`      ${signal.asks}`);
+    }
+    if (record2.escalation.signals.length > 1) {
+      lines.push("  \u2192 marks the one that decided; first match wins.");
     }
   }
   if (record2.error !== void 0) {

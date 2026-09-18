@@ -1,6 +1,6 @@
 ---
 name: bouncer
-description: Use when the user asks why a tool call was blocked, questioned, or allowed by bouncer, when they want to change bouncer's policy, thresholds, questions or fast path, or when they mention bouncer's decisions, log, calibration or modes.
+description: Use when the user asks why a tool call was blocked, questioned or allowed by bouncer, or wants to read or change their own bouncer policy file — thresholds, questions, fast path, hard rules, modes — or asks about bouncer's decisions log or calibration output. Scoped to this user's log and policy file. It does not cover the classifier itself: questions about Jev, System One models, the API or how to word a question for one belong to the `typesafe` skill.
 ---
 
 # Explaining and tuning bouncer

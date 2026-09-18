@@ -30,6 +30,8 @@ function payload(overrides: Record<string, unknown> = {}) {
 
 const dangerous = new MockAdapter({ answers: { destructive: 0.95 } });
 const harmless = new MockAdapter({ answers: { destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 } });
+/** Two thresholds crossed at once, so the reason has something beyond the decider to say. */
+const dangerousAndProd = new MockAdapter({ answers: { destructive: 0.95, prod: 0.88, secrets: 0.01, outside_repo: 0.01, egress: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 } });
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "bouncer-test-"));
@@ -71,6 +73,21 @@ describe("observe mode", () => {
 
 describe("guard mode", () => {
   beforeEach(() => usePolicy("guard"));
+
+  it("names the other thresholds the call crossed, not only the deciding one", async () => {
+    // The deciding question stays the headline; the rest is what a user needs in order to
+    // disagree with the verdict rather than just with the number. See docs/adr/008.
+    const output = await runPreToolUse(payload(), { adapter: dangerousAndProd });
+    const reason = output?.hookSpecificOutput?.permissionDecisionReason ?? "";
+    expect(reason).toContain("destructive 0.95");
+    expect(reason).toContain("also prod 0.88");
+    expect(reason.indexOf("destructive")).toBeLessThan(reason.indexOf("prod"));
+  });
+
+  it("says nothing extra when only one threshold was crossed", async () => {
+    const output = await runPreToolUse(payload(), { adapter: dangerous });
+    expect(output?.hookSpecificOutput?.permissionDecisionReason).not.toContain("also");
+  });
 
   it("emits ask with a reason naming the question and the number", async () => {
     const output = await runPreToolUse(payload(), { adapter: dangerous });
