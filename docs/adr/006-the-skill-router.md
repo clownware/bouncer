@@ -1,6 +1,7 @@
 # ADR-006: The skill router
 
-- **Status:** proposed
+- **Status:** accepted — the three open decisions were settled by Chris on 2026-09-18,
+  and the viability measurement (§10) came back inside budget
 - **Date:** 2026-09-18
 - **Context for:** v0.2
 - **Supersedes:** PRD §5.3 (router half), §6 `router:` block, §12 v0.2 DoD
@@ -119,50 +120,76 @@ the distribution — so it carries nothing the distribution does not, and policy
 on the probabilities themselves. That is the same reasoning as ADR-003's, applied to a
 different question type.
 
-### 3. The skills are the question, not the state
+### 3. Names in the state, descriptions in the question
 
-The skill registry goes in the `choice` question's `criteria` map, because the answer
-comes back keyed by option name. The state carries the request and its setting:
+The `choice` question's `criteria` map carries skill name → description, because the
+answer comes back keyed by option name. The skill **names** also go in the state. The
+first draft of this ADR put the registry only in the question, and that was wrong.
+
+Measured 2026-09-18: on a prompt that plainly wanted a brand-voice review, `needs_skill`
+scored **0.22** with the registry only in the choice question, and **0.61** with the skill
+names added to the state. The two questions are evaluated against the same state but not
+against each other's criteria, so the noul was being asked whether the user had written
+something down for this while being shown nothing the user had written down. A question
+that reasons about the registry has to be able to see it. Cost is about 200 tokens.
 
 ```json
 {"request":"<redacted prompt, capped>","project":"bouncer","git_branch":"main",
+ "skills_available":["brand-review","code-review","…"],
  "recent_tools":["Read","Edit","Bash"]}
 ```
 
 Same discipline as `src/engine/state.ts`: structured JSON so a prompt containing
 `needs_skill: false` cannot impersonate a field, the prompt redacted through the existing
-redactor, and a hard cap (2 KB; PRD §7).
+redactor, and a hard cap (2 KB; PRD §7) — which the name list now counts against, so it is
+truncated before the request text is.
 
-Budget against the API's 32k limit for state plus the longest question: a registry of
-forty skills at a one-sentence description each is roughly 1.2k tokens, so the limit is
-not the binding constraint — latency is. Descriptions are truncated to their first
-sentence or 200 characters, whichever is shorter. `choice` accepts at most 255 options; a
-user past that has the router disable itself with one `systemMessage`, not a silently
-truncated registry.
+Budget against the API's 32k limit for state plus the longest question: measured at
+roughly **50 tokens per skill**, so forty skills cost about 2k rather than the 1.2k this
+ADR first estimated. Still nowhere near the limit, and §10 says latency is not the binding
+constraint either. Descriptions are truncated to their first sentence or 200 characters,
+whichever is shorter. `choice` accepts at most 255 options; a user past that has the router
+disable itself with one `systemMessage`, not a silently truncated registry.
 
 Nothing new leaves the machine: skill names and descriptions are already in the model's
 context, and the prompt is the user's own text.
 
-### 4. Skill discovery reads frontmatter, and is cached per session
+### 4. Discovery completeness is a correctness requirement, not an optimisation
 
 `name` and `description` from the YAML frontmatter of every `SKILL.md` under the user's
 skills directory, the project's, and installed plugins'. `skills: auto` in the PRD, and it
 stays the default; an explicit list is supported for users who want to route over a
 subset.
 
-This is N file reads on a hot path with an 80 ms budget (ADR-002), which is exactly the
-kind of thing that budget exists to catch. Discovery is therefore cached in the session
-state file the breaker already writes, keyed on the skills directories' mtimes.
+**A `choice` question cannot abstain**, and that turns an incomplete registry from a gap
+into a confident wrong answer. When the right option is absent the distribution
+renormalises over what was offered, and the best of a bad set comes back looking certain.
+Measured 2026-09-18: a brand-voice copy review returned `ux-optimization` at **0.65**
+because `brand-review` was not in the registry at all — though it is an installed skill in
+the session that ran the probe. That is exactly the expensive event this design exists to
+prevent, and a short registry produces it *by construction* rather than by bad luck. No
+threshold rescues it: the margin gate sees a clean winner and fires.
 
-**Needs a measurement before it is committed to:** `npm run bench` with a realistic
-registry (Chris runs 10+ skills; the plugin marketplace pushes that well past 40). If cold
-discovery is more than a few milliseconds, the cache is load-bearing rather than an
-optimisation, and the ADR-002 finding — that caching the parsed policy bought nothing and
-cost a staleness bug — does not transfer, because that was one file and this is N.
+So three things are settled before any router code:
 
-**Also unverified:** the on-disk layout of *plugin* skills after install. User and project
-skills are well known; plugin skill paths depend on how the plugin was installed. Read one
-rather than assume.
+1. **Where app-bundled plugin skills actually live.** Scanning the two documented
+   locations missed `brand-review` entirely, so some skills Claude Code loads are
+   somewhere this ADR's discovery never looks. Find it, or the registry is short on every
+   run. Read one rather than assume.
+2. **Dedupe on name.** That same scan found 108 `SKILL.md` files collapsing to 42 distinct
+   names, 29 of them duplicated across a marketplace clone and versioned cache copies.
+   Duplicate options split probability mass between identical entries and depress the
+   margin, which reads as uncertainty rather than as a bug.
+3. **Filter by `enabledPlugins`.** A skill from a marketplace entry the user has not
+   enabled cannot be loaded, so offering it as an option can only produce a suggestion
+   nobody can act on.
+
+Only after that is discovery an optimisation problem. It is ~100 file reads on a hot path
+with an 80 ms budget (ADR-002), so it is cached in the session state file the breaker
+already writes, keyed on the skills directories' mtimes. **Still needs `npm run bench`**
+with a realistic registry: if cold discovery costs more than a few milliseconds the cache
+is load-bearing rather than an optimisation, and ADR-002's finding that caching the parsed
+policy bought nothing does not transfer — that was one file and this is a hundred.
 
 ### 5. Observe mode does **not** call the classifier
 
@@ -187,6 +214,13 @@ live:
 That second property is only available because the log stores the redacted state rather
 than a hash — the decision recorded in PRD §9, made for precisely this reason. This is the
 first thing that cashes it in.
+
+**Each observe record carries the registry it saw**, as the ordered name list or a hash of
+it. Without that, a replay after the registry changed is a different experiment reported as
+the same one — and given §4, the registry *is* expected to change as discovery is fixed.
+The same applies to a reworded question: a replay is only comparable when what varied is
+known. It is the control-condition problem that bit the run 1 vs run 2 comparison: matching
+headline numbers across two runs do not establish that the runs were comparable.
 
 ### 6. Its own three-state mode, independent of the gate's
 
@@ -251,6 +285,21 @@ like a rule. The description is not repeated; it is already in context.
 
 ### 10. Latency budget
 
+Measured against live Jev on 2026-09-18, five timed calls each, one fan-out carrying the
+`needs_skill` noul and a `choice` over a real registry:
+
+| options | input tokens | p50 | max |
+|---|---|---|---|
+| 10 | 763 | 181 ms | 354 ms |
+| 40 | 1949 | 199 ms | 278 ms |
+| 42 | 2057 | 219 ms | 239 ms |
+
+**A choice over forty options costs about what five nouls cost.** The open question this
+ADR was written around — whether a wide choice is materially slower than the gate's nouls
+— is answered, and latency is not the constraint on registry size. The answer carries a
+full `probabilities` map, which `src/adapters/jev.ts` already parses, so the margin gate
+needs no adapter change.
+
 | | budget |
 |---|---|
 | hook overhead, including discovery from cache | ≤ 80 ms p95 (ADR-002, unchanged) |
@@ -261,11 +310,6 @@ The tighter timeout is the asymmetry again: a missed suggestion costs nothing, a
 prompt that takes an extra second to start is felt by a human. The existing circuit
 breaker is reused as is, including the rule that the first call of a session is excluded
 from it.
-
-**Unmeasured:** every latency number on record (README, ADR-003, run 4) is for five to
-seven `noul` questions. Nobody has timed a `choice` question over several dozen options.
-It may be materially slower. **This measurement needs Chris's API key** and is the first
-thing to run.
 
 ## Calibration, and why the PRD's v0.2 DoD is the wrong target
 
@@ -289,7 +333,15 @@ Fixtures follow the gate's near-miss discipline, which is the part that made the
 table mean anything: pairs a description-matcher would confuse. *"review this copy against
 our voice"* against *"review this PR"*. *"write up what we decided"* against *"write the
 migration"*. *"the numbers in the dashboard look off"* against *"the dashboard build is
-failing"*. A set of obviously-matched prompts would score beautifully and tell you nothing.
+failing"*. A set of obviously-matched prompts would score beautifully and tell you nothing
+— the same trap `unreviewed_execution`'s first 11/11 row fell into.
+
+**The fixtures route over a real registry, not an invented one.** The Clownware plugins and
+the Anthropic skill set are public, so their names and one-line descriptions can be
+committed as they are. That makes the published table a measurement over a distribution
+that actually exists and that a reader can reproduce, rather than over a straw registry
+chosen to be separable. The private run against the full local skill set, which cannot be
+committed, stays as the go/no-go.
 
 **Proposed v0.2 DoD, replacing §12's:**
 
@@ -297,8 +349,10 @@ failing"*. A set of obviously-matched prompts would score beautifully and tell y
   labelled `none`.
 - Top-1 accuracy ≥ 0.85 **among the prompts the router answers on**.
 - False-suggestion rate ≤ 0.05 — suggests a skill where the label says none.
-- Coverage reported alongside both, so a router that passes by abstaining on 97% of
-  prompts is visibly doing that rather than quietly passing.
+- **Coverage ≥ 0.25 among the fixtures labelled as needing a skill**, reported alongside
+  both numbers. Accuracy-among-answered and a false-suggestion ceiling can both be met by a
+  router that answers five prompts a month; a floor is what lets the DoD return the verdict
+  "correct, and too quiet to be worth shipping", which is a real possible outcome.
 - The table published in the README before `suggest` is documented as ready, the same
   gate v0.1 held itself to.
 
@@ -343,6 +397,69 @@ router:
     top:         { p: ">=0.60" }
     margin:      { p: ">=0.20" }   # top minus runner-up
 ```
+
+**These three numbers are placeholders and one of them is already in doubt.** In the
+probe behind decision 3, a prompt that plainly wanted a brand-voice review scored 0.61 on
+`needs_skill` even *after* the names were added to the state — below the 0.70 written
+above, so the router as specified would have abstained on a clear positive. That is either
+a threshold set too high or a question worded too narrowly, and one prompt cannot tell
+which.
+
+It is deliberately not being tuned here. Moving a threshold or rewording a question to fit
+a single observation is the mistake the gate's calibration discipline exists to prevent,
+and it invalidates any table already published against the old text. The offline harness
+over the fixture set is what settles all three numbers, which is another reason the order
+of work puts `suggest` last.
+
+## Prior art: fast-jev-compaction
+
+`github.com/tamaratran/fast-jev-compaction` is the nearest thing to this on the same
+model: a `session.compact` hook that asks Jev two `noul` questions per tool call — keep the
+call, keep the result verbatim — and *deletes* what falls below a threshold rather than
+summarising it. (Read from its README on 2026-09-18, not from its source.)
+
+Three things about it are worth recording here.
+
+**It is a stronger form of the token argument than the router.** It removes tokens that are
+certainly in the context now; the router avoids tokens that might be spent, and the section
+above concedes that saving is signed. If token reduction is the goal rather than a
+property, compaction has the higher yield.
+
+**Its one-question-per-candidate shape is the one decision 2 rejects, and it is right for
+it.** Its candidates are independent keep/drop decisions with no ranking between them. The
+router's candidates compete for a single pick and need a normalised distribution and a
+margin. The two shapes answer differently structured questions and are not in tension.
+
+**Its `keepThreshold` defaults to 0.5**, the point of maximum uncertainty on a noul, so
+every coin flip resolves to "delete this". That is the default ADR-003 refuses for the
+gate, and it is the concrete argument for a compactor living behind a calibration harness
+rather than beside one.
+
+**Not in v0.2, and not in the README.** Deleting context fails silently and unrecoverably:
+the model simply no longer knows something, and nobody sees the decision that caused it —
+the `deny`-rule problem from ADR-003 one level worse. It needs its own ADR rather than an
+extension of 003. The sequence is the router in observe, two weeks of prompts, the offline
+table, and only then a decision about whether the token thesis is better served by routing
+or by a calibrated compactor. Until that decision exists, a "see also" in the README would
+read as an endorsement of a threshold this repo thinks is wrong, and the reasoning belongs
+where this repo keeps reasoning.
+
+## Order of work
+
+1. **Discovery** (decision 4). Every downstream number is wrong if the registry is short,
+   so nothing else is worth measuring first.
+2. **The `needs_skill` state change** (decision 3) and the `UserPromptSubmit` stdout
+   capture (decision 1).
+3. **Observe mode and the offline harness**, including the registry fingerprint
+   (decision 5).
+4. **`suggest` last**, after the table.
+
+One implementation note for step 3: `src/engine/evaluate.ts` takes
+`Record<string, number>` and returns a gate-shaped `Decision`, so it is noul-only by type,
+and `noulProbability()` drops choice answers on the floor. The adapter speaks `choice`
+already; the engine does not. The router needs its own evaluation path rather than a
+widened `evaluate()`, which also keeps the gate's rule evaluator the small pure table-tested
+thing it is today.
 
 ## Consequences
 
