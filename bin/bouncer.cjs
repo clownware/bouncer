@@ -7560,6 +7560,290 @@ async function safeText(response) {
   }
 }
 
+// src/adapters/local.ts
+var DEFAULT_BASE_URL2 = "http://127.0.0.1:8080/v1";
+var DEFAULT_MODEL2 = "local";
+var DEFAULT_CONCURRENCY = 4;
+var PREFLIGHT_BUDGET_MS = 1e4;
+var DEFAULT_TRUE_LABELS = ["yes", " yes", "Yes", " Yes"];
+var DEFAULT_FALSE_LABELS = ["no", " no", "No", " No"];
+var FORCE_BIAS = 100;
+var LocalAdapter = class {
+  name = "local";
+  options;
+  constraint;
+  constructor(options = {}) {
+    this.options = options;
+  }
+  /**
+   * Resolve the label tokens and prove the endpoint constrains, once.
+   *
+   * Callable directly so `bouncer calibrate` can fail before the first fixture rather than
+   * on it. `decide` awaits the same promise, so the cost is paid once per process either
+   * way. It is not cached across processes: the hook is a fresh process per tool call and
+   * pays one tokenize round trip to localhost each time, which is noise beside the decode
+   * itself. ADR-005 records that as the thing to revisit if local ever runs in the hook
+   * path at volume.
+   */
+  async start() {
+    await this.ready(Date.now() + PREFLIGHT_BUDGET_MS);
+  }
+  async decide(request) {
+    const started = Date.now();
+    const deadline = started + request.timeoutMs;
+    const entries = Object.entries(request.questions);
+    for (const [name, question] of entries) {
+      if (question.type !== "noul") {
+        throw new AdapterError(
+          "invalid_request",
+          `the local adapter answers noul questions only; "${name}" is a ${question.type}`
+        );
+      }
+    }
+    const constraint = await this.ready(deadline);
+    const answers = {};
+    let inputTokens = 0;
+    let model;
+    const ask = async ([name, question]) => {
+      const result = await this.complete(
+        `${request.state}${suffixFor(question)}`,
+        constraint,
+        deadline,
+        request.signal
+      );
+      answers[name] = { type: "noul", noul: result.p };
+      inputTokens += result.inputTokens ?? 0;
+      model ??= result.model;
+    };
+    const [first, ...rest] = entries;
+    if (first !== void 0) await ask(first);
+    await pool(rest, this.options.concurrency ?? DEFAULT_CONCURRENCY, ask);
+    if (Object.keys(answers).length === 0) {
+      throw new AdapterError("malformed_response", "no readable answers in the response");
+    }
+    return {
+      answers,
+      ...model !== void 0 ? { model } : {},
+      ...inputTokens > 0 ? { inputTokens } : {},
+      latencyMs: Date.now() - started
+    };
+  }
+  ready(deadline) {
+    this.constraint ??= this.preflight(deadline).catch((err) => {
+      this.constraint = void 0;
+      throw err;
+    });
+    return this.constraint;
+  }
+  async preflight(deadline) {
+    const trueLabels = this.options.trueLabels ?? DEFAULT_TRUE_LABELS;
+    const falseLabels = this.options.falseLabels ?? DEFAULT_FALSE_LABELS;
+    const bias = {};
+    const classes = /* @__PURE__ */ new Map();
+    const kept = { true: 0, false: 0 };
+    for (const [labels, truth] of [
+      [trueLabels, true],
+      [falseLabels, false]
+    ]) {
+      for (const label of labels) {
+        const tokens = await this.tokenize(label, deadline);
+        if (tokens.length !== 1) continue;
+        bias[String(tokens[0])] = FORCE_BIAS;
+        classes.set(normalise(label), truth);
+        kept[truth ? "true" : "false"] += 1;
+      }
+    }
+    for (const truth of ["true", "false"]) {
+      if (kept[truth] === 0) {
+        throw new AdapterError(
+          "invalid_request",
+          `every surface form of the ${truth} label is more than one token under this model's tokenizer, so the decode cannot be constrained to it. Configure single-token labels for this model.`
+        );
+      }
+    }
+    const constraint = { bias, classes, topLogprobs: Object.keys(bias).length };
+    await this.complete(PROBE_PROMPT, constraint, deadline);
+    return constraint;
+  }
+  /** One constrained token, and the probability of the true class read off its logprobs. */
+  async complete(prompt, constraint, deadline, signal) {
+    const body = {
+      model: this.options.model ?? DEFAULT_MODEL2,
+      prompt,
+      max_tokens: 1,
+      temperature: 0,
+      logprobs: constraint.topLogprobs,
+      logit_bias: constraint.bias,
+      ...this.options.extraBody ?? {}
+    };
+    const payload = await this.post(`${this.baseUrl()}/completions`, body, deadline, signal);
+    return { ...readProbability(payload, constraint), ...readUsage(payload) };
+  }
+  /**
+   * Token ids for one string.
+   *
+   * llama.cpp and vLLM both serve `/tokenize` at the server root and disagree only about
+   * the request body, so both shapes are tried. Failing both is a refusal to start: without
+   * ids there is no `logit_bias`, and without `logit_bias` there is no constraint.
+   */
+  async tokenize(text, deadline) {
+    const shapes = [
+      { content: text, add_special: false },
+      // llama.cpp
+      { model: this.options.model ?? DEFAULT_MODEL2, prompt: text, add_special_tokens: false }
+      // vLLM
+    ];
+    const root = this.baseUrl().replace(/\/v1\/?$/, "");
+    let last;
+    for (const url of [`${root}/tokenize`, `${this.baseUrl()}/tokenize`]) {
+      for (const shape of shapes) {
+        try {
+          const payload = await this.post(url, shape, deadline);
+          const tokens = payload["tokens"];
+          if (Array.isArray(tokens) && tokens.every((t) => typeof t === "number")) return tokens;
+        } catch (err) {
+          if (err instanceof AdapterError && err.kind === "timeout") throw err;
+          last = err;
+        }
+      }
+    }
+    throw new AdapterError(
+      "invalid_request",
+      `cannot resolve label token ids: ${root}/tokenize answered neither the llama.cpp nor the vLLM request shape${last instanceof Error ? ` (${last.message})` : ""}. Without token ids the decode cannot be constrained, and an unconstrained answer is not a probability.`
+    );
+  }
+  async post(url, body, deadline, signal) {
+    const doFetch = this.options.fetch ?? globalThis.fetch;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new AdapterError("timeout", "no time left in the budget");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), remaining);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      const response = await doFetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      if (!response.ok) throw await errorFor2(response, url);
+      return await response.json();
+    } catch (err) {
+      if (err instanceof AdapterError) throw err;
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
+        throw new AdapterError("timeout", `${url} did not answer in time`, { cause: err });
+      }
+      throw new AdapterError("unavailable", err instanceof Error ? err.message : String(err), { cause: err });
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+  baseUrl() {
+    return (this.options.baseUrl ?? DEFAULT_BASE_URL2).replace(/\/$/, "");
+  }
+};
+function suffixFor(question) {
+  const lines = ["", "---", `Question: ${question.instructions}`];
+  if (question.criteria?.true !== void 0) lines.push(`True when: ${question.criteria.true}`);
+  if (question.criteria?.false !== void 0) lines.push(`False when: ${question.criteria.false}`);
+  lines.push("Answer with one word, yes or no.", "Answer:");
+  return lines.join("\n");
+}
+var PROBE_PROMPT = `Question: Is the sky sometimes blue?
+Answer with one word, yes or no.
+Answer:`;
+function readProbability(payload, constraint) {
+  const top = topLogprobs(payload);
+  if (top === void 0) {
+    throw new AdapterError(
+      "malformed_response",
+      "the endpoint returned no top logprobs, so there is no distribution to read a probability from"
+    );
+  }
+  let trueMass = 0;
+  let falseMass = 0;
+  let sawUnknown;
+  for (const [token, logprob] of Object.entries(top)) {
+    if (typeof logprob !== "number" || !Number.isFinite(logprob)) continue;
+    const truth = constraint.classes.get(normalise(token));
+    if (truth === void 0) {
+      sawUnknown ??= token;
+      continue;
+    }
+    if (truth) trueMass += Math.exp(logprob);
+    else falseMass += Math.exp(logprob);
+  }
+  const total = trueMass + falseMass;
+  if (total <= 0) {
+    throw new AdapterError(
+      "invalid_request",
+      `the endpoint ignored logit_bias: neither label token appears in the returned distribution${sawUnknown !== void 0 ? ` (it offered ${JSON.stringify(sawUnknown)})` : ""}. An unconstrained decode cannot produce a calibrated probability, so the adapter will not run.`
+    );
+  }
+  return { p: trueMass / total };
+}
+function topLogprobs(payload) {
+  if (typeof payload !== "object" || payload === null) return void 0;
+  const choices = payload["choices"];
+  if (!Array.isArray(choices) || choices.length === 0) return void 0;
+  const logprobs = choices[0]["logprobs"];
+  if (typeof logprobs !== "object" || logprobs === null) return void 0;
+  const top = logprobs["top_logprobs"];
+  if (!Array.isArray(top) || top.length === 0) return void 0;
+  const first = top[0];
+  return typeof first === "object" && first !== null ? first : void 0;
+}
+function readUsage(payload) {
+  if (typeof payload !== "object" || payload === null) return {};
+  const record2 = payload;
+  const usage = record2["usage"];
+  const prompt = typeof usage === "object" && usage !== null ? usage["prompt_tokens"] : void 0;
+  return {
+    ...typeof record2["model"] === "string" ? { model: record2["model"] } : {},
+    ...typeof prompt === "number" ? { inputTokens: prompt } : {}
+  };
+}
+function normalise(token) {
+  return token.replace(/^[\s▁]+/, "").toLowerCase();
+}
+async function errorFor2(response, url) {
+  let detail = "";
+  try {
+    detail = (await response.text()).trim().slice(0, 200);
+  } catch {
+    detail = "";
+  }
+  const suffix = detail.length > 0 ? `: ${detail}` : "";
+  if (response.status === 404) {
+    return new AdapterError("invalid_request", `${url} is not served by this endpoint (404)${suffix}`, { status: 404 });
+  }
+  if (response.status === 400 || response.status === 422) {
+    return new AdapterError("invalid_request", `${url} rejected the request (${response.status})${suffix}`, {
+      status: response.status
+    });
+  }
+  if (response.status >= 500) {
+    return new AdapterError("unavailable", `${url} returned ${response.status}${suffix}`, { status: response.status });
+  }
+  return new AdapterError("invalid_request", `${url} returned ${response.status}${suffix}`, { status: response.status });
+}
+async function pool(items, limit, worker) {
+  const width = Math.max(1, Math.min(limit, items.length));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: width }, async () => {
+      for (; ; ) {
+        const i = next++;
+        const item = items[i];
+        if (item === void 0) return;
+        await worker(item);
+      }
+    })
+  );
+}
+
 // src/adapters/mock.ts
 var HEURISTICS = [
   ["destructive", /\brm\s+-[rf]|--force\b|--hard\b|\bDROP\s+TABLE\b|\btruncate\b|>\s*\/dev\/|\bmkfs\b/i],
@@ -7976,13 +8260,13 @@ function loadPolicy(source) {
     error("calibration", "must be a mapping");
   }
   const calibrationFields = isRecord2(calibrationRaw) ? calibrationRaw : {};
-  const confidenceFloor = readProbability(
+  const confidenceFloor = readProbability2(
     calibrationFields["confidence_floor"],
     DEFAULT_CONFIDENCE_FLOOR,
     "calibration.confidence_floor",
     error
   );
-  const accuracyBar = readProbability(
+  const accuracyBar = readProbability2(
     calibrationFields["accuracy_bar"],
     DEFAULT_ACCURACY_BAR,
     "calibration.accuracy_bar",
@@ -8283,7 +8567,7 @@ function readEnum(value, allowed, fallback, path, error) {
   error(path, `must be one of ${allowed.join(", ")}`);
   return fallback;
 }
-function readProbability(value, fallback, path, error) {
+function readProbability2(value, fallback, path, error) {
   if (value === void 0) return fallback;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     error(path, "must be a number");
@@ -8505,6 +8789,18 @@ function tryRead(path) {
   } catch {
     return void 0;
   }
+}
+function localBackend() {
+  const text = (name) => {
+    const value = process.env[name];
+    return value !== void 0 && value.trim().length > 0 ? value.trim() : void 0;
+  };
+  const concurrency = Number(text("BOUNCER_LOCAL_CONCURRENCY"));
+  return {
+    ...text("BOUNCER_LOCAL_URL") !== void 0 ? { baseUrl: text("BOUNCER_LOCAL_URL") } : {},
+    ...text("BOUNCER_LOCAL_MODEL") !== void 0 ? { model: text("BOUNCER_LOCAL_MODEL") } : {},
+    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}
+  };
 }
 
 // src/io/log.ts
@@ -8767,6 +9063,7 @@ function adapterFor(policy) {
   const backend = override !== void 0 && override.length > 0 ? override : policy.backend;
   if (backend === "mock") return new MockAdapter();
   if (backend === "jev") return new JevAdapter({ apiKey: apiKey() ?? "" });
+  if (backend === "local") return new LocalAdapter(localBackend());
   throw new AdapterError("invalid_request", `unknown backend "${backend}"`);
 }
 function targetExistsFor(tool, toolInput, options) {
@@ -8807,7 +9104,7 @@ function status() {
   const policy = resolved.policy;
   const records = tail(dir, SAMPLE);
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
-  lines.push(`Backend: ${policy.backend}${policy.backend === "jev" && apiKey() === void 0 ? "  (no API key in the environment)" : ""}`);
+  lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
@@ -8872,6 +9169,14 @@ function readBreaker(dir) {
   } catch {
     return void 0;
   }
+}
+function backendNote(backend) {
+  if (backend === "jev") return apiKey() === void 0 ? "  (no API key in the environment)" : "";
+  if (backend === "local") {
+    const { baseUrl } = localBackend();
+    return `  (${baseUrl ?? "http://127.0.0.1:8080/v1"})`;
+  }
+  return "";
 }
 
 // src/commands/explain.ts
@@ -9166,6 +9471,120 @@ function formatReport(reports, backend, calibration, scored = []) {
   return `${lines.join("\n")}
 `;
 }
+var pairKey = (s) => `${s.fixture.id}::${s.question}`;
+function compare(a, b, calibration) {
+  const bByKey = new Map(b.scored.map((s) => [pairKey(s), s]));
+  const paired = [];
+  for (const left of a.scored) {
+    const right = bByKey.get(pairKey(left));
+    if (right !== void 0) paired.push([left, right]);
+  }
+  const byQuestion = /* @__PURE__ */ new Map();
+  for (const pair of paired) {
+    const list = byQuestion.get(pair[0].question) ?? [];
+    list.push(pair);
+    byQuestion.set(pair[0].question, list);
+  }
+  const rows = [...byQuestion.entries()].map(([question, items]) => {
+    const side = (i) => items.map((pair) => pair[i]);
+    const brierOf = (rows2) => rows2.reduce((sum, r) => sum + (r.p - (r.expected ? 1 : 0)) ** 2, 0) / rows2.length;
+    const accuracyOf = (rows2) => rows2.filter((r) => r.correct).length / rows2.length;
+    return {
+      question,
+      n: items.length,
+      accuracy: [accuracyOf(side(0)), accuracyOf(side(1))],
+      brier: [brierOf(side(0)), brierOf(side(1))],
+      meanDelta: items.reduce((sum, [l, r]) => sum + Math.abs(l.p - r.p), 0) / items.length,
+      gate: [gateResult(side(0), calibration), gateResult(side(1), calibration)]
+    };
+  }).sort((x, y) => x.question.localeCompare(y.question));
+  const verdictByFixture = /* @__PURE__ */ new Map();
+  for (const pair of paired) {
+    if (!verdictByFixture.has(pair[0].fixture.id)) verdictByFixture.set(pair[0].fixture.id, pair);
+  }
+  const differing = [];
+  for (const [left, right] of verdictByFixture.values()) {
+    if (left.verdict !== right.verdict) {
+      differing.push({ fixture: left.fixture, verdicts: [left.verdict, right.verdict] });
+    }
+  }
+  differing.sort((x, y) => x.fixture.id.localeCompare(y.fixture.id));
+  const widest = paired.map(([left, right]) => ({
+    fixture: left.fixture,
+    question: left.question,
+    expected: left.expected,
+    p: [left.p, right.p]
+  })).sort((x, y) => Math.abs(y.p[0] - y.p[1]) - Math.abs(x.p[0] - x.p[1]));
+  return {
+    backends: [a.backend, b.backend],
+    rows,
+    verdicts: { same: verdictByFixture.size - differing.length, total: verdictByFixture.size, differing },
+    widest
+  };
+}
+function formatComparison(comparison, calibration) {
+  const [left, right] = comparison.backends;
+  const lines = [];
+  const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  lines.push(
+    `${left} vs ${right}`,
+    "",
+    // The one thing a reader is most likely to assume and be wrong about. Jev's noul
+    // answers carry no confidence field at all, so there is nothing on that side to put in
+    // a confidence column, and a column only the local side could fill would invite exactly
+    // the comparison it cannot support.
+    "A noul answer is a bare probability. Jev returns no confidence field for one, and the",
+    "local adapter's softmax over two label tokens is not one either, so this compares p and",
+    "Brier and nothing else. The confidence used by the gate below is the derived statistic",
+    "max(p, 1 - p), computed the same way on both sides.",
+    ""
+  );
+  lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const row of comparison.rows) {
+    lines.push(
+      `| ${row.question} | ${row.n} | ${pct(row.accuracy[0])} | ${pct(row.accuracy[1])} | ${row.brier[0].toFixed(3)} | ${row.brier[1].toFixed(3)} | ${row.meanDelta.toFixed(3)} |`
+    );
+  }
+  const floor = calibration.confidenceFloor.toFixed(2);
+  const bar2 = calibration.accuracyBar.toFixed(2);
+  lines.push("", `Against the gate (at least ${bar2} accuracy at confidence ${floor} or above):`, "");
+  lines.push(`| question | ${left} | ${right} |`);
+  lines.push("|---|---|---|");
+  for (const row of comparison.rows) {
+    const cell = (g) => g.n === 0 ? "\u2014 / 0" : `${g.correct} / ${g.n}  ${g.passes ? "yes" : "no"}`;
+    lines.push(`| ${row.question} | ${cell(row.gate[0])} | ${cell(row.gate[1])} |`);
+  }
+  const brierDelta = meanOf(comparison.rows.map((r) => r.brier[1] - r.brier[0]));
+  lines.push(
+    "",
+    Number.isNaN(brierDelta) ? "No question was answered by both backends, so there is nothing to compare." : `Mean Brier across questions: ${right} is ${Math.abs(brierDelta).toFixed(3)} ${brierDelta > 0 ? "worse" : "better"} than ${left}.`
+  );
+  const { same, total, differing } = comparison.verdicts;
+  lines.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
+  if (differing.length > 0) {
+    lines.push("", "Where it does not:", "");
+    for (const d of differing.slice(0, 20)) {
+      lines.push(`  ${d.fixture.id}: ${left} ${d.verdicts[0]}, ${right} ${d.verdicts[1]}`);
+    }
+    if (differing.length > 20) lines.push(`  ... and ${differing.length - 20} more.`);
+  }
+  const widest = comparison.widest.filter((w) => Math.abs(w.p[0] - w.p[1]) >= 0.2).slice(0, 15);
+  if (widest.length > 0) {
+    lines.push("", "Furthest apart on p (0.20 or more), widest first:", "");
+    for (const w of widest) {
+      lines.push(
+        `  ${w.question} on ${w.fixture.id}: ${left} ${w.p[0].toFixed(2)}, ${right} ${w.p[1].toFixed(2)} (label ${w.expected ? "true" : "false"})`
+      );
+    }
+  }
+  return `${lines.join("\n")}
+`;
+}
+function meanOf(values) {
+  if (values.length === 0) return Number.NaN;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
 
 // src/commands/calibrate.ts
 function parseArgs(argv) {
@@ -9176,6 +9595,7 @@ function parseArgs(argv) {
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
+    ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     json: argv.includes("--json")
   };
 }
@@ -9198,34 +9618,95 @@ async function calibrate(args, write2) {
 `);
     return 1;
   }
-  const backend = args.backend ?? resolved.policy.backend;
-  let adapter;
-  if (backend === "mock") {
-    adapter = new MockAdapter();
-  } else if (backend === "jev") {
-    const key = apiKey();
-    if (key === void 0) {
-      write2("Cannot calibrate against jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.\n");
+  const primary = args.backend ?? resolved.policy.backend;
+  const names = backendsFor(primary, args.compare);
+  const adapters = [];
+  for (const name of names) {
+    const adapter = adapterFor2(name);
+    if (typeof adapter === "string") {
+      write2(`${adapter}
+`);
       return 1;
     }
-    adapter = new JevAdapter({ apiKey: key });
-  } else {
-    write2(`Unknown backend "${backend}".
+    adapters.push(adapter);
+  }
+  for (const adapter of adapters) {
+    const problem = await startIfNeeded(adapter);
+    if (problem !== void 0) {
+      write2(`Cannot calibrate against ${adapter.name}: ${problem}
 `);
+      return 1;
+    }
+  }
+  const runs = [];
+  for (const [i, adapter] of adapters.entries()) {
+    const label = names[i];
+    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+  }
+  const [first, second] = runs;
+  if (first === void 0) {
+    write2("No backend to run.\n");
     return 1;
   }
-  const scored = await score(fixtures, resolved.policy, adapter, (done, total) => {
-    if (!args.json) process.stderr.write(`\r  ${done}/${total} fixtures`);
-  });
-  if (!args.json) process.stderr.write("\r\x1B[K");
-  const reports = report(scored, resolved.policy.calibration);
   if (args.json === true) {
-    write2(`${JSON.stringify({ backend, fixtures: fixtures.length, reports }, null, 2)}
+    const payload = second === void 0 ? { backend: first.backend, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) } : {
+      backends: [first.backend, second.backend],
+      fixtures: fixtures.length,
+      reports: {
+        [first.backend]: report(first.scored, resolved.policy.calibration),
+        [second.backend]: report(second.scored, resolved.policy.calibration)
+      },
+      comparison: compare(first, second, resolved.policy.calibration)
+    };
+    write2(`${JSON.stringify(payload, null, 2)}
 `);
     return 0;
   }
-  write2(formatReport(reports, backend, resolved.policy.calibration, scored));
+  for (const r of runs) {
+    write2(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
+    write2("\n");
+  }
+  if (second !== void 0) {
+    write2(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
+  }
   return 0;
+}
+async function run(fixtures, policy, adapter, label, total, args) {
+  const prefix = total > 1 ? `${label}: ` : "";
+  const scored = await score(fixtures, policy, adapter, (done, n) => {
+    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+  });
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  return scored;
+}
+function backendsFor(primary, compare2) {
+  if (compare2 === void 0 || compare2.trim().length === 0) return [primary];
+  const named = compare2.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  const pair = named.length >= 2 ? named.slice(0, 2) : [primary, ...named];
+  return pair[0] === pair[1] ? [pair[0]] : pair;
+}
+function adapterFor2(backend) {
+  if (backend === "mock") return new MockAdapter();
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      return "Cannot calibrate against jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+  if (backend === "local") return new LocalAdapter(localBackend());
+  return `Unknown backend "${backend}".`;
+}
+async function startIfNeeded(adapter) {
+  const start = adapter.start;
+  if (typeof start !== "function") return void 0;
+  try {
+    await start.call(adapter);
+    return void 0;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 // src/engine/registry.ts

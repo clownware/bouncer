@@ -7,13 +7,14 @@
 
 import { existsSync } from "node:fs";
 import { JevAdapter } from "../adapters/jev.js";
+import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
 import { evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
 import { buildState, commandOf } from "../engine/state.js";
 import type { Policy, Verdict } from "../engine/types.js";
 import * as breaker from "../io/breaker.js";
-import { apiKey, dataDir, errorsIn, pluginRoot, resolvePolicy } from "../io/config.js";
+import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import { append, type DecisionRecord } from "../io/log.js";
 import type { HookPayload } from "../io/stdin.js";
 
@@ -335,6 +336,11 @@ function adapterFor(policy: Policy): Adapter {
 
   if (backend === "mock") return new MockAdapter();
   if (backend === "jev") return new JevAdapter({ apiKey: apiKey() ?? "" });
+  // The local adapter resolves its label tokens on first use, which in the hook is once
+  // per process — one round trip to localhost, small beside the decode. It refuses to
+  // start if the endpoint cannot constrain, and a refusal is an adapter error like any
+  // other: on_error decides, and the default is to emit nothing. See docs/adr/005.
+  if (backend === "local") return new LocalAdapter(localBackend());
 
   throw new AdapterError("invalid_request", `unknown backend "${backend}"`);
 }
