@@ -215,18 +215,22 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 
 ## 13. ADRs
 
-This list tracks the decision records that actually exist. Numbers follow what was written,
-in the order it was decided, and are never reused; where a topic planned here was settled
-without its own ADR, that is noted rather than leaving a reserved gap.
+This list tracks the decision records that actually exist. A number is assigned when an ADR
+is written, in the order it was decided. A number that has been *used* is never reused, even
+if that ADR is later superseded; a number this document once *planned* for a topic that was
+never written carries no reservation, and the next ADR to be written may take it. ADR-004 is
+the precedent: this section originally earmarked it for policy-as-YAML, and it was written
+for hard rules instead.
 
 - **ADR-001** Decide at the hook layer, not as MCP tools — why the model never sees the judge.
 - **ADR-002** A single bundled JS file on Node, with the bundle committed — the packaging and latency bet.
 - **ADR-003** Fail to the prompt, observe by default, and ship no deny rules until calibrated.
 - **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
+- **ADR-005** The local adapter — constrained decoding, and `calibrate --compare`.
 - **ADR-006** The skill router (v0.2), superseding the router half of §5 and §6.
 
-Two topics planned for their own ADRs were folded in elsewhere instead, so ADR-005 was
-never assigned and the number is left unused:
+Two topics this section originally earmarked for ADRs were settled without one, so no ADR
+carries their titles and nothing is reserved for them:
 
 - **Policy as YAML, questions in plain English, no thresholds in code** — this is enforced
   by the code and documented in `policy/default.yaml`'s own comments, not a separate ADR.
