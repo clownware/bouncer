@@ -45,6 +45,15 @@ every disagreement and why each label is what it is, is in
 [docs/calibration/2026-09-18-jev-2.md](docs/calibration/2026-09-18-jev-2.md).
 <!-- CALIBRATION-TABLE:END -->
 
+**Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
+anything; every bucket below it rests on one to four. Two live runs of the identical
+fixtures against the identical policy moved `secrets` in the 0.8–0.9 bucket from 75% to
+67%, because one fixture's `p` drifted across the 0.8 boundary into the bucket below.
+Its verdict never changed. So the `n`, `accuracy`
+and `Brier` columns are the numbers worth acting on, and the lower buckets show only the
+rough shape of where the model is unsure. Making them mean more needs the ~150 fixtures
+the PRD asks for, not the 81 that ship.
+
 **What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy

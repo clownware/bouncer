@@ -157,8 +157,8 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 
 - **What leaves the machine (Jev backend):** the constructed state only — tool name, cwd basename, git branch, the command/prompt text, skill names. Never file contents, never diffs, never env vars.
 - **Redaction before send:** strip anything matching common secret shapes (bearer tokens, `sk-`, `ghp_`, AWS keys, private-key blocks, `op://` refs) and replace with `[REDACTED:<type>]`. The `secrets` question is answered from the *shape* of the command, not the value.
-- **API key handling:** read from `BOUNCER_TYPESAFE_API_KEY` or `TYPESAFE_API_KEY` env, or `op://` reference resolved via `op read` at hook time (biometric prompt on first use per session). Never stored by the plugin. Never logged.
-- **Log hygiene:** `decisions.jsonl` stores the redacted state hash, not the state.
+- **API key handling:** read from `BOUNCER_TYPESAFE_API_KEY` or `TYPESAFE_API_KEY` env only. Never stored by the plugin. Never logged. Resolving an `op://` reference at hook time was dropped: `op read` spawns a subprocess and can raise a biometric prompt, so it would put Touch ID in the middle of an agent run. If 1Password support returns it belongs in a `SessionStart` hook that resolves once per session.
+- **Log hygiene:** `decisions.jsonl` stores the redacted state itself, not only a hash. Decided 2026-09-18, reversing this document's original position. A hash cannot answer "why was this prompted", cannot seed fixtures from real history, and cannot be re-scored after a policy change, which are the three reasons the log exists. The state is redacted before it reaches the writer and redacted again on write as a backstop, and file contents never enter the state at all, so what is retained is a redacted command line. The log is capped at 8 MB and rotates to one `.1` generation.
 - **Local adapter (v0.3)** is the answer for users who won't send command text off-machine; document this trade-off in the README up front.
 - **Trust boundary:** hook output is the only thing Bouncer controls. It cannot execute anything. It cannot widen permissions beyond what Claude Code's own settings allow.
 
@@ -166,7 +166,7 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 
 `bouncer calibrate [--from decisions.jsonl | --fixtures fixtures/*.jsonl] [--backend jev|local]`
 
-- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the five gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging).
+- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the six gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths). v0.1 ships 81, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
 - Output: per-question reliability table — confidence buckets (0.5–0.6 … 0.9–1.0) vs. observed accuracy, plus Brier score. Optional `--compare` runs two backends on the same fixtures side by side.
 - From live log: pair each logged verdict with what the user actually did next (approved/denied at the prompt, or the tool ran) and treat that as the label.
 - This is a release gate: v0.1 README must publish the fixture table for Jev so users see the numbers before enabling `enforce`.
@@ -235,9 +235,9 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 
 ## 16. Open questions
 
-1. Exact current Claude Code hook schema and timeout (verify before writing a line).
-2. Jev state-size limit and rate limits — undocumented as of 2026-09-17; measure empirically and cap conservatively.
-3. Does Jev's confidence on Noul questions actually carry information beyond `|p − 0.5|`? The fixture table answers this; the policy schema assumes it might not (rules can be written on `p` alone).
+1. ~~Exact current Claude Code hook schema and timeout.~~ **Answered.** Captured from a live session on 2026-09-18; the payloads are in `test/fixtures/payloads/` and the pinned facts are in `docs/adr/001`. Read a fixture rather than the docs.
+2. ~~Jev state-size limit and rate limits.~~ **Answered.** 64k tokens for state plus all questions, 32k for state plus the longest question. Rate limits are documented as dynamically adjusting, so nothing hardcodes them.
+3. ~~Does Jev's confidence on Noul questions carry information beyond `|p − 0.5|`?~~ **Answered, and the question was wrong.** `noul` answers have no confidence field at all; only `choice` and `score` return one. Uncertainty rules are written as ranges on `p`.
 4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question.
 5. Marketplace: publish under `clownware/plugins` or a dedicated repo? Recommend dedicated repo, listed in the existing marketplace.
 
