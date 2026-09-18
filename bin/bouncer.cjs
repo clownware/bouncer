@@ -8253,8 +8253,12 @@ function dataDir() {
   return (0, import_node_path3.join)((0, import_node_os.homedir)(), ".bouncer");
 }
 function pluginRoot() {
-  const root = process.env["CLAUDE_PLUGIN_ROOT"];
-  return root !== void 0 && root.length > 0 ? root : void 0;
+  const fromEnv = process.env["CLAUDE_PLUGIN_ROOT"];
+  if (fromEnv !== void 0 && fromEnv.length > 0) return fromEnv;
+  const script = process.argv[1];
+  if (script === void 0 || script.length === 0) return void 0;
+  const candidate = (0, import_node_path3.resolve)((0, import_node_path3.dirname)(script), "..");
+  return (0, import_node_fs2.existsSync)((0, import_node_path3.join)(candidate, "policy", "default.yaml")) ? candidate : void 0;
 }
 function apiKey() {
   for (const name of ["BOUNCER_TYPESAFE_API_KEY", "TYPESAFE_API_KEY"]) {
@@ -8278,14 +8282,27 @@ function tryRead(path) {
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
+var MAX_LOG_BYTES = 8 * 1024 * 1024;
 function append(dir, record2) {
   try {
     (0, import_node_fs3.mkdirSync)(dir, { recursive: true });
     const safe = record2.state !== void 0 ? { ...record2, state: redact(record2.state).text } : record2;
-    (0, import_node_fs3.appendFileSync)((0, import_node_path4.join)(dir, LOG_FILE), `${JSON.stringify(safe)}
+    const file = (0, import_node_path4.join)(dir, LOG_FILE);
+    rotateIfOversized(file);
+    (0, import_node_fs3.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
   } catch {
   }
+}
+function rotateIfOversized(file) {
+  let size;
+  try {
+    size = (0, import_node_fs3.statSync)(file).size;
+  } catch {
+    return;
+  }
+  if (size < MAX_LOG_BYTES) return;
+  (0, import_node_fs3.renameSync)(file, `${file}.1`);
 }
 function tail(dir, count) {
   let raw;
