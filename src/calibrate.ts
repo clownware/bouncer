@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
 import { buildState } from "./engine/state.js";
-import type { Policy } from "./engine/types.js";
+import type { CalibrationPolicy, Policy } from "./engine/types.js";
 
 export interface Fixture {
   readonly id: string;
@@ -54,6 +54,24 @@ export interface QuestionReport {
   readonly brier: number;
   readonly buckets: readonly Bucket[];
   readonly misses: readonly Scored[];
+  readonly gate: GateResult;
+}
+
+/**
+ * A question measured against the release gate in `policy.calibration`.
+ *
+ * Computed here rather than read off the bucket columns. The buckets round to whole
+ * percents and split at 0.8, so eyeballing them invites exactly the mistake this exists
+ * to prevent: 11 of 13 is 84.6%, which displays as 85% and is under an 0.85 bar.
+ */
+export interface GateResult {
+  /** Answers at or above the confidence floor. The gate's denominator. */
+  readonly n: number;
+  readonly correct: number;
+  /** NaN when `n` is 0: a question nothing answered confidently has no accuracy. */
+  readonly accuracy: number;
+  /** False when `n` is 0 — an unmeasured question has not cleared anything. */
+  readonly passes: boolean;
 }
 
 export interface Bucket {
@@ -152,7 +170,7 @@ export async function score(
   return results;
 }
 
-export function report(scored: readonly Scored[]): QuestionReport[] {
+export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {
   const byQuestion = new Map<string, Scored[]>();
   for (const s of scored) {
     const list = byQuestion.get(s.question) ?? [];
@@ -164,6 +182,7 @@ export function report(scored: readonly Scored[]): QuestionReport[] {
     .map(([question, items]) => ({
       question,
       n: items.length,
+      gate: gateResult(items, calibration),
       accuracy: items.filter((i) => i.correct).length / items.length,
       brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
       buckets: BUCKETS.map(([low, high]) => {
@@ -180,9 +199,31 @@ export function report(scored: readonly Scored[]): QuestionReport[] {
     .sort((a, b) => a.question.localeCompare(b.question));
 }
 
-export function formatReport(reports: readonly QuestionReport[], backend: string): string {
+function gateResult(items: readonly Scored[], calibration: CalibrationPolicy): GateResult {
+  const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
+  const correct = confident.filter((i) => i.correct).length;
+
+  if (confident.length === 0) {
+    return { n: 0, correct: 0, accuracy: Number.NaN, passes: false };
+  }
+
+  const accuracy = correct / confident.length;
+  // Compared as the exact ratio, never as the rounded percentage. 11/13 is 0.846, which
+  // is below an 0.85 bar however it prints.
+  return { n: confident.length, correct, accuracy, passes: accuracy >= calibration.accuracyBar };
+}
+
+export function formatReport(
+  reports: readonly QuestionReport[],
+  backend: string,
+  calibration: CalibrationPolicy,
+): string {
   const lines: string[] = [];
   const pct = (n: number) => (Number.isNaN(n) ? "   —" : `${(n * 100).toFixed(0).padStart(3)}%`);
+  // One decimal in the gate table, whole percents in the bucket table above it. The bar
+  // is compared on the exact ratio either way, but a gate row printing "85%" next to a
+  // "no" reads as a typo rather than as 84.6%.
+  const gatePct = (n: number) => (Number.isNaN(n) ? "    —" : `${(n * 100).toFixed(1).padStart(4)}%`);
 
   lines.push(`Backend: ${backend}`, "");
   lines.push("| question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |");
@@ -192,6 +233,26 @@ export function formatReport(reports: readonly QuestionReport[], backend: string
     const buckets = r.buckets.map((b) => (b.n === 0 ? " — " : `${pct(b.accuracy)} (${b.n})`)).join(" | ");
     lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} | ${buckets} |`);
   }
+
+  const floor = calibration.confidenceFloor.toFixed(2);
+  const bar = calibration.accuracyBar.toFixed(2);
+  lines.push("", `Against the gate (≥ ${bar} accuracy at confidence ≥ ${floor}):`, "");
+  lines.push("| question | correct / n | accuracy | passes |");
+  lines.push("|---|---|---|---|");
+
+  for (const r of reports) {
+    const g = r.gate;
+    const counts = g.n === 0 ? "— / 0" : `${g.correct} / ${g.n}`;
+    lines.push(`| ${r.question} | ${counts} | ${gatePct(g.accuracy)} | ${g.passes ? "yes" : "no"} |`);
+  }
+
+  const failing = reports.filter((r) => !r.gate.passes);
+  lines.push(
+    "",
+    failing.length === 0
+      ? `Every question clears the bar (${reports.length} of ${reports.length}).`
+      : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`,
+  );
 
   const all = reports.flatMap((r) => r.misses);
   if (all.length > 0) {

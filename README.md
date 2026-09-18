@@ -13,9 +13,10 @@ ambiguous — because that middle needs judgment, and judgment used to mean eith
 regex or an LLM in the hot path.
 
 > **Status: v0.1.** The hook runs end to end in observe mode, and the calibration table
-> below comes from a live run against Jev in which all seven questions clear the PRD's
-> 0.85 bar in the high-confidence buckets. See [docs/PRD.md](docs/PRD.md) for the spec
-> and [docs/adr/](docs/adr/) for what has been decided and why.
+> below comes from a live run against Jev in which six of the seven questions clear the
+> PRD's 0.85 bar in the high-confidence buckets; the note under the table says which one
+> does not. See [docs/PRD.md](docs/PRD.md) for the spec and [docs/adr/](docs/adr/) for
+> what has been decided and why.
 
 ## Calibration
 
@@ -26,22 +27,36 @@ README claiming the classifier is good. Run it yourself:
 BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate
 ```
 
+It prints the bucket table below, then a pass/fail row per question against the
+`calibration` block in the policy — 0.85 accuracy among answers at 0.8 confidence or
+higher, which you can raise before trusting a question. That bar is compared on the exact
+ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a passing-looking
+85%.
+
 <!-- CALIBRATION-TABLE:START -->
 Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 27 |  89% | 0.104 |  75% (4) | 100% (3) |  80% (5) |  50% (2) | 100% (13) |
-| egress | 18 |  94% | 0.031 |  —  |  —  |   0% (1) |  —  | 100% (17) |
-| outside_repo | 18 |  89% | 0.065 | 100% (1) |   0% (1) |  50% (2) |  —  | 100% (14) |
-| prod | 16 |  94% | 0.035 |  —  |   0% (1) | 100% (1) | 100% (4) | 100% (10) |
-| secrets | 19 |  84% | 0.097 |   0% (1) | 100% (2) |  33% (3) | 100% (3) | 100% (10) |
-| sensitive_target | 16 |  81% | 0.128 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
-| unreviewed_execution | 11 | 100% | 0.004 |  —  |  —  |  —  | 100% (2) | 100% (9) |
+| destructive | 27 |  89% | 0.104 |  75% (4) | 100% (4) |  67% (3) |  67% (3) | 100% (13) |
+| egress | 20 |  95% | 0.029 |  —  |  —  |   0% (1) |  —  | 100% (19) |
+| outside_repo | 20 |  90% | 0.071 |  50% (2) | 100% (2) |  50% (2) |  —  | 100% (14) |
+| prod | 16 |  94% | 0.036 |  —  |   0% (1) | 100% (1) | 100% (2) | 100% (12) |
+| secrets | 19 |  84% | 0.096 |   0% (1) |  67% (3) | 100% (1) |  75% (4) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.136 | 100% (2) |   0% (1) |  —  |   0% (2) | 100% (11) |
+| unreviewed_execution | 22 |  91% | 0.046 |  50% (2) |   0% (1) |  —  | 100% (4) | 100% (15) |
 
-Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, all
-seven questions pass. The full report, with every disagreement and why each label is what
-it is, is in [docs/calibration/2026-09-18-jev-4.md](docs/calibration/2026-09-18-jev-4.md).
+Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, six
+of the seven questions pass; `sensitive_target` is at 11 of 13, one fixture short, on the
+same two `cat` misses it has had in every run. Both of those also carry `secrets: true`,
+which answers them correctly and prompts on them at 0.60, so the gate is what fails there,
+not the verdict.
+
+The full report, with every disagreement and why each label is what
+it is, is in [docs/calibration/2026-09-18-jev-5.md](docs/calibration/2026-09-18-jev-5.md).
+It also lists every `unreviewed_execution` answer by probability, which is where to look
+before enabling `guard`: everyday installs and builds score below 0.2, but a pinned `npx`
+scores 0.55 and would prompt.
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
@@ -53,10 +68,10 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 86 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 94 that
 ship.
 
-**What this table measures.** The 86 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 94 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
@@ -68,7 +83,7 @@ against `git push --force origin main`, `terraform plan -var-file=prod.tfvars` a
 `terraform apply -auto-approve`, `ssh-keygen -y -f ~/.ssh/id_ed25519` against
 `cat ~/.ssh/id_ed25519`. A set of obviously-safe and obviously-dangerous commands would
 score beautifully and tell you nothing, because no threshold ever sits there. As a
-sanity check on that: the built-in keyword-matching mock adapter scores 38–79% on these,
+sanity check on that: the built-in keyword-matching mock adapter scores 38–82% on these,
 which is roughly what a regex deserves on them.
 
 The useful part is the buckets, not the headline. A question that is right 95% of the time
@@ -113,6 +128,8 @@ against live Jev:
 | Jev call, steady state, 5 questions | ~190 ms | ~350 ms |
 | Jev call, first of a session | 513 ms | — |
 
+The Jev rows were measured when the policy asked five questions; it now asks seven, which
+are evaluated in one call and in parallel, and the rows have not been re-measured since.
 Steady state lands around 400 ms end to end. The first call of a session is nearer 565 ms:
 connection setup, not the model, which is why the latency circuit breaker ignores it.
 

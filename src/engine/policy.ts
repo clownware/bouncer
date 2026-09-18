@@ -34,6 +34,10 @@ const DEFAULT_TIMEOUT_MS = 800;
 const MIN_TIMEOUT_MS = 50;
 const MAX_TIMEOUT_MS = 30_000;
 
+// PRD §12's release gate, as the defaults for a policy that omits the section.
+const DEFAULT_CONFIDENCE_FLOOR = 0.8;
+const DEFAULT_ACCURACY_BAR = 0.85;
+
 export function loadPolicy(source: string): LoadResult {
   const diagnostics: Diagnostic[] = [];
   const error = (path: string, message: string) => diagnostics.push({ severity: "error", path, message });
@@ -78,6 +82,29 @@ export function loadPolicy(source: string): LoadResult {
 
   const skipPermissionModes = readStringList(raw["skip_permission_modes"], ["plan"], "skip_permission_modes", error);
 
+  const calibrationRaw = raw["calibration"];
+  if (calibrationRaw !== undefined && !isRecord(calibrationRaw)) {
+    error("calibration", "must be a mapping");
+  }
+  const calibrationFields = isRecord(calibrationRaw) ? calibrationRaw : {};
+  const confidenceFloor = readProbability(
+    calibrationFields["confidence_floor"],
+    DEFAULT_CONFIDENCE_FLOOR,
+    "calibration.confidence_floor",
+    error,
+  );
+  const accuracyBar = readProbability(
+    calibrationFields["accuracy_bar"],
+    DEFAULT_ACCURACY_BAR,
+    "calibration.accuracy_bar",
+    error,
+  );
+  // Confidence is max(p, 1 − p), so it cannot be below 0.5. A floor under that would
+  // silently widen the gate to every answer, which is not what anyone lowering it means.
+  if (confidenceFloor < 0.5) {
+    error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 − p)");
+  }
+
   const gateRaw = raw["gate"];
   if (!isRecord(gateRaw)) {
     error("gate", "missing or not a mapping");
@@ -106,6 +133,7 @@ export function loadPolicy(source: string): LoadResult {
     onError,
     skipPermissionModes,
     gate: { tools, fastPath, questions, rules },
+    calibration: { confidenceFloor, accuracyBar },
   };
 
   return { policy, diagnostics };
@@ -330,6 +358,24 @@ function readEnum<T extends string>(
   if (typeof value === "string" && (allowed as readonly string[]).includes(value)) return value as T;
   error(path, `must be one of ${allowed.join(", ")}`);
   return fallback;
+}
+
+function readProbability(
+  value: unknown,
+  fallback: number,
+  path: string,
+  error: (path: string, message: string) => void,
+): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    error(path, "must be a number");
+    return fallback;
+  }
+  if (value < 0 || value > 1) {
+    error(path, "must be between 0 and 1");
+    return fallback;
+  }
+  return value;
 }
 
 function readStringList(

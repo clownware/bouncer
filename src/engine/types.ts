@@ -55,6 +55,21 @@ export interface GatePolicy {
   readonly rules: readonly Rule[];
 }
 
+/**
+ * The bar `bouncer calibrate` holds each question to, from PRD §12.
+ *
+ * Here rather than in `src/calibrate.ts` for the same reason the rule thresholds are:
+ * they are numbers, and numbers live in the policy the user owns. A user who wants a
+ * stricter bar before trusting a question should be able to say so without editing code,
+ * and the README tells them to run calibration and decide for themselves.
+ */
+export interface CalibrationPolicy {
+  /** Only answers at or above this confidence count toward the bar. */
+  readonly confidenceFloor: number;
+  /** The accuracy a question must reach among those answers to pass. */
+  readonly accuracyBar: number;
+}
+
 export interface Policy {
   readonly version: 1;
   readonly backend: string;
@@ -63,6 +78,7 @@ export interface Policy {
   readonly onError: OnError;
   readonly skipPermissionModes: readonly string[];
   readonly gate: GatePolicy;
+  readonly calibration: CalibrationPolicy;
 }
 
 /** A problem with the policy file. `warnings` do not prevent loading; `errors` do. */
