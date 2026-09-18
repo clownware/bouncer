@@ -28,6 +28,11 @@ every individual verdict is correct. This is why observe mode emits nothing rath
 **Latency is a feature.** `npm run bench` gates hook overhead at 80 ms p95. Adding a
 dependency has a direct, measurable cost — bundling is what keeps startup at ~45 ms rather
 than ~87 ms (ADR-002). Run the bench before and after anything that touches imports.
+Two things measured since: YAML parse cost tracks node count rather than file size, so a
+structured block costs about 5x what the same bytes cost as comments (ADR-004), and the
+compiled policy is cached on disk, so the bench measures the cached path unless you set
+`BOUNCER_NO_CACHE=1` (ADR-007). `node:crypto` is not free either — its first `require` in a
+CJS file costs 10 to 15 ms, which is why nothing in the hot path hashes anything.
 
 **No thresholds in code.** Questions are plain English and thresholds are numbers, both
 living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the

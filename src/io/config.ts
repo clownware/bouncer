@@ -7,7 +7,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { loadPolicy, type LoadResult } from "../engine/policy.js";
+import { type LoadResult } from "../engine/policy.js";
+import { loadPolicyCached } from "./policycache.js";
 import type { Diagnostic } from "../engine/types.js";
 
 export interface ResolvedPolicy extends LoadResult {
@@ -32,7 +33,9 @@ export function resolvePolicy(cwd: string, pluginRoot?: string): ResolvedPolicy 
   for (const candidate of policyCandidates(cwd, pluginRoot)) {
     const source = tryRead(candidate);
     if (source === undefined) continue;
-    return { ...loadPolicy(source), source: candidate };
+    // Compiled results are memoised on disk, keyed on this text. The hook is a fresh
+    // process on every tool call, so a parse saved is saved on every call. See docs/adr/007.
+    return { ...loadPolicyCached(dataDir(), candidate, source), source: candidate };
   }
 
   return {

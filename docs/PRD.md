@@ -303,7 +303,7 @@ free number rather than the one it was asked for.
 - **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
 - **ADR-005** The local adapter — constrained decoding, and `calibrate --compare`.
 - **ADR-006** The skill router (now v0.5), superseding the router half of §5 and §6.
-- **ADR-007** Cache the compiled policy on disk, reversing ADR-002's second item.
+- **ADR-007** Cache the compiled policy on disk, keyed on the policy text — reverses ADR-002 item 2.
 - **ADR-008** Bouncer is a judgment engine; the gate is one consumer. Escalation as a
   first-class output, and no package extraction until a second consumer exists.
 

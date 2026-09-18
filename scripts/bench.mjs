@@ -8,6 +8,10 @@
 // Both paths are measured: a command the classifier judges, and one a hard rule stops
 // before the adapter. Each gets its own line and each is held to the budget.
 //
+// The policy is compiled once and cached on disk (ADR-007), and the warm-up runs populate
+// that cache, so what is measured here is what a user experiences on every call after their
+// first. To measure the YAML parse instead, run with BOUNCER_NO_CACHE=1.
+//
 //   node scripts/bench.mjs [--budget 80] [--runs 30]
 //   node scripts/bench.mjs --against <other-bundle.cjs> [--runs 40]
 //
