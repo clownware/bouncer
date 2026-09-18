@@ -22,7 +22,11 @@ Nothing tool-call-shaped exists below `src/cli.ts` and `src/hooks/`. Concretely:
   `fast_path` and `hard_rules`. `gate:` is one named set rather than the only possible one.
 - `calibrate` scores items, not hook payloads. A decisions log is one source of items.
 
-**2. Escalation is a first-class output.** The engine emits, for every item it judged and
+**2. Escalation is a first-class output.** This is TypeSafe's own "verify and escalate"
+pattern — check the uncertain cases, send those and only those to a person or a reasoning
+model — made into an artifact rather than left as a shape each consumer reinvents; the
+vendored skill at `.claude/skills/typesafe-ai/` links their cookbooks for it. The engine
+emits, for every item it judged and
 did not settle, which questions crossed which thresholds at what probability, and what
 each of those questions asked. The gate writes that onto its decision-log line and turns
 it into an `ask`; `bouncer judge` will collect the items into a manifest and build one
@@ -109,6 +113,15 @@ manifest is what a mode is observed *with* — a run that recorded no escalation
 was observing would make the ratio meaningless, which is exactly the number someone in
 observe mode is trying to read.
 
+### Who reads it
+
+| Consumer | What it takes | Status |
+|---|---|---|
+| The `ask` reason at the prompt | The deciding signal is the headline, as ADR-004 left it, and the others are appended: `secrets 0.71; also prod 0.66`. A user deciding whether to approve needs to know the call tripped two things, not one. | shipped |
+| `/bouncer:explain` | The full signal list off the log line, each with its threshold, its rule, and the question's own words, with `→` marking the one that decided. The judgments table above it is every answer; this is the subset a rule acted on. | shipped |
+| `/bouncer:status` | `escalated / judged` over the last 200 calls. | shipped |
+| `bouncer judge` | The manifest as a standalone artifact, and the input to the reasoning pass. | v0.3 |
+
 ### What is not an escalation
 
 A fast-path hit, a hard rule, an ungated tool, a skipped permission mode. None of them was
@@ -132,9 +145,10 @@ contents never enter a state applies to a manifest exactly as it does to the log
 ### What this costs
 
 One extra pass over a handful of rules per judged call, no I/O, no new imports in the
-bundle. Measured paired against `main`'s bundle over 40 pairs on the same machine:
-**+0.5 ms** on the judged path and **−1.0 ms** on the hard-rule path, against a per-arm
-spread of about 4 ms. That is nothing, which is the expected answer and the reason to check
+bundle. Measured paired against `main`'s bundle, 40 pairs per run, repeated across the
+change: the paired median never left **±1.1 ms** on either the judged or the hard-rule
+path, against a per-arm spread of 4–7 ms. Quoting one run's number would be quoting noise;
+what the repeats say is that there is nothing here to measure. That is nothing, which is the expected answer and the reason to check
 rather than assume — see [[ADR-002]](002-bundled-single-file-on-node.md) on why a paired
 measurement is the only readable one.
 
@@ -160,7 +174,8 @@ not go in.
 
 ## Consequences
 
-**Good.** `bouncer judge` is a new state builder, a new policy set and a new entrypoint
+**Good.** The prompt reason and `/bouncer:explain` both now answer from one record instead
+of from the single first-matching rule. `bouncer judge` is a new state builder, a new policy set and a new entrypoint
 over unchanged engine code, rather than a fork. The escalation manifest makes the cost
 argument measurable from day one instead of retro-fitted. The four moat items give roadmap
 items a test they either pass or don't.
@@ -185,11 +200,6 @@ Claude Code — a verdict, a reason, and what may be emitted — and it is on th
 every gated call including the allowed ones. The manifest is a different artifact with a
 different consumer, so it is a separate pure function over the same inputs, computed only
 when something actually escalated.
-
-**Making the gate's `ask` reason come from the manifest.** It would be one source of truth,
-and it would change the string users read at the prompt on every ambiguous call in v0.2 —
-a user-visible change smuggled into a naming pass. The prompt reason stays as ADR-004 left
-it.
 
 **Doing the policy-file schema change in this PR.** Rejected on timing, not on merit; see
 the table.

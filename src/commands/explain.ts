@@ -51,6 +51,21 @@ function render(record: DecisionRecord): string {
     }
   }
 
+  // The escalation: every threshold this call crossed, not only the one that decided.
+  // The judgments table above is every answer; this is the subset a rule acted on, and it
+  // is the same record a reasoning model would be handed. See docs/adr/008.
+  if (record.escalation !== undefined && record.escalation.signals.length > 0) {
+    lines.push("", `Escalated as ${record.escalation.verdict}, on:`);
+    for (const signal of record.escalation.signals) {
+      const mark = signal.decided ? "→" : " ";
+      lines.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} → ${signal.verdict})`);
+      lines.push(`      ${signal.asks}`);
+    }
+    if (record.escalation.signals.length > 1) {
+      lines.push("  → marks the one that decided; first match wins.");
+    }
+  }
+
   if (record.error !== undefined) {
     lines.push("", `Error: ${record.error.kind} — ${record.error.message}`);
   }

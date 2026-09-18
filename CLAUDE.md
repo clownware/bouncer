@@ -57,6 +57,26 @@ sensitive paths, but a label with no question asking about it and no rule readin
 changes no verdict. When adding a fact to the state, add the question and the rule in the
 same change, and test the verdict rather than the state.
 
+**Read `.claude/skills/typesafe-ai/SKILL.md` before writing questions, adapters or the
+local compare, and read the live docs it points to.** It is TypeSafe's own skill, vendored
+into this repo (MIT, provenance in the directory's `VENDORED.md`) because a skill enabled
+on someone's account is invisible to a session that started before it and to every remote
+or CI session — a rule half the threads cannot follow is not a rule. It is not the source
+of truth and says so itself: `https://docs.typesafe.ai` is, and the pinned facts below are
+a snapshot of both.
+
+Three of its rules bind work in this repo:
+
+- **A question's name is never sent to the model**, so `instructions` must carry the whole
+  meaning. This is why `outside_repo` was reworded rather than renamed.
+- **State is named JSON fields, and questions reference them by backticked path** — the
+  skill's example is `` `ticket.messages[0].text` ``. `buildState` already emits named
+  fields; the questions still describe them in prose. Closing that is a live-run change, so
+  it belongs with the next calibration pass, not with a refactor.
+- **Verify and escalate** — check the uncertain cases and send those, and only those, to a
+  person or a reasoning model. That is the pattern ADR-008's escalation manifest implements;
+  the vendor's own cookbooks for it are linked from the skill.
+
 ## Verified facts, do not re-derive from memory
 
 Both were checked against live sources on 2026-09-18. If something contradicts these,
