@@ -6,6 +6,9 @@
 // a new dependency pulled into the bundle, not the decision code itself.
 //
 //   node scripts/bench.mjs [--budget 80] [--runs 30]
+//
+// A p95 is only as good as the sample behind it: at 20 runs it rests on one observation.
+// Keep --runs high enough that the tail means something.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -52,7 +55,12 @@ function once() {
 for (let i = 0; i < WARMUP; i++) once();
 
 const samples = Array.from({ length: RUNS }, once).sort((a, b) => a - b);
-const pct = (p) => samples[Math.min(samples.length - 1, Math.floor(samples.length * p))];
+// Nearest-rank percentile: index ceil(p * n) - 1. The obvious `floor(n * p)` is off by
+// one whenever n * p is a whole number, and at p=0.95 with 20 runs that lands on index 19
+// of 20 — the maximum. That made the CI gate a max-latency gate, which one scheduling
+// hiccup on a shared runner is enough to trip, and is why it had to be loosened to 150 ms
+// to be survivable at all.
+const pct = (p) => samples[Math.min(samples.length - 1, Math.max(0, Math.ceil(samples.length * p) - 1))];
 const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
 
 console.log(`runs=${RUNS}  mean=${mean.toFixed(1)}ms  p50=${pct(0.5).toFixed(1)}ms  p95=${pct(0.95).toFixed(1)}ms  budget=${BUDGET_MS}ms`);

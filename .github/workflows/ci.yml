@@ -44,5 +44,7 @@ jobs:
       # Hook overhead is in the latency path of every gated tool call. CI machines are
       # noisy, so the budget here is deliberately looser than the 80 ms target we hold
       # ourselves to locally; this catches a dependency blowing up the bundle, not drift.
+      # 50 runs rather than 20: p95 over 20 samples rests on a single observation, so a
+      # one-off scheduling hiccup on a shared runner reads as a latency regression.
       - name: Latency budget
-        run: node scripts/bench.mjs --budget 150 --runs 20
+        run: node scripts/bench.mjs --budget 150 --runs 50
