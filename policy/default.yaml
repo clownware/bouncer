@@ -39,31 +39,33 @@ gate:
   # Commands matched here are allowed without calling the classifier. This is the single
   # biggest thing you can do for perceived latency: the highest-volume commands in a
   # session are also the most obviously safe ones. Matched as a literal prefix against the
-  # command string, after trimming.
+  # command string, after trimming, and refused outright if the command contains a shell
+  # operator.
   #
-  # Keep this list honest — anything here is never judged, so `git` alone would also match
-  # `git push --force`.
+  # The rule for what belongs here: a fast-path entry must be safe for EVERY argument it
+  # could be given, because the arguments are never judged. That rules out anything that
+  # prints file contents, however ordinary it looks — `cat`, `head`, `tail`, `wc`, and the
+  # git commands that emit diffs or blobs. `cat .env` and `echo $OPENAI_API_KEY` are the
+  # literal examples in the `secrets` question's own criteria below; fast-pathing them
+  # would mean the gate's headline question can never fire.
+  #
+  # What is left produces metadata about the working tree, or runs a named project script.
   fast_path:
     - "git status"
-    - "git diff"
-    - "git log"
     - "git branch"
-    - "git show"
-    - "ls "
-    - "ls"
-    - "cat "
-    - "head "
-    - "tail "
-    - "wc "
+    - "git remote -v"
     - "pwd"
+    - "ls"
+    - "ls "
     - "which "
-    - "echo "
     - "npm test"
     - "npm run test"
     - "npm run typecheck"
     - "npm run lint"
+    - "npm run build"
     - "pytest"
     - "cargo test"
+    - "cargo check"
     - "go test"
 
   # Asked in a single call. Jev evaluates them in parallel, so five questions cost
@@ -104,6 +106,17 @@ gate:
         "true": "a production database or deploy target, a live API, a main or release branch deployment"
         "false": "local development, test fixtures, staging, a scratch branch"
 
+    # The state builder computes a `sensitive` label for well-known locations and puts it
+    # in the state. Without a question and a rule reading it, that label is decoration:
+    # a write to .git/hooks/pre-commit is not destructive, not a secret, is inside the
+    # project, is not egress and is not prod, so every other rule passes it straight to
+    # `allow`. This is the rule that catches it.
+    sensitive_target:
+      instructions: "The action changes configuration that controls what runs, or that holds credentials."
+      criteria:
+        "true": "git hooks or git config, CI workflow files, .env files, .npmrc or .netrc, ssh keys or ssh config, shell startup files"
+        "false": "application source, tests, documentation, build output, lockfiles"
+
   # Evaluated top to bottom; the first matching rule wins, and `default` ends the list.
   #
   # `p` is the probability the classifier returned for that question, 0 to 1. Supported
@@ -134,6 +147,8 @@ gate:
     - when: { outside_repo: { p: ">=0.65" } }
       then: ask
     - when: { egress: { p: ">=0.65" } }
+      then: ask
+    - when: { sensitive_target: { p: ">=0.60" } }
       then: ask
 
     # Genuine uncertainty on any question is a reason to let the human look.

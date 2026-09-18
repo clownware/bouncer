@@ -25,8 +25,12 @@ interface Pattern {
 // and the specific label is more useful both to the classifier and in the log.
 const PATTERNS: readonly Pattern[] = [
   { kind: "private-key", re: /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PRIVATE KEY-----/g },
-  { kind: "openai-key", re: /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g },
-  { kind: "anthropic-key", re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
+  // Anthropic before OpenAI: `sk-ant-…` also satisfies the OpenAI shape, so whichever
+  // runs first wins the label. Ordering it first is the whole fix — the alternative,
+  // excluding `ant-` from the OpenAI pattern, does not work, because the trailing
+  // character class matches `ant-…` anyway.
+  { kind: "anthropic-key", re: /\bsk-ant-[A-Za-z0-9_-]{16,}/g },
+  { kind: "openai-key", re: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/g },
   { kind: "github-pat", re: /\bgithub_pat_[A-Za-z0-9_]{20,}/g },
   { kind: "github-token", re: /\bgh[pousr]_[A-Za-z0-9]{16,}/g },
   { kind: "slack-token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g },

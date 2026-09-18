@@ -6,6 +6,9 @@ describe("redact", () => {
   // is the point — a pattern that only matches the literal string "SECRET" is useless.
   const secrets: ReadonlyArray<readonly [string, string, string]> = [
     ["openai key", "export OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345", "openai-key"],
+    // `sk-ant-…` also satisfies the OpenAI shape, so pattern order decides the label.
+    // Before this test, every Anthropic key was reported as "openai-key".
+    ["anthropic key", "export ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz", "anthropic-key"],
     ["openai project key", "curl -H 'Authorization: sk-proj-abcdefghijklmnopqrstuvwx'", "openai-key"],
     ["github pat (classic)", "git clone https://ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/x/y", "github-token"],
     ["github pat (fine-grained)", "echo github_pat_11ABCDEFG0abcdefghijklmnop", "github-pat"],
@@ -82,6 +85,16 @@ describe("redact", () => {
   // The patterns are module-level with the /g flag, so a missed lastIndex reset makes the
   // second call on the same input silently skip matches. This has bitten every codebase
   // that has ever done this.
+  it("labels an anthropic key as anthropic, not openai", () => {
+    const result = redact("echo sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
+    expect(result.kinds).toEqual(["anthropic-key"]);
+    expect(result.kinds).not.toContain("openai-key");
+  });
+
+  it("still labels a plain openai key as openai", () => {
+    expect(redact("echo sk-abcdefghijklmnopqrstuvwxyz0123").kinds).toEqual(["openai-key"]);
+  });
+
   it("is idempotent across repeated calls", () => {
     const input = "export OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345";
     const first = redact(input);

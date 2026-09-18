@@ -33,6 +33,18 @@ than ~87 ms (ADR-002). Run the bench before and after anything that touches impo
 living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the
 number belongs in `policy/default.yaml` instead.
 
+**A fast-path entry must be safe for every argument it could be given.** Entries in
+`gate.fast_path` are never judged, so the test is not "is this command usually harmless"
+but "is every form of it harmless". That excludes anything printing file contents —
+`cat`, `head`, `tail`, `wc`, `git diff`, `git show`, `git log` — because `cat .env` and
+`echo $OPENAI_API_KEY` are the literal examples in the `secrets` question's own criteria.
+Fast-pathing the verb means the gate's headline question can never fire.
+
+**A computed fact is decoration until a question reads it.** The state builder labels
+sensitive paths, but a label with no question asking about it and no rule reading it
+changes no verdict. When adding a fact to the state, add the question and the rule in the
+same change, and test the verdict rather than the state.
+
 ## Verified facts, do not re-derive from memory
 
 Both were checked against live sources on 2026-09-18. If something contradicts these,

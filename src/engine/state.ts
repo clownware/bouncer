@@ -33,6 +33,15 @@ export interface StateInput {
   readonly agentType?: string;
   /** Recent tool names in this session, most recent last. */
   readonly recentTools?: readonly string[];
+  /**
+   * Whether the tool's target file already exists.
+   *
+   * Passed in rather than stat'd here, because this module is pure and has to stay that
+   * way to be testable. The caller (src/cli.ts) does the stat. Without it, a Write that
+   * creates a file and a Write that overwrites one look identical, which is a real
+   * difference in risk and the single most useful fact about a Write.
+   */
+  readonly targetExists?: boolean;
   readonly git?: { readonly branch?: string; readonly dirty?: boolean };
 }
 
@@ -88,7 +97,9 @@ export function buildState(input: StateInput): BuiltState {
     state["recent_tools"] = input.recentTools.slice(-3);
   }
 
-  let text = JSON.stringify(state, null, 1);
+  // Compact: Jev reads the same JSON either way, and indentation is billed against both
+  // the 4 KB cap here and the API's own state limit.
+  let text = JSON.stringify(state);
   let truncated = false;
 
   if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) {
@@ -97,7 +108,7 @@ export function buildState(input: StateInput): BuiltState {
     if (isRecord(action)) {
       state["action"] = truncateStrings(action, 512);
     }
-    text = JSON.stringify(state, null, 1);
+    text = JSON.stringify(state);
 
     if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) {
       // Cut on a character boundary rather than mid-codepoint, and say so in the text so
@@ -139,11 +150,15 @@ function describeAction(
       const path = pathFacts(toolInput["file_path"], cwd, clean);
       const content = toolInput["content"];
       return {
-        kind: "write_file",
+        kind: input.targetExists === true ? "overwrite_existing_file" : "write_file",
         ...path,
-        // The content itself never leaves. Its size does, because "overwrites a large
-        // existing file" and "creates a 40-byte file" are different risks.
+        // The content itself never leaves. Its size does: a 40-byte creation and a 12 KB
+        // overwrite are different risks, and size is the only part of that which is
+        // derivable from the tool input alone.
         bytes: typeof content === "string" ? Buffer.byteLength(content, "utf8") : undefined,
+        // Undefined when the caller could not determine it. Left out rather than guessed:
+        // defaulting to "new file" would make every overwrite look like a creation.
+        replaces_existing_file: input.targetExists,
       };
     }
 

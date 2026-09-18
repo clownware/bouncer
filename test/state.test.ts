@@ -197,6 +197,34 @@ describe("buildState, constructed cases", () => {
     }
   });
 
+  // The byte count alone cannot distinguish a 12-byte creation from a 12-byte overwrite
+  // of an existing file, and those are different risks. The caller supplies the fact;
+  // the engine stays free of I/O.
+  it("distinguishes creating a file from overwriting one", () => {
+    const created = buildState({ toolName: "Write", toolInput: { file_path: `${cwd}/a.ts`, content: "x" }, cwd, targetExists: false });
+    const overwritten = buildState({ toolName: "Write", toolInput: { file_path: `${cwd}/a.ts`, content: "x" }, cwd, targetExists: true });
+
+    expect(JSON.parse(created.text).action.kind).toBe("write_file");
+    expect(JSON.parse(created.text).action.replaces_existing_file).toBe(false);
+    expect(JSON.parse(overwritten.text).action.kind).toBe("overwrite_existing_file");
+    expect(JSON.parse(overwritten.text).action.replaces_existing_file).toBe(true);
+  });
+
+  // Guessing "new file" would make every overwrite look like a creation, which is the
+  // wrong direction to be wrong in.
+  it("omits the fact rather than guessing when the caller could not determine it", () => {
+    const state = buildState({ toolName: "Write", toolInput: { file_path: `${cwd}/a.ts`, content: "x" }, cwd });
+    const parsed = JSON.parse(state.text);
+    expect(parsed.action.replaces_existing_file).toBeUndefined();
+    expect(parsed.action.kind).toBe("write_file");
+  });
+
+  it("serializes compactly, since indentation is billed against the state budget", () => {
+    const state = buildState({ toolName: "Bash", toolInput: { command: "ls -la" }, cwd });
+    expect(state.text).not.toContain("\n ");
+    expect(state.text.startsWith('{"')).toBe(true);
+  });
+
   it("keeps only the last three recent tools", () => {
     const state = buildState({
       toolName: "Bash",

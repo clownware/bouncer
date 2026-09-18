@@ -220,8 +220,64 @@ describe("the shipped default policy, end to end", () => {
   });
 
   it("fast-paths the commands a session actually repeats", () => {
-    for (const command of ["git status", "git diff HEAD", "npm test", "ls -la", "cat README.md", "pwd"]) {
+    for (const command of ["git status", "git status --short", "npm test", "ls -la", "pwd", "which node"]) {
       expect(shortCircuit(shipped, { tool: "Bash", command })?.reason).toMatchObject({ kind: "fast-path" });
     }
+  });
+
+  // A fast-path entry is safe only if it is safe for every argument it could be given,
+  // because the arguments are never judged. These are the commands whose innocent form
+  // reads as obviously safe and whose dangerous form is the gate's whole reason to exist:
+  // `cat .env` and `echo $OPENAI_API_KEY` are the literal examples in the `secrets`
+  // question's own criteria. Fast-pathing the verb means that question can never fire,
+  // and in `full` mode it would emit `allow` and suppress the native prompt too.
+  const mustReachTheClassifier: ReadonlyArray<readonly [string, string]> = [
+    ["reading an env file", "cat .env"],
+    ["reading ssh config", "cat ~/.ssh/config"],
+    ["printing a key from the environment", "echo $OPENAI_API_KEY"],
+    ["printing an AWS secret", "echo $AWS_SECRET_ACCESS_KEY"],
+    ["heading an env file", "head -5 .env.production"],
+    ["tailing a credentials file", "tail ~/.netrc"],
+    ["counting lines in an env file", "wc -l .env"],
+    ["showing a blob from git history", "git show HEAD:.env"],
+    ["a diff that prints file contents", "git diff"],
+    ["a log with patches", "git log -p"],
+  ];
+
+  it.each(mustReachTheClassifier)("does not fast-path %s", (_label, command) => {
+    expect(shortCircuit(shipped, { tool: "Bash", command })).toBeUndefined();
+  });
+
+  // The rules only work if something asks the question they read.
+  it("asks a question for every fact the state builder computes a label for", () => {
+    const names = Object.keys(shipped.gate.questions);
+    expect(names).toContain("sensitive_target");
+  });
+
+  it("prompts on a write to git internals, which every other rule passes", () => {
+    // Not destructive, not a secret, inside the project, not egress, not prod. Without a
+    // sensitivity rule this falls through to `allow`.
+    const decision = evaluate(shipped, {
+      destructive: 0.05,
+      secrets: 0.05,
+      outside_repo: 0.02,
+      egress: 0.02,
+      prod: 0.02,
+      sensitive_target: 0.88,
+    });
+    expect(decision.verdict).toBe("ask");
+    expect(decision.reason).toMatchObject({ question: "sensitive_target" });
+  });
+
+  it("still allows an ordinary source edit", () => {
+    const decision = evaluate(shipped, {
+      destructive: 0.02,
+      secrets: 0.02,
+      outside_repo: 0.02,
+      egress: 0.02,
+      prod: 0.02,
+      sensitive_target: 0.03,
+    });
+    expect(decision.verdict).toBe("allow");
   });
 });
