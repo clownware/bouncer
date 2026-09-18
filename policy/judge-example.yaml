@@ -1,0 +1,83 @@
+# An example `bouncer judge` policy: reviewing written drafts.
+#
+# The gate's policy is in `default.yaml`; this one is here to be copied and rewritten. It
+# demonstrates the two things v0.3 added and nothing else:
+#
+#   1. `policies:` names more than one set. `default.yaml` still spells its single set as a
+#      top-level `gate:`, which is a permanent alias and not a deprecated form — see
+#      docs/adr/009. Both spellings load; a file may not use both.
+#   2. A set that is not the gate has questions and rules and nothing else. `tools`,
+#      `fast_path` and `hard_rules` reason about a tool call, so they are an error here
+#      rather than a warning: they would load, read correctly, and never fire.
+#
+# Run it:
+#
+#   BOUNCER_POLICY=policy/judge-example.yaml \
+#     bouncer judge fixtures/judge-example.jsonl --set content --backend mock
+#
+# The items are whatever your batch contains. A question refers to their fields by name —
+# `title`, `text`, `audience` below — so the field names in your JSONL are part of the
+# policy's interface. Give them names a person would use.
+
+version: 1
+backend: jev
+mode: observe
+timeout_ms: 30000
+
+calibration:
+  confidence_floor: 0.80
+  accuracy_bar: 0.85
+
+policies:
+  content:
+    # Every question is a noul: the probability that the statement is true.
+    #
+    # Written positively, with the exclusions in `criteria.false`, because jev-1.13 reads
+    # negations and scoping words literally. And written to stand alone: a question's name
+    # is never sent to the model, so `unsupported_claim` carries no meaning by itself and
+    # the instruction has to say the whole thing.
+    questions:
+      unsupported_claim:
+        instructions: "The draft in `text` states a specific fact, number or outcome without naming where it came from."
+        criteria:
+          "true": "a percentage, a dollar figure, a ranking or a research finding stated with no source, customer or study named; a claim about what competitors do with nothing behind it"
+          "false": "a claim the draft attributes to a named source, a description of the product's own behaviour, an opinion presented as one, a round figure the draft calls an estimate"
+
+      overclaims:
+        instructions: "The draft in `text` makes an absolute or superlative promise about results."
+        criteria:
+          "true": "guarantees an outcome, says the only or the first or the best, promises a specific gain every reader will see, states a result with no conditions"
+          "false": "describes a typical result and says so, names the conditions a result depends on, compares on a stated dimension, quotes a customer describing their own outcome"
+
+      buries_the_ask:
+        instructions: "The reader has to get past the opening before the draft says what to do next."
+        criteria:
+          "true": "the call to action appears only at the end, the opening is context or background, the reader would have to guess what this is for"
+          "false": "the opening says what this is and what to do, the piece is a reference or a changelog where no action is asked for"
+
+      wrong_audience:
+        instructions: "The draft in `text` assumes knowledge the reader described in `audience` does not have."
+        criteria:
+          "true": "unexplained internal shorthand, a product name used as if familiar, a technical concept the stated audience would not know, a prerequisite step assumed already done"
+          "false": "terms the draft defines on first use, vocabulary the stated audience uses daily, deliberate depth in a piece written for practitioners"
+
+    # Same evaluator, same order, same first-match-wins as the gate. `ask` here means "a
+    # human or a reasoning model should look at this one" — there is no prompt to raise, so
+    # the verdict is the output and the escalation manifest is what carries it forward.
+    rules:
+      - when: { unsupported_claim: { p: ">=0.65" } }
+        then: ask
+      - when: { overclaims: { p: ">=0.65" } }
+        then: ask
+      - when: { wrong_audience: { p: ">=0.65" } }
+        then: ask
+      - when: { buries_the_ask: { p: ">=0.70" } }
+        then: ask
+
+      # Genuine uncertainty on any question is a reason to spend a reasoning model on it.
+      # This is the rule that most directly sets the escalation rate, so it is the first
+      # one to move once you have measured what an escalation is worth on your own batch.
+      - when: { any: { p: "0.40..0.60" } }
+        then: ask
+
+      - default: allow

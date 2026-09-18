@@ -3700,22 +3700,22 @@ var require_errors = __commonJS({
   "node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
-      constructor(name, pos, code, message) {
+      constructor(name, pos, code, message2) {
         super();
         this.name = name;
         this.code = code;
-        this.message = message;
+        this.message = message2;
         this.pos = pos;
       }
     };
     var YAMLParseError = class extends YAMLError {
-      constructor(pos, code, message) {
-        super("YAMLParseError", pos, code, message);
+      constructor(pos, code, message2) {
+        super("YAMLParseError", pos, code, message2);
       }
     };
     var YAMLWarning = class extends YAMLError {
-      constructor(pos, code, message) {
-        super("YAMLWarning", pos, code, message);
+      constructor(pos, code, message2) {
+        super("YAMLWarning", pos, code, message2);
       }
     };
     var prettifyError = (src, lc) => (error) => {
@@ -3989,10 +3989,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -4006,7 +4006,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep2) {
+          if (!keyProps.anchor && !keyProps.tag && !sep3) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -4030,7 +4030,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep3 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -4046,7 +4046,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep3, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -4137,7 +4137,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep2 = "";
+        let sep3 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -4151,13 +4151,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep2 + cb;
-              sep2 = "";
+                comment += sep3 + cb;
+              sep3 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep2 += source;
+                sep3 += source;
               hasSpace = true;
               break;
             default:
@@ -4200,18 +4200,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep2 && !value) {
+          if (!props.anchor && !props.tag && !sep3 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -4265,8 +4265,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep2 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
+        if (!isMap && !sep3 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep3, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -4278,7 +4278,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep3 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -4289,8 +4289,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep2)
-                for (const st of sep2) {
+              if (sep3)
+                for (const st of sep3) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -4307,7 +4307,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep3, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4395,8 +4395,8 @@ var require_compose_collection = __commonJS({
         const { anchor, newlineAfterProp: nl } = props;
         const lastProp = anchor && tagToken ? anchor.offset > tagToken.offset ? anchor : tagToken : anchor ?? tagToken;
         if (lastProp && (!nl || nl.offset < lastProp.offset)) {
-          const message = "Missing newline after block sequence props";
-          onError(lastProp, "MISSING_CHAR", message);
+          const message2 = "Missing newline after block sequence props";
+          onError(lastProp, "MISSING_CHAR", message2);
         }
       }
       const expType = token.type === "block-map" ? "map" : token.type === "block-seq" ? "seq" : token.start.source === "{" ? "map" : "seq";
@@ -4468,15 +4468,15 @@ var require_resolve_block_scalar = __commonJS({
             trimIndent = indent.length;
         } else {
           if (indent.length < trimIndent) {
-            const message = "Block scalars with more-indented leading empty lines must use an explicit indentation indicator";
-            onError(offset + indent.length, "MISSING_CHAR", message);
+            const message2 = "Block scalars with more-indented leading empty lines must use an explicit indentation indicator";
+            onError(offset + indent.length, "MISSING_CHAR", message2);
           }
           if (header.indent === 0)
             trimIndent = indent.length;
           contentStart = i;
           if (trimIndent === 0 && !ctx.atRoot) {
-            const message = "Block scalar values in collections must be indented";
-            onError(offset, "BAD_INDENT", message);
+            const message2 = "Block scalar values in collections must be indented";
+            onError(offset, "BAD_INDENT", message2);
           }
           break;
         }
@@ -4487,7 +4487,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep2 = "";
+      let sep3 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -4499,29 +4499,29 @@ var require_resolve_block_scalar = __commonJS({
           content = content.slice(0, -1);
         if (content && indent.length < trimIndent) {
           const src = header.indent ? "explicit indentation indicator" : "first line";
-          const message = `Block scalar lines must not be less indented than their ${src}`;
-          onError(offset - content.length - (crlf ? 2 : 1), "BAD_INDENT", message);
+          const message2 = `Block scalar lines must not be less indented than their ${src}`;
+          onError(offset - content.length - (crlf ? 2 : 1), "BAD_INDENT", message2);
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep2 === " ")
-            sep2 = "\n";
-          else if (!prevMoreIndented && sep2 === "\n")
-            sep2 = "\n\n";
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          if (sep3 === " ")
+            sep3 = "\n";
+          else if (!prevMoreIndented && sep3 === "\n")
+            sep3 = "\n\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep2 === "\n")
+          if (sep3 === "\n")
             value += "\n";
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          value += sep2 + content;
-          sep2 = " ";
+          value += sep3 + content;
+          sep3 = " ";
           prevMoreIndented = false;
         }
       }
@@ -4578,8 +4578,8 @@ var require_resolve_block_scalar = __commonJS({
             break;
           case "comment":
             if (strict && !hasSpace) {
-              const message = "Comments must be separated from other tokens by white space characters";
-              onError(token, "MISSING_CHAR", message);
+              const message2 = "Comments must be separated from other tokens by white space characters";
+              onError(token, "MISSING_CHAR", message2);
             }
             length += token.source.length;
             comment = token.source.substring(1);
@@ -4590,8 +4590,8 @@ var require_resolve_block_scalar = __commonJS({
             break;
           /* istanbul ignore next should not happen */
           default: {
-            const message = `Unexpected token in block scalar header: ${token.type}`;
-            onError(token, "UNEXPECTED_TOKEN", message);
+            const message2 = `Unexpected token in block scalar header: ${token.type}`;
+            onError(token, "UNEXPECTED_TOKEN", message2);
             const ts = token.source;
             if (ts && typeof ts === "string")
               length += ts.length;
@@ -4704,25 +4704,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep2 = " ";
+      let sep3 = " ";
       let pos = line.lastIndex;
       while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep2 === "\n")
-            res += sep2;
+          if (sep3 === "\n")
+            res += sep3;
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          res += sep2 + lm;
-          sep2 = " ";
+          res += sep3 + lm;
+          sep3 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep2 + (match?.[1] ?? "");
+      return res + sep3 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -4984,13 +4984,13 @@ var require_compose_node = __commonJS({
             if (anchor)
               node.anchor = anchor.source.substring(1);
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            onError(token, "RESOURCE_EXHAUSTION", message);
+            const message2 = error instanceof Error ? error.message : String(error);
+            onError(token, "RESOURCE_EXHAUSTION", message2);
           }
           break;
         default: {
-          const message = token.type === "error" ? token.message : `Unsupported token (type: ${token.type})`;
-          onError(token, "UNEXPECTED_TOKEN", message);
+          const message2 = token.type === "error" ? token.message : `Unsupported token (type: ${token.type})`;
+          onError(token, "UNEXPECTED_TOKEN", message2);
           isSrcToken = false;
         }
       }
@@ -5146,12 +5146,12 @@ var require_composer = __commonJS({
         this.prelude = [];
         this.errors = [];
         this.warnings = [];
-        this.onError = (source, code, message, warning) => {
+        this.onError = (source, code, message2, warning) => {
           const pos = getErrorPos(source);
           if (warning)
-            this.warnings.push(new errors.YAMLWarning(pos, code, message));
+            this.warnings.push(new errors.YAMLWarning(pos, code, message2));
           else
-            this.errors.push(new errors.YAMLParseError(pos, code, message));
+            this.errors.push(new errors.YAMLParseError(pos, code, message2));
         };
         this.directives = new directives.Directives({ version: options.version || "1.2" });
         this.options = options;
@@ -5221,10 +5221,10 @@ ${cb}` : comment;
           console.dir(token, { depth: null });
         switch (token.type) {
           case "directive":
-            this.directives.add(token.source, (offset, message, warning) => {
+            this.directives.add(token.source, (offset, message2, warning) => {
               const pos = getErrorPos(token);
               pos[0] += offset;
-              this.onError(pos, "BAD_DIRECTIVE", message, warning);
+              this.onError(pos, "BAD_DIRECTIVE", message2, warning);
             });
             this.prelude.push(token.source);
             this.atDirectives = true;
@@ -5313,12 +5313,12 @@ var require_cst_scalar = __commonJS({
     var stringifyString = require_stringifyString();
     function resolveAsScalar(token, strict = true, onError) {
       if (token) {
-        const _onError = (pos, code, message) => {
+        const _onError = (pos, code, message2) => {
           const offset = typeof pos === "number" ? pos : Array.isArray(pos) ? pos[0] : pos.offset;
           if (onError)
-            onError(offset, code, message);
+            onError(offset, code, message2);
           else
-            throw new errors.YAMLParseError([offset, offset + 1], code, message);
+            throw new errors.YAMLParseError([offset, offset + 1], code, message2);
         };
         switch (token.type) {
           case "scalar":
@@ -5532,14 +5532,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep2, value }) {
+    function stringifyItem({ start, key, sep: sep3, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep2)
-        for (const st of sep2)
+      if (sep3)
+        for (const st of sep3)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -6478,8 +6478,8 @@ var require_parser = __commonJS({
         }
         const type = cst.tokenType(source);
         if (!type) {
-          const message = `Not a YAML token: ${source}`;
-          yield* this.pop({ type: "error", offset: this.offset, message, source });
+          const message2 = `Not a YAML token: ${source}`;
+          yield* this.pop({ type: "error", offset: this.offset, message: message2, source });
           this.offset += source.length;
         } else if (type === "scalar") {
           this.atNewLine = false;
@@ -6569,8 +6569,8 @@ var require_parser = __commonJS({
       *pop(error) {
         const token = error ?? this.stack.pop();
         if (!token) {
-          const message = "Tried to pop an empty stack";
-          yield { type: "error", offset: this.offset, source: "", message };
+          const message2 = "Tried to pop an empty stack";
+          yield { type: "error", offset: this.offset, source: "", message: message2 };
         } else if (this.stack.length === 0) {
           yield token;
         } else {
@@ -6706,18 +6706,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep2;
+          let sep3;
           if (scalar.end) {
-            sep2 = scalar.end;
-            sep2.push(this.sourceToken);
+            sep3 = scalar.end;
+            sep3.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep2 = [this.sourceToken];
+            sep3 = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep2 }]
+            items: [{ start, key: scalar, sep: sep3 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6870,15 +6870,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep2 = it.sep;
-                  sep2.push(this.sourceToken);
+                  const sep3 = it.sep;
+                  sep3.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep2 }]
+                    items: [{ start: start2, key, sep: sep3 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -7072,13 +7072,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep2 = fc.end.splice(1, fc.end.length);
-            sep2.push(this.sourceToken);
+            const sep3 = fc.end.splice(1, fc.end.length);
+            sep3.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep2 }]
+              items: [{ start, key: fc, sep: sep3 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -7365,8 +7365,8 @@ var AdapterError = class extends Error {
   status;
   /** True when trying the same request again could plausibly succeed. */
   retryable;
-  constructor(kind, message, options) {
-    super(message, options?.cause !== void 0 ? { cause: options.cause } : void 0);
+  constructor(kind, message2, options) {
+    super(message2, options?.cause !== void 0 ? { cause: options.cause } : void 0);
     this.name = "AdapterError";
     this.kind = kind;
     if (options?.status !== void 0) this.status = options.status;
@@ -7550,7 +7550,7 @@ function backoffFor(attempt, response) {
 }
 function delay(ms, deadline) {
   const capped = Math.max(0, Math.min(ms, deadline - Date.now()));
-  return new Promise((resolve3) => setTimeout(resolve3, capped));
+  return new Promise((resolve4) => setTimeout(resolve4, capped));
 }
 async function safeText(response) {
   try {
@@ -7917,8 +7917,8 @@ var DEFAULT_CONFIDENCE_FLOOR = 0.8;
 var DEFAULT_ACCURACY_BAR = 0.85;
 function loadPolicy(source) {
   const diagnostics = [];
-  const error = (path, message) => diagnostics.push({ severity: "error", path, message });
-  const warn = (path, message) => diagnostics.push({ severity: "warning", path, message });
+  const error = (path, message2) => diagnostics.push({ severity: "error", path, message: message2 });
+  const warn = (path, message2) => diagnostics.push({ severity: "warning", path, message: message2 });
   let raw;
   try {
     raw = (0, import_yaml.parse)(source);
@@ -9016,12 +9016,13 @@ function localBackend() {
 var import_node_fs4 = require("node:fs");
 var import_node_path5 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
+var JUDGMENTS_FILE = "judgments.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
-function append(dir, record2) {
+function append(dir, record2, name = LOG_FILE) {
   try {
     (0, import_node_fs4.mkdirSync)(dir, { recursive: true });
     const safe = record2.state !== void 0 ? { ...record2, state: redact(record2.state).text } : record2;
-    const file = (0, import_node_path5.join)(dir, LOG_FILE);
+    const file = (0, import_node_path5.join)(dir, name);
     rotateIfOversized(file);
     (0, import_node_fs4.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
@@ -9038,10 +9039,10 @@ function rotateIfOversized(file) {
   if (size < MAX_LOG_BYTES) return;
   (0, import_node_fs4.renameSync)(file, `${file}.1`);
 }
-function tail(dir, count) {
+function tail(dir, count, name = LOG_FILE) {
   let raw;
   try {
-    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, LOG_FILE), "utf8");
+    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, name), "utf8");
   } catch {
     return [];
   }
@@ -9427,7 +9428,7 @@ function explain2(toolUseId) {
 }
 function render(record2) {
   const lines = [];
-  lines.push(`${record2.tool} at ${record2.ts}`);
+  lines.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
   lines.push(`Verdict: ${record2.verdict}${record2.emitted === null ? `  (nothing emitted \u2014 ${record2.mode} mode)` : `  (emitted ${record2.emitted})`}`);
   lines.push(`Because: ${describe(record2)}`);
   if (record2.permission_mode !== void 0) {
@@ -10119,6 +10120,427 @@ async function startIfNeeded(adapter) {
   }
 }
 
+// src/commands/judge.ts
+var import_node_fs8 = require("node:fs");
+var import_node_path9 = require("node:path");
+
+// src/judge.ts
+var DEFAULT_CONCURRENCY2 = 4;
+async function judge(items, options) {
+  const questions = questionsOf(options.set);
+  const probeNames = new Set(Object.keys(options.set.probeQuestions));
+  const started = Date.now();
+  const results = new Array(items.length);
+  let done = 0;
+  let cursor = 0;
+  const worker = async () => {
+    for (; ; ) {
+      const index = cursor++;
+      const entry = items[index];
+      if (entry === void 0) return;
+      results[index] = await judgeOne(entry.id, entry.item, questions, probeNames, options);
+      options.onProgress?.(++done, items.length);
+    }
+  };
+  const width = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY2, items.length));
+  await Promise.all(Array.from({ length: width }, () => worker()));
+  const escalations = results.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
+  const judgedCount = results.filter((r) => r.error === void 0).length;
+  const tokens = results.reduce(
+    (sum, r) => r.inputTokens === void 0 ? sum : (sum ?? 0) + r.inputTokens,
+    void 0
+  );
+  return {
+    set: options.setName,
+    backend: options.adapter.name,
+    items: results,
+    manifest: manifestOf(escalations, judgedCount),
+    judged: judgedCount,
+    failed: results.length - judgedCount,
+    ...tokens !== void 0 ? { inputTokens: tokens } : {},
+    latencyMs: Date.now() - started
+  };
+}
+async function judgeOne(id, item, questions, probeNames, options) {
+  const state = itemState.build(item);
+  const base = {
+    id,
+    state: state.text,
+    redactedKinds: state.redactedKinds,
+    truncated: state.truncated
+  };
+  let response;
+  try {
+    response = await options.adapter.decide({
+      state: state.text,
+      questions,
+      timeoutMs: options.timeoutMs
+    });
+  } catch (err) {
+    const kind = err instanceof AdapterError ? err.kind : "unavailable";
+    return {
+      ...base,
+      verdict: "allow",
+      reason: { kind: "no-rule-matched" },
+      answers: {},
+      latencyMs: 0,
+      error: { kind, message: err instanceof Error ? err.message : String(err) }
+    };
+  }
+  const answers = {};
+  const probes = {};
+  for (const name of Object.keys(questions)) {
+    const p = noulProbability(response.answers[name]);
+    if (p === void 0) continue;
+    if (probeNames.has(name)) probes[name] = p;
+    else answers[name] = p;
+  }
+  const decision = evaluate(options.set, options.mode, answers);
+  const escalation = escalationFor(options.set, decision, answers, id);
+  return {
+    ...base,
+    verdict: decision.verdict,
+    reason: decision.reason,
+    answers,
+    ...Object.keys(probes).length > 0 ? { probes } : {},
+    // A standalone manifest sets `state`, because there the item has to be readable on its
+    // own — unlike the gate's, which sits on a log line that already carries the string.
+    ...escalation !== void 0 ? { escalation: { ...escalation, state: state.text } } : {},
+    latencyMs: response.latencyMs,
+    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {}
+  };
+}
+function tally(run2) {
+  const counts = { allow: 0, ask: 0, deny: 0 };
+  for (const item of run2.items) {
+    if (item.error !== void 0) continue;
+    counts[item.verdict] += 1;
+  }
+  return counts;
+}
+function formatRun(run2) {
+  const lines = [];
+  const counts = tally(run2);
+  const rate = run2.manifest.escalationRate;
+  lines.push(`Set: ${run2.set}   Backend: ${run2.backend}`, "");
+  lines.push(`  judged     ${run2.judged}`);
+  if (run2.failed > 0) lines.push(`  failed     ${run2.failed}`);
+  lines.push(`  allow      ${counts.allow}`);
+  lines.push(`  ask        ${counts.ask}`);
+  if (counts.deny > 0) lines.push(`  deny       ${counts.deny}`);
+  lines.push("");
+  lines.push(`  escalated  ${run2.manifest.items.length} / ${run2.judged}  (${(rate * 100).toFixed(1)}%)`);
+  if (run2.inputTokens !== void 0 && run2.judged > 0) {
+    lines.push(`  tokens in  ${run2.inputTokens} total, ${Math.round(run2.inputTokens / run2.judged)} per item`);
+  }
+  lines.push(`  wall clock ${(run2.latencyMs / 1e3).toFixed(1)}s`);
+  return `${lines.join("\n")}
+`;
+}
+
+// src/io/items.ts
+var import_node_fs7 = require("node:fs");
+var import_node_path8 = require("node:path");
+var MAX_FILE_BYTES = 1024 * 1024;
+var MAX_DEPTH2 = 8;
+function loadItems(path) {
+  const stats = (0, import_node_fs7.statSync)(path);
+  if (stats.isDirectory()) return loadDirectory(path);
+  const source = (0, import_node_fs7.readFileSync)(path, "utf8");
+  return (0, import_node_path8.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
+}
+function loadJsonl(source, path) {
+  const items = [];
+  const skipped = [];
+  source.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      skipped.push({ path: `${path}:${i + 1}`, why: `not valid JSON: ${message(err)}` });
+      return;
+    }
+    if (!isRecord6(parsed)) {
+      skipped.push({ path: `${path}:${i + 1}`, why: "not a JSON object" });
+      return;
+    }
+    items.push({ id: idOf(parsed, `${path}:${i + 1}`), item: unwrapFixture(parsed) });
+  });
+  return { items, skipped };
+}
+function unwrapFixture(line) {
+  const item = line["item"];
+  const kind = line["kind"];
+  if (kind !== "item" && kind !== "tool_call" || !isRecord6(item) || !isRecord6(line["expect"])) return line;
+  return item;
+}
+function loadJsonArray(source, path) {
+  let parsed;
+  try {
+    parsed = JSON.parse(source);
+  } catch (err) {
+    throw new Error(`${path} is not valid JSON: ${message(err)}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${path} holds a ${typeof parsed}, not an array of items`);
+  }
+  const items = [];
+  const skipped = [];
+  parsed.forEach((entry, i) => {
+    if (!isRecord6(entry)) {
+      skipped.push({ path: `${path}[${i}]`, why: "not a JSON object" });
+      return;
+    }
+    items.push({ id: idOf(entry, `${path}[${i}]`), item: entry });
+  });
+  return { items, skipped };
+}
+function loadDirectory(root) {
+  const items = [];
+  const skipped = [];
+  const walk = (dir, depth) => {
+    if (depth > MAX_DEPTH2) {
+      skipped.push({ path: (0, import_node_path8.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
+      return;
+    }
+    for (const entry of (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = (0, import_node_path8.join)(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const id = (0, import_node_path8.relative)(root, full).split(import_node_path8.sep).join("/");
+      let size;
+      try {
+        size = (0, import_node_fs7.statSync)(full).size;
+      } catch (err) {
+        skipped.push({ path: id, why: message(err) });
+        continue;
+      }
+      if (size > MAX_FILE_BYTES) {
+        skipped.push({ path: id, why: `${(size / 1024).toFixed(0)} KB, over the ${MAX_FILE_BYTES / 1024} KB limit` });
+        continue;
+      }
+      let buffer;
+      try {
+        buffer = (0, import_node_fs7.readFileSync)(full);
+      } catch (err) {
+        skipped.push({ path: id, why: message(err) });
+        continue;
+      }
+      if (buffer.subarray(0, 4096).includes(0)) {
+        skipped.push({ path: id, why: "looks binary" });
+        continue;
+      }
+      items.push({ id, item: { path: id, name: entry.name, text: buffer.toString("utf8") } });
+    }
+  };
+  walk(root, 0);
+  return { items, skipped };
+}
+function idOf(item, fallback) {
+  const id = item["id"];
+  if (typeof id === "string" && id.length > 0) return id;
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return fallback;
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function message(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// src/commands/judge.ts
+var VALUE_FLAGS = ["set", "backend", "out", "manifest", "concurrency"];
+function parseArgs2(argv) {
+  const values = /* @__PURE__ */ new Map();
+  let path;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.startsWith("--")) {
+      const name = token.slice(2);
+      if (VALUE_FLAGS.includes(name)) {
+        const value = argv[i + 1];
+        if (value !== void 0) values.set(name, value);
+        i += 1;
+      }
+      continue;
+    }
+    path ??= token;
+  }
+  const concurrency = Number(values.get("concurrency"));
+  return {
+    ...path !== void 0 ? { path } : {},
+    ...values.has("set") ? { set: values.get("set") } : {},
+    ...values.has("backend") ? { backend: values.get("backend") } : {},
+    ...values.has("out") ? { out: values.get("out") } : {},
+    ...values.has("manifest") ? { manifest: values.get("manifest") } : {},
+    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
+    json: argv.includes("--json")
+  };
+}
+async function judge2(args, write3) {
+  if (args.path === void 0) {
+    write3("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock]\n");
+    return 1;
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const resolved = resolvePolicy(process.cwd(), root);
+  if (resolved.policy === void 0) {
+    write3(`Cannot judge: ${resolved.source} did not load.
+`);
+    for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
+`);
+    return 1;
+  }
+  const policy = resolved.policy;
+  const setName = args.set ?? GATE_SET;
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    write3(
+      `${resolved.source} defines no set named "${setName}". It has: ${Object.keys(policy.sets).join(", ")}.
+`
+    );
+    return 1;
+  }
+  let batch;
+  try {
+    batch = loadItems((0, import_node_path9.resolve)(args.path));
+  } catch (err) {
+    write3(`Cannot read ${args.path}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  for (const skip of batch.skipped) write3(`  skipped ${skip.path}: ${skip.why}
+`);
+  if (batch.items.length === 0) {
+    write3(`Nothing to judge in ${args.path}.
+`);
+    return 1;
+  }
+  const backend = args.backend ?? policy.backend;
+  const adapter = adapterFor3(backend);
+  if (typeof adapter === "string") {
+    write3(`${adapter}
+`);
+    return 1;
+  }
+  const problem = await startIfNeeded2(adapter);
+  if (problem !== void 0) {
+    write3(`Cannot judge with ${adapter.name}: ${problem}
+`);
+    return 1;
+  }
+  const run2 = await judge(batch.items, {
+    setName,
+    set,
+    mode: policy.mode,
+    adapter,
+    // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong budget:
+    // it exists to keep a tool call responsive. Give an item room to be a long document.
+    timeoutMs: Math.max(policy.timeoutMs, 3e4),
+    ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
+    onProgress: (done, total) => {
+      if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+    }
+  });
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  const logPath = args.out ?? (0, import_node_path9.join)(dataDir(), JUDGMENTS_FILE);
+  const manifestPath = args.manifest ?? (0, import_node_path9.join)(dataDir(), "escalations.json");
+  writeLog(logPath, run2, policy);
+  const manifestWritten = writeManifest(manifestPath, run2);
+  if (args.json === true) {
+    write3(`${JSON.stringify({ ...run2, log: logPath, manifest: manifestPath }, null, 2)}
+`);
+    return 0;
+  }
+  write3(formatRun(run2));
+  write3(`
+  judgments  ${logPath}
+`);
+  write3(`  manifest   ${manifestWritten ? manifestPath : "(not written: nothing escalated)"}
+`);
+  return run2.judged === 0 ? 1 : 0;
+}
+function writeLog(path, run2, policy) {
+  (0, import_node_fs8.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  const ts = (/* @__PURE__ */ new Date()).toISOString();
+  for (const item of run2.items) {
+    append((0, import_node_path9.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
+  }
+}
+function recordFor(item, run2, policy, ts) {
+  return {
+    ts,
+    consumer: "judge",
+    set: run2.set,
+    item: item.id,
+    state_kind: "item",
+    mode: policy.mode,
+    backend: run2.backend,
+    verdict: item.verdict,
+    // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
+    // rather than left out so a reader never has to ask which kind of line it is holding.
+    emitted: null,
+    reason: item.reason,
+    ...item.error === void 0 ? { source: "judge", answers: item.answers } : {},
+    ...item.probes !== void 0 ? { probes: item.probes } : {},
+    // The log line carries the state, so the escalation on it does not repeat it — same
+    // rule as the gate's. The standalone manifest is where the item stands on its own.
+    ...item.escalation !== void 0 ? { escalation: withoutState(item.escalation) } : {},
+    state: item.state,
+    ...item.redactedKinds.length > 0 ? { redacted_kinds: item.redactedKinds } : {},
+    latency_ms: { total: item.latencyMs, adapter: item.latencyMs },
+    ...item.error !== void 0 ? { error: item.error } : {}
+  };
+}
+function withoutState(escalation) {
+  const { state: _state, ...rest } = escalation;
+  return rest;
+}
+function writeManifest(path, run2) {
+  if (run2.manifest.items.length === 0) return false;
+  (0, import_node_fs8.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs8.writeFileSync)(
+    path,
+    `${JSON.stringify({ set: run2.set, backend: run2.backend, ...run2.manifest }, null, 2)}
+`,
+    "utf8"
+  );
+  return true;
+}
+function basenameOf(path) {
+  return path.split("/").pop() ?? JUDGMENTS_FILE;
+}
+function adapterFor3(backend) {
+  if (backend === "mock") return new MockAdapter();
+  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      return "Cannot judge with jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+  return `Unknown backend "${backend}".`;
+}
+async function startIfNeeded2(adapter) {
+  const start = adapter.start;
+  if (typeof start !== "function") return void 0;
+  try {
+    await start.call(adapter);
+    return void 0;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 // src/engine/registry.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 var PRECEDENCE = {
@@ -10164,7 +10586,7 @@ function parseFrontmatter(text) {
   } catch {
     return {};
   }
-  if (!isRecord6(parsed)) return {};
+  if (!isRecord7(parsed)) return {};
   return {
     ...typeof parsed["name"] === "string" ? { name: parsed["name"] } : {},
     ...typeof parsed["description"] === "string" ? { description: parsed["description"] } : {}
@@ -10174,7 +10596,7 @@ function parsePluginManifest(json) {
   const plugins = arrayUnder(json, "plugins");
   const entries = [];
   for (const value of plugins) {
-    if (!isRecord6(value)) continue;
+    if (!isRecord7(value)) continue;
     const name = value["name"];
     if (typeof name !== "string" || name.length === 0) continue;
     const preference = value["installationPreference"];
@@ -10189,7 +10611,7 @@ function parseSkillsManifest(json) {
   const skills2 = arrayUnder(json, "skills");
   const entries = [];
   for (const value of skills2) {
-    if (!isRecord6(value)) continue;
+    if (!isRecord7(value)) continue;
     const name = value["name"] ?? value["skillId"];
     const description = value["description"];
     if (typeof name !== "string" || name.length === 0) continue;
@@ -10242,18 +10664,18 @@ function arrayUnder(json, key) {
   } catch {
     return [];
   }
-  if (!isRecord6(parsed)) return [];
+  if (!isRecord7(parsed)) return [];
   const value = parsed[key];
   return Array.isArray(value) ? value : [];
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // src/io/skills.ts
-var import_node_fs7 = require("node:fs");
+var import_node_fs9 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path8 = require("node:path");
+var import_node_path10 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -10262,7 +10684,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs7.existsSync)(path)) return;
+    if (!(0, import_node_fs9.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -10276,17 +10698,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path8.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path10.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path8.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path10.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path8.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path10.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -10297,7 +10719,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -10321,7 +10743,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -10347,9 +10769,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path8.join)(installPath, "skills");
+    const dir = (0, import_node_path10.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path8.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path10.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -10357,51 +10779,51 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path8.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs7.existsSync)(root)) return [];
+  const root = (0, import_node_path10.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs9.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path8.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path10.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path8.join)(root, outer, inner);
-      const rpm = (0, import_node_path8.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs7.existsSync)(rpm)) {
+      const session = (0, import_node_path10.join)(root, outer, inner);
+      const rpm = (0, import_node_path10.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs9.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path8.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path10.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path8.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
-        if ((0, import_node_fs7.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path10.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
+        if ((0, import_node_fs9.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path8.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path10.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path8.join)(dir, outer))) {
-      buckets.push((0, import_node_path8.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path10.join)(dir, outer))) {
+      buckets.push((0, import_node_path10.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs9.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs7.readFileSync)(file, "utf8");
+    return (0, import_node_fs9.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -10414,7 +10836,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs7.statSync)(source);
+      const stat = (0, import_node_fs9.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -10424,13 +10846,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path8.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path10.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs7.existsSync)((0, import_node_path8.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path8.dirname)(current);
+    if ((0, import_node_fs9.existsSync)((0, import_node_path10.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path10.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -10438,7 +10860,7 @@ function findRepoRoot2(from) {
 }
 
 // src/commands/skills.ts
-function parseArgs2(argv) {
+function parseArgs3(argv) {
   return { json: argv.includes("--json"), verbose: argv.includes("--verbose") || argv.includes("-v") };
 }
 function skills(options, cwd = process.cwd()) {
@@ -10520,10 +10942,10 @@ async function readPayload() {
   }
 }
 function readAll() {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const chunks = [];
     process.stdin.on("data", (c) => chunks.push(c));
-    process.stdin.on("end", () => resolve3(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("end", () => resolve4(Buffer.concat(chunks).toString("utf8")));
     process.stdin.on("error", reject);
   });
 }
@@ -10549,8 +10971,10 @@ async function main(argv) {
       return OK;
     case "calibrate":
       return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
+    case "judge":
+      return judge2(parseArgs2(argv.slice(3)), (text) => process.stdout.write(text));
     case "skills":
-      process.stdout.write(skills(parseArgs2(argv.slice(3))));
+      process.stdout.write(skills(parseArgs3(argv.slice(3))));
       return OK;
     case "--version":
       process.stdout.write("0.1.0\n");
