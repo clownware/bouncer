@@ -83,9 +83,9 @@ recorded reality; the docs are a description of it.
 ## Conventions
 
 - Conventional commits. Branch per thread. PRs only, no `--no-verify`.
-- Zero runtime dependencies. Dev dependencies are fine; anything reaching `bin/bouncer.mjs`
+- Zero runtime dependencies. Dev dependencies are fine; anything reaching `bin/bouncer.cjs`
   is not.
-- `bin/bouncer.mjs` is a committed build artifact. Rebuild and commit it whenever `src/`
+- `bin/bouncer.cjs` is a committed build artifact. Rebuild and commit it whenever `src/`
   changes; CI verifies it matches a fresh build.
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.

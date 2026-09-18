@@ -18,7 +18,7 @@ const arg = (name, fallback) => {
 const BUDGET_MS = arg("budget", 80);
 const RUNS = arg("runs", 30);
 const WARMUP = 5;
-const BIN = "bin/bouncer.mjs";
+const BIN = "bin/bouncer.cjs";
 
 if (!existsSync(BIN)) {
   console.error(`${BIN} not found — run \`npm run build\` first.`);

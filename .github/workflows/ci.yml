@@ -25,12 +25,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      # bin/bouncer.mjs is committed so the plugin works without an install step
+      # bin/bouncer.cjs is committed so the plugin works without an install step
       # (ADR-002). If this fails, run `npm run build` and commit the result.
       - name: Committed bundle is up to date
         run: |
-          if ! git diff --exit-code -- bin/bouncer.mjs; then
-            echo "::error::bin/bouncer.mjs is stale. Run 'npm run build' and commit it."
+          if ! git diff --exit-code -- bin/bouncer.cjs; then
+            echo "::error::bin/bouncer.cjs is stale. Run 'npm run build' and commit it."
             exit 1
           fi
 

@@ -12,9 +12,9 @@ There is no cheap middle — let the obvious through, stop the dangerous, ask ab
 ambiguous — because that middle needs judgment, and judgment used to mean either brittle
 regex or an LLM in the hot path.
 
-> **Status: v0.1 in progress. Not usable yet.**
-> The scaffold, latency budget and decision records are in place; the engine and the Jev
-> adapter are not. See [docs/PRD.md](docs/PRD.md) for the spec and
+> **Status: v0.1 in progress.** The hook runs end to end against the mock backend and the
+> Jev client is wired up. Still missing: the calibration harness and the published fixture
+> table, which is the release gate. See [docs/PRD.md](docs/PRD.md) for the spec and
 > [docs/adr/](docs/adr/) for what has been decided and why.
 
 ## Design commitments
@@ -45,27 +45,32 @@ built to withstand someone deliberately trying to get past it.
 
 ## Performance
 
-Hook overhead, measured on Node 22 (`npm run bench`):
+Hook overhead, measured on Node 22 (`npm run bench`), and the classifier call measured
+against live Jev:
 
 | | mean | p95 |
 |---|---|---|
 | bare `node -e ''` | 28 ms | 33 ms |
-| bouncer hook, mock adapter | 43 ms | 47 ms |
+| bouncer hook, full engine, mock adapter | 51 ms | 63 ms |
+| Jev call, steady state, 5 questions | ~190 ms | ~350 ms |
+| Jev call, first of a session | 513 ms | — |
 
-Budget is 80 ms p95 for hook overhead, 600 ms p95 end to end including the classifier call.
-CI enforces the former. See [ADR-002](docs/adr/002-bundled-single-file-on-node.md).
+Steady state lands around 400 ms end to end. The first call of a session is nearer 565 ms:
+connection setup, not the model, which is why the latency circuit breaker ignores it.
+
+Budget is 80 ms p95 for hook overhead and 600 ms p95 end to end. CI enforces the former. See [ADR-002](docs/adr/002-bundled-single-file-on-node.md).
 
 ## Development
 
 ```bash
 npm install
-npm run build      # bundles src/ -> bin/bouncer.mjs (committed; see ADR-002)
+npm run build      # bundles src/ -> bin/bouncer.cjs (committed; see ADR-002)
 npm test
 npm run typecheck
 npm run bench      # asserts hook overhead against the budget
 ```
 
-`bin/bouncer.mjs` is a build artifact that lives in git, because Claude Code installs
+`bin/bouncer.cjs` is a build artifact that lives in git, because Claude Code installs
 plugins by fetching the repo and never runs `npm install`. Rebuild and commit it whenever
 `src/` changes; CI checks that it matches.
 

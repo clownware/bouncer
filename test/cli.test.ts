@@ -1,11 +1,23 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const BIN = "bin/bouncer.mjs";
+const BIN = "bin/bouncer.cjs";
+
+// A hook process inherits CLAUDE_PLUGIN_ROOT from Claude Code, which is how it finds the
+// bundled default policy. Without it bouncer is correctly silent, which would make these
+// tests pass for the wrong reason.
+const HOOK_ENV = {
+  ...process.env,
+  BOUNCER_BACKEND: "mock",
+  CLAUDE_PLUGIN_ROOT: resolve("."),
+  CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), "bouncer-cli-")),
+};
 
 function run(args: string[], input: string) {
-  return spawnSync(process.execPath, [BIN, ...args], { input, encoding: "utf8" });
+  return spawnSync(process.execPath, [BIN, ...args], { input, encoding: "utf8", env: HOOK_ENV });
 }
 
 const PRETOOLUSE_BASH = JSON.stringify({
@@ -61,6 +73,62 @@ describe("the hook binary", () => {
     const r = run(["pretooluse"], JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash" }));
     expect(r.status).toBe(0);
     expect(r.stdout).toBe("");
+  });
+
+  // The unit tests import src/ directly, so they exercise none of the bundling. A
+  // dependency resolving to a CommonJS build inside an ESM bundle throws "Dynamic require
+  // of process is not supported" at startup — every unit test still passes, and the plugin
+  // is dead on arrival. These tests run the built artifact and assert it actually works,
+  // not merely that it exits 0.
+  describe("the built bundle actually runs", () => {
+    const env = {
+      ...process.env,
+      BOUNCER_BACKEND: "mock",
+      BOUNCER_POLICY: resolve("policy/default.yaml"),
+      CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), "bouncer-bundle-")),
+    };
+
+    function runWithEnv(args: string[], input: string) {
+      return spawnSync(process.execPath, [BIN, ...args], { input, encoding: "utf8", env });
+    }
+
+    it("loads its whole module graph without a runtime resolution error", () => {
+      const r = runWithEnv(["pretooluse"], PRETOOLUSE_BASH);
+      expect(r.stderr).not.toContain("Dynamic require");
+      expect(r.stderr).not.toContain("Cannot find module");
+      expect(r.stderr).toBe("");
+      expect(r.status).toBe(0);
+    });
+
+    it("parses the YAML policy and reaches a decision", () => {
+      // `status` is the cheapest command that forces a full policy parse.
+      const r = runWithEnv(["status"], "");
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("Mode:");
+      expect(r.stdout).toContain("observe");
+    });
+
+    it("emits a decision when policy says to", () => {
+      const guard = mkdtempSync(join(tmpdir(), "bouncer-guard-"));
+      const guardPolicy = join(guard, "policy.yaml");
+      writeFileSync(guardPolicy, readFileSync("policy/default.yaml", "utf8").replace(/^mode: observe$/m, "mode: guard"));
+
+      const r = spawnSync(process.execPath, [BIN, "pretooluse"], {
+        input: PRETOOLUSE_BASH,
+        encoding: "utf8",
+        env: { ...env, BOUNCER_POLICY: guardPolicy, CLAUDE_PLUGIN_DATA: guard },
+      });
+
+      expect(r.status).toBe(0);
+      const output = JSON.parse(r.stdout);
+      expect(output.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+      expect(output.hookSpecificOutput.permissionDecision).toBe("ask");
+    });
+
+    it("emits nothing in observe mode, through the real binary", () => {
+      const r = runWithEnv(["pretooluse"], PRETOOLUSE_BASH);
+      expect(r.stdout).toBe("");
+    });
   });
 
   it("reports its version", () => {

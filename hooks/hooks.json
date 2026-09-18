@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/bouncer.mjs\" pretooluse",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/bouncer.cjs\" pretooluse",
             "timeout": 5
           }
         ]

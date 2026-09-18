@@ -6,7 +6,7 @@
 
 ## Decision
 
-Write the source in TypeScript, bundle it with esbuild into one file at `bin/bouncer.mjs`,
+Write the source in TypeScript, bundle it with esbuild into one file at `bin/bouncer.cjs`,
 and commit that file. Claude Code plugins are installed by fetching the repo; nothing runs
 `npm install`, so anything the hook needs at runtime has to already be on disk.
 
@@ -49,7 +49,7 @@ problems, for a saving that is small next to the adapter call. Not for v0.1.
 
 ## Consequences
 
-- `bin/bouncer.mjs` is a build artifact **in git**. It must be rebuilt and committed
+- `bin/bouncer.cjs` is a build artifact **in git**. It must be rebuilt and committed
   whenever `src/` changes; CI verifies the committed bundle matches a fresh build.
 - Adding a dependency has a direct, measurable latency cost. `npm run bench` is the gate.
 - The bundle is not minified. Users are being asked to let this run in their tool path;

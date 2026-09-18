@@ -1,4 +1,4 @@
-// Tests spawn bin/bouncer.mjs, so build it first — otherwise a passing run can be
+// Tests spawn bin/bouncer.cjs, so build it first — otherwise a passing run can be
 // testing a stale bundle.
 import { spawnSync } from "node:child_process";
 
