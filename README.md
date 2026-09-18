@@ -39,8 +39,9 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 | sensitive_target | 16 |  81% | 0.136 | 100% (2) |   0% (1) |  —  |   0% (2) | 100% (11) |
 | unreviewed_execution | 22 |  91% | 0.046 |  50% (2) |   0% (1) |  —  | 100% (4) | 100% (15) |
 
-Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, all
-seven questions pass. The full report, with every disagreement and why each label is what
+Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, six
+of the seven questions pass; `sensitive_target` is at 11 of 13, one fixture short, on the
+same two `cat` misses it has had in every run. The full report, with every disagreement and why each label is what
 it is, is in [docs/calibration/2026-09-18-jev-5.md](docs/calibration/2026-09-18-jev-5.md).
 It also lists every `unreviewed_execution` answer by probability, which is where to look
 before enabling `guard`: everyday installs and builds score below 0.2, but a pinned `npx`
