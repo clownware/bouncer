@@ -213,8 +213,8 @@ Four things follow.
    it is usable, but it is a private layout this repo is reading over the app's shoulder.
    That buys a test fixture of those manifest files and a documented degradation: a
    CLI-only user simply gets a smaller registry, and the router is quieter rather than
-   wrong. Two unknowns remain — whether `installationPreference: "available"` means enabled
-   or merely installable, and where the Windows equivalent lives.
+   wrong. One unknown remains — where the Windows equivalent lives. (`installationPreference`
+   is answered below.)
 4. **Cache on manifest mtimes, not directory mtimes.** Three manifest files cover roughly
    170 skill files, which is what makes ADR-002's caching argument transfer: watching three
    paths is cheap and precise, where walking a hundred on every prompt is neither. **Still
@@ -223,6 +223,63 @@ Four things follow.
 **The acceptance test is the one that would have failed this week:** a registry built on a
 machine with the desktop app running contains `marketing:brand-review`. Namespaced, from a
 manifest, deduped, and not from a directory walk.
+
+#### What building it found
+
+Implemented in `src/engine/registry.ts` and `src/io/skills.ts`, with `bouncer skills` as
+the way to check a registry on a machine this repository cannot reach. Four results, two of
+which change what this ADR can promise.
+
+**There is a third layout.** The machine this was written on keeps everything under
+`~/.claude/{plugins,skills}/synced/<bucket>/`, one `manifest.json` per bucket — neither the
+documented location nor the desktop tree. The documented locations held 1 skill; the synced
+buckets held 68. So discovery is a set of candidate roots, each read through a manifest
+where one exists, and a missing root is a smaller registry rather than an error. Assume
+there is a fourth layout.
+
+**`installationPreference: "available"` means enabled.** Every plugin in every manifest
+surveyed carries it, and every one of those plugins is live in the session. It is read as
+enabled-unless-explicitly-disabled, and the asymmetry is deliberate: wrongly excluding a
+plugin produces the confident wrong pick above, while wrongly including one costs a few
+option tokens and a suggestion the user ignores. That answers the first of the two unknowns
+this ADR was carrying.
+
+**Cold discovery costs about 27 ms**, on top of ~43 ms of process startup, for 69 skills
+across 3 manifests and ~50 `SKILL.md` reads. Against the 80 ms budget that is the
+difference between fitting and not, so the cache is load-bearing and ships with discovery
+rather than after it. ADR-002's finding that caching the parsed policy bought nothing does
+not transfer: that was one file parsed in 2 ms.
+
+**Some skills cannot be discovered at all, and this is a ceiling rather than a bug.** The
+CLI's built-in skills — `code-review`, `security-review`, `dataviz`, `artifact-design`,
+`init`, `loop` and a dozen more — have no `SKILL.md` anywhere on disk. Their descriptions
+are compiled into the `claude` executable: `grep` finds the text of `artifact-design`'s and
+`security-review`'s descriptions inside the binary, and does not find `brand-review`'s,
+which is the one that lives in a file. On this machine that is roughly 17 of the ~86 skills
+the session actually lists, about a fifth, permanently invisible to any filesystem walk.
+
+That lands directly on the argument at the top of this section. A `choice` cannot abstain,
+so those skills are not merely absent — they are cases where the classifier will
+confidently name the nearest thing it *was* offered. "Review this diff for security
+problems" has no `security-review` to pick, so it gets `engineering:code-review` with a
+clean margin. This is the same failure as the `brand-review` mispick, except that no amount
+of better discovery fixes it.
+
+Three ways to live with it, and the decision is Chris's:
+
+1. **Accept and document it.** Cheapest, and it leaves a known class of confident wrong
+   answers in the product.
+2. **Let the policy name extra skills.** A `router.skills.extra` list of name-and-
+   description pairs the user maintains, merged into the registry. Consistent with this
+   repo's rule that what the classifier reasons about lives in the user's YAML rather than
+   in code, and the built-in set is small and slow-moving. Costs the user a one-time edit
+   and goes stale when the CLI adds a skill. **Recommended.**
+3. **Find a supported way to enumerate them.** Best if it exists, and nothing observed so
+   far suggests it does from outside the process.
+
+Whichever is chosen, the fixture set must include prompts whose correct answer is a
+built-in skill, or the offline table will measure a router on exactly the population where
+it is strongest and report a number that does not hold.
 
 ### 5. Observe mode does **not** call the classifier
 
