@@ -12,6 +12,8 @@ import {
   type Comparison,
   type Condition,
   type Diagnostic,
+  type HardRule,
+  type HardRuleWhen,
   type Mode,
   type OnError,
   type Policy,
@@ -26,7 +28,17 @@ export interface LoadResult {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-const MODES: readonly Mode[] = ["observe", "guard", "full"];
+const MODES: readonly Mode[] = ["observe", "guard", "full", "seatbelt"];
+
+/** The `when` keys a hard rule may assert. Misspelling one is an error, not a no-op. */
+const HARD_RULE_PREDICATES = [
+  "first_token",
+  "tokens",
+  "not_tokens",
+  "text",
+  "path_labelled",
+  "redacts_as",
+] as const;
 const VERDICTS: readonly Verdict[] = ["allow", "ask", "deny"];
 const ON_ERROR: readonly OnError[] = ["passthrough", "deny"];
 
@@ -117,6 +129,7 @@ export function loadPolicy(source: string): LoadResult {
   }
 
   const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
+  const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
 
   const questions = readQuestions(gateRaw["questions"], error);
   const rules = readRules(gateRaw["rules"], questions, error, warn);
@@ -132,7 +145,7 @@ export function loadPolicy(source: string): LoadResult {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, questions, rules },
+    gate: { tools, fastPath, hardRules, questions, rules },
     calibration: { confidenceFloor, accuracyBar },
   };
 
@@ -199,6 +212,141 @@ function readQuestions(
   }
 
   return questions;
+}
+
+/**
+ * Reads `gate.hard_rules`.
+ *
+ * Stricter than the rest of the loader on purpose. A hard rule is the one thing in the
+ * policy that produces a verdict without any evidence behind it, so a malformed entry is
+ * an error rather than a warning: the two ways it could fail quietly are an entry that
+ * matches everything and an entry that matches nothing, and both are worse than refusing
+ * to enforce. The `no thresholds in code` rule applies here too — the paths, verbs and
+ * credential shapes are all data in this file.
+ */
+function readHardRules(
+  raw: unknown,
+  error: (path: string, message: string) => void,
+  warn: (path: string, message: string) => void,
+): HardRule[] {
+  const rules: HardRule[] = [];
+  if (raw === undefined) return rules;
+
+  if (!Array.isArray(raw)) {
+    error("gate.hard_rules", "must be a list");
+    return rules;
+  }
+
+  const seen = new Set<string>();
+
+  raw.forEach((entry, i) => {
+    const path = `gate.hard_rules[${i}]`;
+
+    if (!isRecord(entry)) {
+      error(path, "must be a mapping");
+      return;
+    }
+
+    const name = entry["name"];
+    if (typeof name !== "string" || name.trim().length === 0) {
+      error(`${path}.name`, "must be a non-empty string");
+      return;
+    }
+    if (seen.has(name)) {
+      // Names end up in the log and in `/bouncer:explain`, so a duplicate makes a decision
+      // record ambiguous about which entry produced it.
+      error(`${path}.name`, `duplicate hard rule name "${name}"`);
+      return;
+    }
+    seen.add(name);
+
+    const because = entry["because"];
+    if (typeof because !== "string" || because.trim().length === 0) {
+      // Required, for the same reason a fixture's `note` is: an unexplained verdict cannot
+      // be argued with, and this one is shown to the user at the moment they are stopped.
+      error(`${path}.because`, "must be a non-empty string — it is the reason the user reads");
+      return;
+    }
+
+    const then = entry["then"] ?? "ask";
+    if (!isVerdict(then)) {
+      error(`${path}.then`, `must be one of ${VERDICTS.join(", ")}`);
+      return;
+    }
+    if (then === "allow") {
+      error(`${path}.then`, "must be `ask` or `deny`; `gate.fast_path` is where allow-without-judging lives");
+      return;
+    }
+    if (then === "deny") {
+      warn(
+        path,
+        "`then: deny` blocks the tool call in guard and full. `ask` is the shipped default and `seatbelt` already denies on it — see docs/adr/003",
+      );
+    }
+
+    const whenRaw = entry["when"];
+    if (!isRecord(whenRaw)) {
+      error(`${path}.when`, `must be a mapping of at least one of ${HARD_RULE_PREDICATES.join(", ")}`);
+      return;
+    }
+
+    for (const key of Object.keys(whenRaw)) {
+      if (!(HARD_RULE_PREDICATES as readonly string[]).includes(key)) {
+        error(`${path}.when.${key}`, `unknown predicate — expected one of ${HARD_RULE_PREDICATES.join(", ")}`);
+        return;
+      }
+    }
+
+    const when: {
+      firstToken?: readonly string[];
+      tokens?: readonly string[];
+      notTokens?: readonly string[];
+      text?: readonly string[];
+      pathLabelled?: readonly string[];
+      redactsAs?: readonly string[];
+    } = {};
+
+    let failed = false;
+    const list = (key: string): readonly string[] | undefined => {
+      if (whenRaw[key] === undefined) return undefined;
+      const value = readStringList(whenRaw[key], [], `${path}.when.${key}`, error);
+      if (value.length === 0) {
+        error(`${path}.when.${key}`, "must be a non-empty list");
+        failed = true;
+      }
+      return value;
+    };
+
+    const firstToken = list("first_token");
+    const tokens = list("tokens");
+    const notTokens = list("not_tokens");
+    const text = list("text");
+    const pathLabelled = list("path_labelled");
+    const redactsAs = list("redacts_as");
+    if (failed) return;
+
+    if (firstToken !== undefined) when.firstToken = firstToken;
+    if (tokens !== undefined) when.tokens = tokens;
+    if (notTokens !== undefined) when.notTokens = notTokens;
+    if (text !== undefined) when.text = text;
+    if (pathLabelled !== undefined) when.pathLabelled = pathLabelled;
+    if (redactsAs !== undefined) when.redactsAs = redactsAs;
+
+    // `not_tokens` narrows; it cannot be the whole of a rule. On its own it would match
+    // every command that merely lacks those tokens, which is most of them.
+    const narrowingOnly = Object.keys(when).length === 1 && when.notTokens !== undefined;
+    if (Object.keys(when).length === 0 || narrowingOnly) {
+      error(
+        `${path}.when`,
+        "needs at least one predicate that matches something — `not_tokens` only excludes",
+      );
+      return;
+    }
+
+    rules.push({ name, verdict: then, because, when: when as HardRuleWhen, index: i + 1 });
+  });
+
+  return rules;
 }
 
 function readRules(

@@ -231,7 +231,14 @@ describe("the shipped default policy, end to end", () => {
   // `cat .env` and `echo $OPENAI_API_KEY` are the literal examples in the `secrets`
   // question's own criteria. Fast-pathing the verb means that question can never fire,
   // and in `full` mode it would emit `allow` and suppress the native prompt too.
-  const mustReachTheClassifier: ReadonlyArray<readonly [string, string]> = [
+  //
+  // What these assert is that none of them is ever ALLOWED without being judged. Before
+  // ADR-004 that was the same thing as "reaches the classifier", and the test said so.
+  // It is no longer: `gate.hard_rules` now decides several of these outright, which is a
+  // stronger outcome than reaching the classifier and getting the right answer — the
+  // classifier answered 0.15 on `cat .env`. So the assertion is on the outcome the comment
+  // above is really about, and it holds either way the command is disposed of.
+  const mustNeverBeAllowedUnjudged: ReadonlyArray<readonly [string, string]> = [
     ["reading an env file", "cat .env"],
     ["reading ssh config", "cat ~/.ssh/config"],
     ["printing a key from the environment", "echo $OPENAI_API_KEY"],
@@ -244,8 +251,25 @@ describe("the shipped default policy, end to end", () => {
     ["a log with patches", "git log -p"],
   ];
 
-  it.each(mustReachTheClassifier)("does not fast-path %s", (_label, command) => {
-    expect(shortCircuit(shipped, { tool: "Bash", command })).toBeUndefined();
+  it.each(mustNeverBeAllowedUnjudged)("does not fast-path %s", (_label, command) => {
+    const decision = shortCircuit(shipped, { tool: "Bash", command });
+
+    if (decision === undefined) return; // Reaches the classifier, which is the other way to pass.
+
+    // Decided early: the only acceptable early decision for these is a hard rule, and it
+    // must not be an allow. A fast-path hit here would be the bug this test exists for.
+    expect(decision.reason.kind, `\`${command}\` was short-circuited`).toBe("hard-rule");
+    expect(decision.verdict).not.toBe("allow");
+  });
+
+  it.each(mustNeverBeAllowedUnjudged)("is never allowed in full mode: %s", (_label, command) => {
+    // `full` is the only mode that emits `allow`, so it is where a fast-path mistake would
+    // actually suppress the user's own permission prompt.
+    const full = policyFrom(
+      readFileSync("policy/default.yaml", "utf8").replace(/^mode: observe$/m, "mode: full"),
+    );
+
+    expect(shortCircuit(full, { tool: "Bash", command })?.emit).not.toBe("allow");
   });
 
   // The rules only work if something asks the question they read.

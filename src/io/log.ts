@@ -41,6 +41,15 @@ export interface DecisionRecord {
   /** What was actually put on stdout; null when nothing was emitted. */
   readonly emitted: Verdict | null;
   readonly reason: Reason;
+  /**
+   * Which layer decided: a deterministic entry in `gate.hard_rules`, an entry in
+   * `gate.fast_path`, or the classifier and `gate.rules`. See docs/adr/004.
+   *
+   * Redundant with `reason.kind` and written anyway, because this is the field a query
+   * over the log actually wants: "what did the judge decide" has to exclude the lines the
+   * judge never saw, and `answers` being absent is true of error lines too.
+   */
+  readonly source?: "hard_rule" | "fast_path" | "judge";
   /** Raw probability per question. The thing calibration is computed from. */
   readonly answers?: Readonly<Record<string, number>>;
   readonly state?: string;

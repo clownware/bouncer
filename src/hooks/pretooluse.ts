@@ -96,8 +96,35 @@ export async function runPreToolUse(
   });
 
   if (early !== undefined) {
-    // Only fast-path hits are worth a log line; the other two are noise, and a log full of
-    // "Read is not gated" is a log nobody reads.
+    // A hard-rule hit is the highest-signal line the log ever gets — it is a decision that
+    // actually stopped something — so it records the state too, redacted as always. The
+    // three reasons the log exists (answer "why was this prompted", seed fixtures from real
+    // history, re-score after a policy change) all need the command, and the classifier
+    // never saw this one. Building the state costs a fraction of a millisecond, against the
+    // ~190 ms adapter call the hit just skipped.
+    if (early.reason.kind === "hard-rule") {
+      const hardState = buildState({
+        toolName: tool,
+        toolInput,
+        cwd,
+        ...(permissionMode !== undefined ? { permissionMode } : {}),
+        ...(agentType !== undefined ? { agentType } : {}),
+        ...targetExistsFor(tool, toolInput, options),
+      });
+
+      append(dir, {
+        ...base,
+        ...verdictFields(early),
+        state: hardState.text,
+        redacted_kinds: hardState.redactedKinds,
+        latency_ms: { total: now() - started },
+      });
+      return outputFor(early, policy);
+    }
+
+    // Only fast-path hits are worth a log line beyond that; the other two are noise, and a
+    // log full of "Read is not gated" is a log nobody reads. A fast-path line carries no
+    // state on purpose: they are the highest-volume lines and the least interesting ones.
     if (early.reason.kind === "fast-path") {
       append(dir, { ...base, ...verdictFields(early), latency_ms: { total: now() - started } });
     }
@@ -233,7 +260,14 @@ function outputFor(decision: Decision, policy: Policy): HookOutput | undefined {
   };
 }
 
-/** A one-line reason the user reads at the prompt. Names the question and the number. */
+/**
+ * A one-line reason the user reads at the prompt.
+ *
+ * A judged verdict names the question and the number, because the number is the thing the
+ * user might disagree with. A hard rule names no number, because there isn't one — it says
+ * what the rule is for instead, which is the honest explanation and the more useful one at
+ * the moment someone is being stopped.
+ */
 function explain(decision: Decision, policy: Policy): string {
   const { reason } = decision;
   switch (reason.kind) {
@@ -244,6 +278,8 @@ function explain(decision: Decision, policy: Policy): string {
     }
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
+    case "hard-rule":
+      return `bouncer: ${reason.because} (hard rule: ${reason.name})`;
     case "tool-not-gated":
       return `bouncer: ${reason.tool} is not gated by this policy.`;
     case "permission-mode-skipped":
@@ -258,7 +294,27 @@ function verdictFields(decision: Decision) {
     verdict: decision.verdict,
     emitted: decision.emit ?? null,
     reason: decision.reason,
+    source: sourceOf(decision),
   };
+}
+
+/**
+ * Where the verdict came from, as one word.
+ *
+ * Derivable from `reason.kind`, and stored anyway: the observe-mode log is what the v0.2
+ * router and any re-scoring will read, and a line the classifier never saw is not evidence
+ * about the classifier. Making that a field rather than an inference means a query does
+ * not have to know the shape of every reason variant.
+ */
+function sourceOf(decision: Decision): NonNullable<DecisionRecord["source"]> {
+  switch (decision.reason.kind) {
+    case "hard-rule":
+      return "hard_rule";
+    case "fast-path":
+      return "fast_path";
+    default:
+      return "judge";
+  }
 }
 
 function questionsFor(policy: Policy): Record<string, Question> {
