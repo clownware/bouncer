@@ -132,9 +132,9 @@ contents never enter a state applies to a manifest exactly as it does to the log
 ### What this costs
 
 One extra pass over a handful of rules per judged call, no I/O, no new imports in the
-bundle. Measured paired against the pre-change bundle over 40 pairs on the same machine:
-**−1.5 ms** on the judged path and **+1.6 ms** on the hard-rule path, against a per-arm
-spread of 4–8 ms. That is nothing, which is the expected answer and the reason to check
+bundle. Measured paired against `main`'s bundle over 40 pairs on the same machine:
+**+0.5 ms** on the judged path and **−1.0 ms** on the hard-rule path, against a per-arm
+spread of about 4 ms. That is nothing, which is the expected answer and the reason to check
 rather than assume — see [[ADR-002]](002-bundled-single-file-on-node.md) on why a paired
 measurement is the only readable one.
 
