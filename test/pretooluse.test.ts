@@ -29,7 +29,7 @@ function payload(overrides: Record<string, unknown> = {}) {
 }
 
 const dangerous = new MockAdapter({ answers: { destructive: 0.95 } });
-const harmless = new MockAdapter({ answers: { destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01 } });
+const harmless = new MockAdapter({ answers: { destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 } });
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "bouncer-test-"));

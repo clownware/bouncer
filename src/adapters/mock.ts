@@ -30,6 +30,7 @@ const HEURISTICS: ReadonlyArray<readonly [string, RegExp]> = [
   ["outside_repo", /"inside_project":\s*false|\bsensitive"/i],
   ["egress", /\bcurl\b.*-X\s*(POST|PUT)|\bwget\b.*--post|\|\s*nc\b|\bscp\b/i],
   ["prod", /\bprod(uction)?\b|\bdeploy\b|\brelease\b/i],
+  ["unreviewed_execution", /\|\s*(ba|z)?sh\b|<\(\s*(curl|wget)\b|--auto-approve\b|\s--yes\b|chmod \+x .*&&/i],
 ];
 
 export class MockAdapter implements Adapter {

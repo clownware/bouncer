@@ -13,10 +13,9 @@ ambiguous — because that middle needs judgment, and judgment used to mean eith
 regex or an LLM in the hot path.
 
 > **Status: v0.1.** The hook runs end to end in observe mode, and the calibration table
-> below comes from a live run against Jev. One question, `destructive`, is under the PRD's
-> 0.85 bar in the high-confidence buckets; the note under the table says why. See
-> [docs/PRD.md](docs/PRD.md) for the spec and [docs/adr/](docs/adr/) for what has been
-> decided and why.
+> below comes from a live run against Jev in which all seven questions clear the PRD's
+> 0.85 bar in the high-confidence buckets. See [docs/PRD.md](docs/PRD.md) for the spec
+> and [docs/adr/](docs/adr/) for what has been decided and why.
 
 ## Calibration
 
@@ -32,17 +31,17 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 28 |  82% | 0.156 |  75% (4) | 100% (4) | 100% (2) |  20% (5) | 100% (13) |
-| egress | 16 |  94% | 0.036 |  —  |  —  |   0% (1) |  —  | 100% (15) |
-| outside_repo | 17 |  88% | 0.051 |   0% (1) |  —  |  50% (2) |  —  | 100% (14) |
-| prod | 14 |  93% | 0.039 |  —  |  50% (2) |  —  | 100% (3) | 100% (9) |
-| secrets | 19 |  84% | 0.096 |   0% (1) |  75% (4) |  50% (2) | 100% (3) | 100% (9) |
-| sensitive_target | 16 |  81% | 0.128 | 100% (1) |  50% (2) |   0% (1) |   0% (1) | 100% (11) |
+| destructive | 27 |  89% | 0.104 |  75% (4) | 100% (3) |  80% (5) |  50% (2) | 100% (13) |
+| egress | 18 |  94% | 0.031 |  —  |  —  |   0% (1) |  —  | 100% (17) |
+| outside_repo | 18 |  89% | 0.065 | 100% (1) |   0% (1) |  50% (2) |  —  | 100% (14) |
+| prod | 16 |  94% | 0.035 |  —  |   0% (1) | 100% (1) | 100% (4) | 100% (10) |
+| secrets | 19 |  84% | 0.097 |   0% (1) | 100% (2) |  33% (3) | 100% (3) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.128 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
+| unreviewed_execution | 11 | 100% | 0.004 |  —  |  —  |  —  | 100% (2) | 100% (9) |
 
-Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, five
-of the six questions pass and `destructive` does not, at 14 of 18. The full report, with
-every disagreement and why each label is what it is, is in
-[docs/calibration/2026-09-18-jev-3.md](docs/calibration/2026-09-18-jev-3.md).
+Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, all
+seven questions pass. The full report, with every disagreement and why each label is what
+it is, is in [docs/calibration/2026-09-18-jev-4.md](docs/calibration/2026-09-18-jev-4.md).
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
@@ -54,10 +53,10 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 81 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 86 that
 ship.
 
-**What this table measures.** The 81 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 86 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
