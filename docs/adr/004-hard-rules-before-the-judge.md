@@ -281,6 +281,15 @@ right shape for the idea.
 - **A hard-rule hit is faster, not slower.** It short-circuits before the adapter, so the
   commands most worth catching are also the ones that never pay the ~190 ms classifier
   call. The predicates are string operations over one command line.
+- **Every entry costs about 0.37 ms of cold start, on every gated call.** Not the matching —
+  fifteen entries match in 0.14 ms once warm — but the parsing. The hook is a fresh process
+  per tool call, so the policy is parsed cold every time, and the YAML parser's cost tracks
+  node count rather than file size: these fifteen entries add 290 nodes to the policy's 277
+  and **+5.1 ms** of cold parse, against **+1.1 ms** for the same 6.5 KB written as comments.
+  Measured 2026-09-18, 40 interleaved cold spawns per pair; stripping the block returns the
+  end-to-end hook to `main`'s number, +0.1 ms over 50 pairs. The cost is linear in entries and
+  the user's own entries pay it too, which is the case for caching the compiled policy on
+  disk — a reversal of ADR-002 item 2, and its own decision rather than this one's.
 - **The state is not changed.** The labels are read by a new function rather than emitted
   into the state as new fields. Putting them in the state would also change what the model
   sees on every fixture, and thread 2 is separately changing question criteria; two moving

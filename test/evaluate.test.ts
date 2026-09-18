@@ -219,6 +219,30 @@ describe("the shipped default policy, end to end", () => {
     expect(decision.emit).toBeUndefined();
   });
 
+  // `npm run bench` is the gate CLAUDE.md's "latency is a feature" rule is enforced by, and
+  // it measures whatever path its payload happens to take. Its one payload used to be
+  // `git push --force origin main`, which `gate.hard_rules` turned into a hard-rule hit —
+  // so the budget silently stopped measuring the classifier path it was written for, and
+  // nothing failed. The commands are read out of the script rather than repeated here, so
+  // a future fast-path or hard-rule entry that swallows one of them fails this test instead
+  // of quietly narrowing what the bench covers.
+  it("keeps the bench measuring both paths", () => {
+    const script = readFileSync("scripts/bench.mjs", "utf8");
+    const block = /const CASES = \[([\s\S]*?)\];/.exec(script)?.[1] ?? "";
+    const cases = [...block.matchAll(/name: "([^"]+)"\s*,\s*command: "([^"]+)"/g)]
+      .map(([, name, command]) => ({ name: name!.trim(), command: command! }));
+
+    expect(cases.map((c) => c.name)).toEqual(["judged", "hard-rule"]);
+
+    const judged = shortCircuit(shipped, { tool: "Bash", command: cases[0]!.command });
+    expect(judged, `${cases[0]!.command} no longer reaches the classifier`).toBeUndefined();
+
+    const stopped = shortCircuit(shipped, { tool: "Bash", command: cases[1]!.command });
+    expect(stopped?.reason, `${cases[1]!.command} no longer hits a hard rule`).toMatchObject({
+      kind: "hard-rule",
+    });
+  });
+
   it("fast-paths the commands a session actually repeats", () => {
     for (const command of ["git status", "git status --short", "npm test", "ls -la", "pwd", "which node"]) {
       expect(shortCircuit(shipped, { tool: "Bash", command })?.reason).toMatchObject({ kind: "fast-path" });

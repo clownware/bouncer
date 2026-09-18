@@ -5,6 +5,9 @@
 // CI asserts it stays under BUDGET_MS. If it regresses, the fix is almost always
 // a new dependency pulled into the bundle, not the decision code itself.
 //
+// Both paths are measured: a command the classifier judges, and one a hard rule stops
+// before the adapter. Each gets its own line and each is held to the budget.
+//
 //   node scripts/bench.mjs [--budget 80] [--runs 30]
 //   node scripts/bench.mjs --against <other-bundle.cjs> [--runs 40]
 //
@@ -66,23 +69,40 @@ if (AGAINST !== undefined && !existsSync(AGAINST)) {
   process.exit(1);
 }
 
-const payload = JSON.stringify({
-  session_id: "bench",
-  transcript_path: "/dev/null",
-  cwd: process.cwd(),
-  permission_mode: "default",
-  hook_event_name: "PreToolUse",
-  tool_name: "Bash",
-  tool_use_id: "toolu_bench",
-  tool_input: { command: "git push --force origin main", description: "bench" },
-});
+// Two cases, because there are now two paths through the hook and no single command can
+// measure both. A judged command pays the policy load, the state build and the adapter
+// round trip; a hard-rule hit pays the policy load, the matcher and the state build, and
+// skips the adapter entirely. The budget applies to each — the hard-rule path is not
+// obviously the cheaper one, since what it saves on the mock adapter it spends tokenizing
+// and labelling the command.
+//
+// `git push --force origin main` was this script's only payload until `gate.hard_rules`
+// landed, at which point it stopped reaching the classifier at all and the gate quietly
+// stopped measuring the path it was written for. Dropping `--force` is enough to restore
+// it: the hard rule matches on exact tokens, and `git push` is not on the fast path.
+const CASES = [
+  { name: "judged   ", command: "git push origin feature/bench" },
+  { name: "hard-rule", command: "git push --force origin main" },
+];
+
+const payloadFor = (command) =>
+  JSON.stringify({
+    session_id: "bench",
+    transcript_path: "/dev/null",
+    cwd: process.cwd(),
+    permission_mode: "default",
+    hook_event_name: "PreToolUse",
+    tool_name: "Bash",
+    tool_use_id: "toolu_bench",
+    tool_input: { command, description: "bench" },
+  });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function once(bin = BIN) {
+function once(command, bin = BIN) {
   const start = process.hrtime.bigint();
   const r = spawnSync(process.execPath, [bin, "pretooluse"], {
-    input: payload,
+    input: payloadFor(command),
     env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT },
   });
   const end = process.hrtime.bigint();
@@ -112,43 +132,52 @@ const line = (label, s) =>
   `[sd=${s.sd.toFixed(1)}ms iqr=${s.iqr.toFixed(1)}ms]`;
 
 if (AGAINST !== undefined) {
-  for (let i = 0; i < WARMUP; i++) {
-    once(AGAINST);
-    once(BIN);
+  for (const { name, command } of CASES) {
+    for (let i = 0; i < WARMUP; i++) {
+      once(command, AGAINST);
+      once(command, BIN);
+    }
+
+    const before = [];
+    const after = [];
+    for (let i = 0; i < RUNS; i++) {
+      before.push(once(command, AGAINST));
+      after.push(once(command, BIN));
+    }
+
+    const diffs = after.map((x, i) => x - before[i]).sort((a, b) => a - b);
+    const median = pctOf(diffs, 0.5);
+
+    console.log(`${name}  ${command}`);
+    console.log(line(`  before  ${AGAINST}`, summarise(before)));
+    console.log(line(`  after   ${BIN}`, summarise(after)));
+    console.log(
+      `  paired median diff ${median >= 0 ? "+" : ""}${median.toFixed(1)}ms  ` +
+        `over ${RUNS} pairs  [range ${diffs[0].toFixed(1)} to ${diffs[diffs.length - 1].toFixed(1)}]`,
+    );
   }
-
-  const before = [];
-  const after = [];
-  for (let i = 0; i < RUNS; i++) {
-    before.push(once(AGAINST));
-    after.push(once(BIN));
-  }
-
-  const diffs = after.map((x, i) => x - before[i]).sort((a, b) => a - b);
-  const median = pctOf(diffs, 0.5);
-
-  console.log(line(`before  ${AGAINST}`, summarise(before)));
-  console.log(line(`after   ${BIN}`, summarise(after)));
-  console.log(
-    `paired median diff ${median >= 0 ? "+" : ""}${median.toFixed(1)}ms  ` +
-      `over ${RUNS} pairs  [range ${diffs[0].toFixed(1)} to ${diffs[diffs.length - 1].toFixed(1)}]`,
-  );
   // Deliberately no pass/fail. Whether a real difference is acceptable is a judgement
   // about what it bought; the budget gate above is where a number becomes a rule.
   process.exit(0);
 }
 
-for (let i = 0; i < WARMUP; i++) once();
+let failed = false;
 
-const samples = Array.from({ length: RUNS }, () => once());
-const stats = summarise(samples);
+for (const { name, command } of CASES) {
+  for (let i = 0; i < WARMUP; i++) once(command);
 
-console.log(
-  `runs=${RUNS}  mean=${stats.mean.toFixed(1)}ms  p50=${stats.p50.toFixed(1)}ms  ` +
-    `p95=${stats.p95.toFixed(1)}ms  budget=${BUDGET_MS}ms`,
-);
+  const samples = Array.from({ length: RUNS }, () => once(command));
+  const stats = summarise(samples);
 
-if (stats.p95 > BUDGET_MS) {
-  console.error(`FAIL: p95 ${stats.p95.toFixed(1)}ms exceeds budget ${BUDGET_MS}ms`);
-  process.exit(1);
+  console.log(
+    `${name}  runs=${RUNS}  mean=${stats.mean.toFixed(1)}ms  p50=${stats.p50.toFixed(1)}ms  ` +
+      `p95=${stats.p95.toFixed(1)}ms  budget=${BUDGET_MS}ms`,
+  );
+
+  if (stats.p95 > BUDGET_MS) {
+    console.error(`FAIL: ${command} p95 ${stats.p95.toFixed(1)}ms exceeds budget ${BUDGET_MS}ms`);
+    failed = true;
+  }
 }
+
+if (failed) process.exit(1);
