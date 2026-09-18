@@ -31,23 +31,20 @@ Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 27 |  89% | 0.104 |  75% (4) | 100% (3) |  80% (5) |  50% (2) | 100% (13) |
-| egress | 18 |  94% | 0.031 |  —  |  —  |   0% (1) |  —  | 100% (17) |
-| outside_repo | 18 |  89% | 0.065 | 100% (1) |   0% (1) |  50% (2) |  —  | 100% (14) |
-| prod | 16 |  94% | 0.035 |  —  |   0% (1) | 100% (1) | 100% (4) | 100% (10) |
-| secrets | 19 |  84% | 0.097 |   0% (1) | 100% (2) |  33% (3) | 100% (3) | 100% (10) |
-| sensitive_target | 16 |  81% | 0.128 | 100% (2) |   0% (1) |   0% (1) |   0% (1) | 100% (11) |
-| unreviewed_execution | 11 | 100% | 0.004 |  —  |  —  |  —  | 100% (2) | 100% (9) |
+| destructive | 27 |  89% | 0.104 |  75% (4) | 100% (4) |  67% (3) |  67% (3) | 100% (13) |
+| egress | 20 |  95% | 0.029 |  —  |  —  |   0% (1) |  —  | 100% (19) |
+| outside_repo | 20 |  90% | 0.071 |  50% (2) | 100% (2) |  50% (2) |  —  | 100% (14) |
+| prod | 16 |  94% | 0.036 |  —  |   0% (1) | 100% (1) | 100% (2) | 100% (12) |
+| secrets | 19 |  84% | 0.096 |   0% (1) |  67% (3) | 100% (1) |  75% (4) | 100% (10) |
+| sensitive_target | 16 |  81% | 0.136 | 100% (2) |   0% (1) |  —  |   0% (2) | 100% (11) |
+| unreviewed_execution | 22 |  91% | 0.046 |  50% (2) |   0% (1) |  —  | 100% (4) | 100% (15) |
 
 Against the PRD's release gate of at least 0.85 accuracy at confidence 0.8 or higher, all
 seven questions pass. The full report, with every disagreement and why each label is what
-it is, is in [docs/calibration/2026-09-18-jev-4.md](docs/calibration/2026-09-18-jev-4.md).
-
-This run measured 86 fixtures. Eight have been added since, all of them ordinary install
-and build commands scored against `unreviewed_execution`, which takes that row from 11 to
-22 and is the point: at 11 it was measured almost entirely on commands nobody would argue
-about. Those eight are unmeasured until the next live run, so read this table as covering
-the 86 it names.
+it is, is in [docs/calibration/2026-09-18-jev-5.md](docs/calibration/2026-09-18-jev-5.md).
+It also lists every `unreviewed_execution` answer by probability, which is where to look
+before enabling `guard`: everyday installs and builds score below 0.2, but a pinned `npx`
+scores 0.55 and would prompt.
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
