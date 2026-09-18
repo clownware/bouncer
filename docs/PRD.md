@@ -228,6 +228,7 @@ for hard rules instead.
 - **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
 - **ADR-005** The local adapter — constrained decoding, and `calibrate --compare`.
 - **ADR-006** The skill router (v0.2), superseding the router half of §5 and §6.
+- **ADR-007** Cache the compiled policy on disk, keyed on the policy text — reverses ADR-002 item 2.
 
 Two topics this section originally earmarked for ADRs were settled without one, so no ADR
 carries their titles and nothing is reserved for them:
