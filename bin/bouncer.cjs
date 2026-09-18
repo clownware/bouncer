@@ -9496,6 +9496,64 @@ var import_node_path7 = require("node:path");
 
 // src/calibrate.ts
 var import_node_fs6 = require("node:fs");
+
+// src/engine/item.ts
+var MAX_ITEM_STATE_BYTES = 16 * 1024;
+var FIELD_LIMIT = 4096;
+var itemState = {
+  kind: "item",
+  build: buildItemState
+};
+function buildItemState(item) {
+  const kinds = /* @__PURE__ */ new Set();
+  const cleaned = cleanValue(item, kinds, 0);
+  const state = isRecord5(cleaned) ? cleaned : { value: cleaned };
+  let text = JSON.stringify(state);
+  let truncated = false;
+  if (Buffer.byteLength(text, "utf8") > MAX_ITEM_STATE_BYTES) {
+    truncated = true;
+    text = JSON.stringify(capStrings(state, FIELD_LIMIT));
+    if (Buffer.byteLength(text, "utf8") > MAX_ITEM_STATE_BYTES) {
+      text = `${text.slice(0, MAX_ITEM_STATE_BYTES - 32)}
+\u2026 [truncated]`;
+    }
+  }
+  return { text, redactedKinds: [...kinds], truncated };
+}
+var MAX_DEPTH = 8;
+function cleanValue(value, kinds, depth) {
+  if (typeof value === "string") {
+    const { text, kinds: found } = redact(value);
+    for (const k of found) kinds.add(k);
+    return text;
+  }
+  if (depth >= MAX_DEPTH) return "\u2026 [too deeply nested]";
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanValue(entry, kinds, depth + 1));
+  }
+  if (isRecord5(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, cleanValue(entry, kinds, depth + 1)])
+    );
+  }
+  return value;
+}
+function capStrings(value, limit) {
+  if (typeof value === "string") {
+    return value.length > limit ? `${value.slice(0, limit)}\u2026 [truncated]` : value;
+  }
+  if (Array.isArray(value)) return value.map((entry) => capStrings(entry, limit));
+  if (isRecord5(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, capStrings(entry, limit)]));
+  }
+  return value;
+}
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/calibrate.ts
+var TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists"];
 var BUCKETS = [
   [0.5, 0.6],
   [0.6, 0.7],
@@ -9509,45 +9567,71 @@ function parseFixtures(source) {
   source.split("\n").forEach((line, i) => {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("//")) return;
-    let parsed;
+    let raw;
     try {
-      parsed = JSON.parse(trimmed);
+      raw = JSON.parse(trimmed);
     } catch (err) {
       throw new Error(`fixture line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
-    for (const field of ["id", "tool", "note"]) {
-      if (typeof parsed[field] !== "string" || parsed[field].length === 0) {
+    for (const field of ["id", "note"]) {
+      if (typeof raw[field] !== "string" || raw[field].length === 0) {
         throw new Error(`fixture line ${i + 1} is missing "${field}"`);
       }
     }
-    if (typeof parsed.expect !== "object" || parsed.expect === null || Object.keys(parsed.expect).length === 0) {
-      throw new Error(`fixture "${parsed.id}" has no expectations, so it scores nothing`);
+    const expect = raw["expect"];
+    if (typeof expect !== "object" || expect === null || Object.keys(expect).length === 0) {
+      throw new Error(`fixture "${String(raw["id"])}" has no expectations, so it scores nothing`);
     }
-    fixtures.push(parsed);
+    const { kind, item } = shapeOf(raw, i + 1);
+    fixtures.push({
+      id: raw["id"],
+      kind,
+      item,
+      expect,
+      note: raw["note"],
+      ...typeof raw["pair"] === "string" ? { pair: raw["pair"] } : {}
+    });
   });
   return fixtures;
+}
+function shapeOf(raw, line) {
+  const declared = raw["kind"];
+  if (declared === void 0) {
+    if (typeof raw["tool"] !== "string" || raw["tool"].length === 0) {
+      throw new Error(`fixture line ${line} has no "kind" and no "tool", so nothing says how to build its state`);
+    }
+    const item2 = {};
+    for (const key of TOOL_CALL_KEYS) {
+      if (raw[key] !== void 0) item2[key] = raw[key];
+    }
+    return { kind: "tool_call", item: item2 };
+  }
+  if (declared !== "tool_call" && declared !== "item") {
+    throw new Error(`fixture line ${line} has kind "${String(declared)}"; expected "tool_call" or "item"`);
+  }
+  const item = raw["item"];
+  if (typeof item !== "object" || item === null || Array.isArray(item)) {
+    throw new Error(`fixture line ${line} declares kind "${declared}" but has no "item" mapping`);
+  }
+  if (declared === "tool_call" && typeof item["tool"] !== "string") {
+    throw new Error(`fixture line ${line} is a tool_call but its item has no "tool"`);
+  }
+  return { kind: declared, item };
 }
 function loadFixtures(path) {
   return parseFixtures((0, import_node_fs6.readFileSync)(path, "utf8"));
 }
-async function score(fixtures, policy, adapter, onProgress) {
-  const questions = {};
-  for (const [name, q] of Object.entries(policy.gate.questions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) {
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
   }
-  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
-  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
-  }
+  const questions = questionsOf(set);
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+  const gateExtras = setName === GATE_SET ? policy.gate : void 0;
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
-    const state = buildState({
-      toolName: fixture.tool,
-      toolInput: fixture.input,
-      cwd: fixture.cwd ?? "/home/user/project",
-      ...fixture.permission_mode !== void 0 ? { permissionMode: fixture.permission_mode } : {},
-      ...fixture.target_exists !== void 0 ? { targetExists: fixture.target_exists } : {}
-    });
+    const state = stateFor(fixture);
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
     const answers = {};
     for (const name of Object.keys(questions)) {
@@ -9555,8 +9639,8 @@ async function score(fixtures, policy, adapter, onProgress) {
       const value = noulProbability(response.answers[name]);
       if (value !== void 0) answers[name] = value;
     }
-    const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
-    const decision = hard === void 0 ? evaluate(policy.gate, policy.mode, answers) : void 0;
+    const hard = gateExtras !== void 0 && fixture.kind === "tool_call" ? matchHardRule(gateExtras.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
+    const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
     const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
     const verdictReason = hard !== void 0 ? { question: hard.name, p: Number.NaN, source: "hard_rule" } : {
       question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
@@ -9583,6 +9667,36 @@ async function score(fixtures, policy, adapter, onProgress) {
     onProgress?.(i + 1, fixtures.length);
   }
   return results;
+}
+function questionsOf(set) {
+  const questions = {};
+  for (const source of [set.questions, set.probeQuestions]) {
+    for (const [name, q] of Object.entries(source)) {
+      questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+    }
+  }
+  return questions;
+}
+function toolCallOf(fixture) {
+  const item = fixture.item;
+  return {
+    tool: typeof item["tool"] === "string" ? item["tool"] : "",
+    input: item["input"] ?? {},
+    ...typeof item["cwd"] === "string" ? { cwd: item["cwd"] } : {},
+    ...typeof item["permission_mode"] === "string" ? { permission_mode: item["permission_mode"] } : {},
+    ...typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {}
+  };
+}
+function stateFor(fixture) {
+  if (fixture.kind === "item") return itemState.build(fixture.item);
+  const call = toolCallOf(fixture);
+  return buildState({
+    toolName: call.tool,
+    toolInput: call.input,
+    cwd: call.cwd ?? "/home/user/project",
+    ...call.permission_mode !== void 0 ? { permissionMode: call.permission_mode } : {},
+    ...call.target_exists !== void 0 ? { targetExists: call.target_exists } : {}
+  });
 }
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
@@ -9875,6 +9989,7 @@ function parseArgs(argv) {
   };
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
+    ...value("set") !== void 0 ? { set: value("set") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     json: argv.includes("--json")
@@ -9922,7 +10037,15 @@ async function calibrate(args, write3) {
   const runs = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i];
-    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+    let scored;
+    try {
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+    } catch (err) {
+      write3(`${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+    runs.push({ backend: label, scored });
   }
   const [first, second] = runs;
   if (first === void 0) {
@@ -9954,9 +10077,15 @@ async function calibrate(args, write3) {
 }
 async function run(fixtures, policy, adapter, label, total, args) {
   const prefix = total > 1 ? `${label}: ` : "";
-  const scored = await score(fixtures, policy, adapter, (done, n) => {
-    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
-  });
+  const scored = await score(
+    fixtures,
+    policy,
+    adapter,
+    (done, n) => {
+      if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+    },
+    args.set
+  );
   if (!args.json) process.stderr.write("\r\x1B[K");
   return scored;
 }
@@ -10035,7 +10164,7 @@ function parseFrontmatter(text) {
   } catch {
     return {};
   }
-  if (!isRecord5(parsed)) return {};
+  if (!isRecord6(parsed)) return {};
   return {
     ...typeof parsed["name"] === "string" ? { name: parsed["name"] } : {},
     ...typeof parsed["description"] === "string" ? { description: parsed["description"] } : {}
@@ -10045,7 +10174,7 @@ function parsePluginManifest(json) {
   const plugins = arrayUnder(json, "plugins");
   const entries = [];
   for (const value of plugins) {
-    if (!isRecord5(value)) continue;
+    if (!isRecord6(value)) continue;
     const name = value["name"];
     if (typeof name !== "string" || name.length === 0) continue;
     const preference = value["installationPreference"];
@@ -10060,7 +10189,7 @@ function parseSkillsManifest(json) {
   const skills2 = arrayUnder(json, "skills");
   const entries = [];
   for (const value of skills2) {
-    if (!isRecord5(value)) continue;
+    if (!isRecord6(value)) continue;
     const name = value["name"] ?? value["skillId"];
     const description = value["description"];
     if (typeof name !== "string" || name.length === 0) continue;
@@ -10113,11 +10242,11 @@ function arrayUnder(json, key) {
   } catch {
     return [];
   }
-  if (!isRecord5(parsed)) return [];
+  if (!isRecord6(parsed)) return [];
   const value = parsed[key];
   return Array.isArray(value) ? value : [];
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

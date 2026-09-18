@@ -64,10 +64,13 @@ correctly, and never once fire.
 A line with a top-level `tool` and no `kind` is read as `kind: "tool_call"`, with `tool`,
 `input`, `cwd`, `permission_mode` and `target_exists` lifted into `item` unchanged. So
 `fixtures/gate.jsonl` does not change by a byte, and neither does what it scores:
-`bouncer calibrate --backend mock` produces output identical to the pre-change build, which
-is the check that runs 1 through 8 remain comparable with whatever run 9 turns out to be.
-A calibration table whose fixtures quietly changed shape underneath it is worth nothing,
-and this is the cheapest possible way to be able to say they did not.
+`bouncer calibrate --backend mock` prints a report identical to the pre-change build's, and
+every scored number in `--json` — accuracy, Brier, every bucket, every gate row — is
+identical too. (`--json` echoes each miss's fixture, so those objects carry the new shape;
+nothing computed from them moves.) That is the check that runs 1 through 8 remain
+comparable with whatever run 9 turns out to be. A calibration table whose fixtures quietly
+changed shape underneath it is worth nothing, and this is the cheapest possible way to be
+able to say they did not.
 
 `kind` selects the `StateBuilder<TItem>` the fixture is built with. `tool_call` is
 `toolCallState`; `item` is the generic builder `judge` uses. A fixture set names the policy

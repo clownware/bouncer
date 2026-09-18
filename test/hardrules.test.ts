@@ -303,11 +303,14 @@ describe("the whole fixture set", () => {
   const fixtures = parseFixtures(readFileSync(join(root, "fixtures/gate.jsonl"), "utf8"));
 
   const firing = fixtures
-    .filter((f) => f.tool === "Bash")
-    .map((f) => ({
-      fixture: f,
-      rule: matchHardRule(rules, typeof f.input["command"] === "string" ? f.input["command"] : ""),
-    }))
+    .filter((f) => f.item["tool"] === "Bash")
+    .map((f) => {
+      const input = (f.item["input"] ?? {}) as Record<string, unknown>;
+      return {
+        fixture: f,
+        rule: matchHardRule(rules, typeof input["command"] === "string" ? input["command"] : ""),
+      };
+    })
     .filter((row): row is { fixture: (typeof fixtures)[number]; rule: HardRule } => row.rule !== undefined);
 
   // The list is pinned rather than counted so that a new hard rule, or a new fixture a

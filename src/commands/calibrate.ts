@@ -4,7 +4,11 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--backend jev|local|mock] [--compare a,b] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|local|mock] [--compare a,b] [--json]
+//
+// `--set` names the policy set to score against, defaulting to `gate`. A fixture file does
+// not name its own set on purpose: the same batch scored against two sets is a thing
+// someone will want to do, and a set baked into every line makes that an edit (docs/adr/009).
 //
 // `--compare` runs two backends over the same fixture set and prints them side by side.
 // Both runs go through the same `score()`, so the comparison is of the backends and not of
@@ -31,6 +35,8 @@ import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
+  /** The policy set to score against. Defaults to `gate`. */
+  readonly set?: string;
   readonly backend?: string;
   /** One or two backend names. One means "against the backend already selected". */
   readonly compare?: string;
@@ -44,6 +50,7 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
   };
   return {
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
+    ...(value("set") !== undefined ? { set: value("set") as string } : {}),
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
     ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
     json: argv.includes("--json"),
@@ -96,7 +103,15 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   const runs: Array<{ backend: string; scored: Scored[] }> = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i] as string;
-    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+    let scored: Scored[];
+    try {
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+    } catch (err) {
+      // A set name that is not in the policy is a typo, not a crash. Say which names exist.
+      write(`${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+    runs.push({ backend: label, scored });
   }
 
   const [first, second] = runs;
@@ -145,9 +160,15 @@ async function run(
   // Progress matters here: a live run is one network call per fixture and takes minutes.
   // It goes to stderr so `--json` output stays pipeable.
   const prefix = total > 1 ? `${label}: ` : "";
-  const scored = await score(fixtures, policy, adapter, (done, n) => {
-    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
-  });
+  const scored = await score(
+    fixtures,
+    policy,
+    adapter,
+    (done, n) => {
+      if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+    },
+    args.set,
+  );
   if (!args.json) process.stderr.write("\r\x1b[K");
   return scored;
 }
