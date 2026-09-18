@@ -69,3 +69,20 @@ to trust, and still the whole benefit for someone running in `bypassPermissions`
 - Error handling needs a circuit breaker as well as a default: repeated adapter failures
   drop to `observe` with a loud `systemMessage`, so a flaky network degrades to "no
   Bouncer" rather than to friction on every call.
+- **The circuit breaker must exclude the first call of a session.** Measured against live
+  Jev on 2026-09-18: a cold call took 513 ms and the five that followed took 168–350 ms.
+  Connection setup, not the model, accounts for the difference. A latency breaker that
+  counts the warm-up would trip on a healthy setup, so the first call of each session is
+  observed and logged but not counted toward the consecutive-miss total.
+
+## Measured end-to-end budget
+
+| | | |
+|---|---|---|
+| hook overhead (bundled, mock adapter) | 44 ms mean | 52 ms p95 |
+| Jev call, steady state, 5 nouls over a 603-token state | ~190 ms | ~350 ms |
+| Jev call, first of a session | 513 ms | — |
+
+Steady state lands around 400 ms end to end against the 600 ms target. The first call of a
+session lands near 565 ms — inside budget, but with little margin, which is the other
+reason it is excluded from the breaker rather than merely tolerated.

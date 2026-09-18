@@ -44,11 +44,21 @@ const SECRET_SHAPES = [
   /op:\/\/[^\s"']+/g,
 ];
 
+// Session ids show up inside paths (scratchpad_dir, and any cwd under it), not just in
+// the `session_id` field. Zeroing the field while leaving the same uuid in three paths is
+// worse than not scrubbing at all, because it reads as scrubbed.
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const BARE_UUID = /\b[0-9a-f]{32}\b/gi;
+
 function scrub(value) {
   if (typeof value === "string") {
     let s = value;
     s = s.split(HOME).join("/home/user");
     if (USER.length > 2) s = s.split(USER).join("user");
+    s = s.replace(UUID, "00000000-0000-0000-0000-000000000000");
+    s = s.replace(BARE_UUID, "0".repeat(32));
+    // The per-user temp root encodes the uid, e.g. /private/tmp/claude-501/.
+    s = s.replace(/\/claude-\d+\//g, "/claude-0/");
     for (const re of SECRET_SHAPES) s = s.replace(re, "[REDACTED]");
     return s;
   }
@@ -82,8 +92,12 @@ for (const f of files) {
   }
 
   const event = payload.hook_event_name ?? "unknown";
-  const key = `${event}-${payload.tool_name ?? "none"}`;
-  if (seen.has(key)) continue; // one fixture per event+tool; first wins
+  // Keyed on whether a subagent made the call as well as on the tool. A subagent payload
+  // carries agent_id and agent_type as extra top-level keys, so collapsing it into the
+  // same slot as the main-session payload loses the only example of those fields.
+  const subagent = typeof payload.agent_type === "string" ? `-subagent-${payload.agent_type.toLowerCase()}` : "";
+  const key = `${event}-${payload.tool_name ?? "none"}${subagent}`;
+  if (seen.has(key)) continue; // one fixture per event+tool+subagent; first wins
 
   const normalized = scrub(payload);
   for (const [k, v] of Object.entries(VOLATILE)) {

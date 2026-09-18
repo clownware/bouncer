@@ -39,7 +39,11 @@ Both were checked against live sources on 2026-09-18. If something contradicts t
 re-verify rather than assuming the note is stale.
 
 **Jev** (`POST https://api.typesafe.ai/v1/systemone`, Bearer auth, model `jev-latest`):
-- `questions` is a **map** keyed by caller-chosen names, not an array. Answers return under
+- `questions` is a **map** keyed by caller-chosen names (not an array with `id`); answers
+  return under the same keys. Each question carries `type` (`noul` | `choice` | `score`),
+  `instructions`, and `criteria` — not `prompt` / `options` / `levels`.
+- The request body is `{ model, state, questions }`. Confirmed live on 2026-09-18; see
+  `scripts/jev-latency.mjs` for a working request.
   the same keys. Fields are `instructions` and `criteria` — not `prompt`/`options`/`levels`.
 - **`noul` returns only `{type:"noul", noul: 0..1}`. There is no confidence field.**
   `choice` and `score` do return `confidence`, but the docs describe it as a statistic
@@ -52,7 +56,17 @@ re-verify rather than assuming the note is stale.
   arithmetic and date ordering. Write question `instructions` positively and put exclusions
   in `criteria.false`. Compute anything numeric in the state builder instead of asking.
 
-**Claude Code hooks** — see the pinned facts section of `docs/adr/001`.
+**Claude Code hooks** — see the pinned facts section of `docs/adr/001`. The parts most
+easily got wrong, all confirmed against captured payloads in `test/fixtures/payloads/`:
+- `UserPromptSubmit` carries `prompt`, **not** `prompt_text`.
+- `MultiEdit` does not exist in Claude Code 2.1.201; `Edit` absorbed it.
+- `effort` is an object, `{"level":"high"}`, not a string.
+- Subagent calls add `agent_id` and `agent_type` as top-level keys.
+- `Bash` input carries `description` alongside `command`.
+- `permissionDecision: "defer"` is documented but untested here. Nothing emits it.
+
+When a payload question comes up, read a fixture rather than the docs. The fixtures are
+recorded reality; the docs are a description of it.
 
 ## Conventions
 

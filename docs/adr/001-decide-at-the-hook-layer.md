@@ -48,13 +48,30 @@ Verified against https://code.claude.com/docs/en/hooks on 2026-09-18:
   (`deny` → `defer` → `ask` → `allow`). A Bouncer `allow` is therefore not authoritative:
   another hook or a settings rule can still force a prompt.
 - Default timeout for `command` hooks is 600 s, configurable per hook via `timeout`.
+- `UserPromptSubmit` input carries `prompt` (see the confirmation section below; an earlier
+  draft of this ADR said `prompt_text`, which the captured payloads disproved).
 
-## Unverified, to confirm from captured payloads
+## Confirmed from captured payloads (2026-09-18)
 
-`defer`, `prompt_id`, `scratchpad_dir` and `effort` are cited to the live docs but were
-not present in this author's prior knowledge, and `defer`'s position in the merge order
-(stricter than `ask`) is surprising enough to be worth checking empirically. See
-`scripts/CAPTURE.md` §3. Update this ADR with what the payloads actually show.
+Real payloads were recorded from Claude Code 2.1.201 with an inert stdin recorder and
+committed to `test/fixtures/payloads/`. They settled the open items, and corrected one
+thing the documentation research had wrong:
+
+- **`UserPromptSubmit` carries `prompt`, not `prompt_text`.** The earlier note in this ADR
+  said otherwise and was wrong; the PRD had it right. `UserPromptSubmit` also lacks
+  `scratchpad_dir` and `effort`.
+- `prompt_id`, `scratchpad_dir` and `tool_use_id` all appear, spelled that way.
+- `effort` is an object, `{"level":"high"}`, not a string.
+- `permission_mode` does report `bypassPermissions` under that flag.
+- Subagent calls add `agent_id` and `agent_type` (e.g. `"Explore"`) as top-level keys.
+- Tool calls carry a human-readable `description` alongside `command` on `Bash`, and
+  alongside `prompt` on `Agent`.
+- **`MultiEdit` does not exist as a tool in 2.1.201.** `Edit` absorbed it. It has been
+  removed from `gate.tools` in the default policy and there is no state extractor for it.
+
+Still unverified: `permissionDecision: "defer"` and its position in the merge order. The
+recorder is inert by design, so capturing payloads could not exercise it. It stays out of
+the emitted verdict set until something actually tests it — nothing in v0.1 emits `defer`.
 
 ## Consequences
 

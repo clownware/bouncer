@@ -1,8 +1,8 @@
 {
   "session_id": "00000000-0000-0000-0000-000000000000",
   "transcript_path": "/home/user/.claude/projects/example/transcript.jsonl",
-  "cwd": "/private/tmp/claude-501/-Users-user-Dev-clownware-bouncer/e44d132e-2995-4003-b2a7-8ad3c0139628/scratchpad/scratch",
-  "prompt_id": "00000000-0000-0000-0000-000000000001",
+  "cwd": "/private/tmp/claude-0/-Users-user-Dev-clownware-bouncer/00000000-0000-0000-0000-000000000000/scratchpad/scratch",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
   "permission_mode": "acceptEdits",
   "hook_event_name": "UserPromptSubmit",
   "prompt": "Do exactly these steps, one tool call each, in order, no explanations:\n1) Use the Write tool to create hello.txt containing 'hello world'.\n2) Use the Edit tool to change 'world' to 'there' in hello.txt.\n3) Use the MultiEdit tool (if it is unavailable, use Edit) to make two changes at once in hello.txt: 'hello' -> 'hi' and 'there' -> 'friend'.\n4) Use the Write tool to overwrite hello.txt with 'overwritten'.\n5) Run the Bash command: ls -la\n6) Run this Bash command using a heredoc:\ncat <<'EOF' > notes.txt\nline one\nline two\nEOF\n7) Run this multi-line Bash chain:\ngit status && \\\n  git add -A && \\\n  git commit -qm 'scratch: add files' && git log --oneline\nThen say DONE.\n"
