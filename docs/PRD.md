@@ -213,13 +213,25 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 
 **Later / maybe:** MCP tool gating, team policy inheritance, Ops integration (post decisions to `vendor_api:typesafe` spend rows), event-gating adapter for long-running agents.
 
-## 13. ADRs to write during v0.1
+## 13. ADRs
 
-- **ADR-001** Hook-layer decision, not MCP tools — why the model never sees the judge.
-- **ADR-002** Backend-pluggable adapter interface; Jev first, local second; System One primitive set as the contract.
-- **ADR-003** Fail-to-prompt, never fail-open; dry-run default; auto-allow off until calibrated.
-- **ADR-004** Policy as YAML in the repo; questions in plain English; no thresholds in code.
-- **ADR-005** What leaves the machine, and redaction rules.
+This list tracks the decision records that actually exist. Numbers follow what was written,
+in the order it was decided, and are never reused; where a topic planned here was settled
+without its own ADR, that is noted rather than leaving a reserved gap.
+
+- **ADR-001** Decide at the hook layer, not as MCP tools — why the model never sees the judge.
+- **ADR-002** A single bundled JS file on Node, with the bundle committed — the packaging and latency bet.
+- **ADR-003** Fail to the prompt, observe by default, and ship no deny rules until calibrated.
+- **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
+- **ADR-006** The skill router (v0.2), superseding the router half of §5 and §6.
+
+Two topics planned for their own ADRs were folded in elsewhere instead, so ADR-005 was
+never assigned and the number is left unused:
+
+- **Policy as YAML, questions in plain English, no thresholds in code** — this is enforced
+  by the code and documented in `policy/default.yaml`'s own comments, not a separate ADR.
+- **What leaves the machine, and redaction rules** — recorded in §9 above and implemented
+  in `src/engine/redact.ts`.
 
 ADR-004 and ADR-005 are still unwritten; their content lives in `policy/default.yaml`'s
 comments and §9 respectively. Numbering is not reused, so the router's design is
