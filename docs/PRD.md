@@ -233,10 +233,6 @@ never assigned and the number is left unused:
 - **What leaves the machine, and redaction rules** — recorded in §9 above and implemented
   in `src/engine/redact.ts`.
 
-ADR-004 and ADR-005 are still unwritten; their content lives in `policy/default.yaml`'s
-comments and §9 respectively. Numbering is not reused, so the router's design is
-**ADR-006** rather than filling one of those gaps.
-
 ## 14. Test plan
 
 - Unit: policy parsing, rule evaluation order, redaction (table-driven, includes near-misses), state truncation.
