@@ -166,7 +166,7 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 
 `bouncer calibrate [--from decisions.jsonl | --fixtures fixtures/*.jsonl] [--backend jev|local]`
 
-- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 94, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
+- Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 96, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
 - Output: per-question reliability table — confidence buckets (0.5–0.6 … 0.9–1.0) vs. observed accuracy, plus Brier score — followed by the release-gate table below, which reports correct/n and pass/fail per question against the `calibration` block in the policy (defaulting to this section's 0.85 at confidence 0.8). The gate is compared on the exact ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a passing-looking 85%. Optional `--compare` runs two backends on the same fixtures side by side.
 - From live log: pair each logged verdict with what the user actually did next (approved/denied at the prompt, or the tool ran) and treat that as the label.
 - This is a release gate: v0.1 README must publish the fixture table for Jev so users see the numbers before enabling `enforce`.
@@ -202,10 +202,15 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 - Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003 written.
 
 **v0.2 — Local adapter, and the router**
+
 - **Local adapter**, promoted from v0.3 on 2026-09-18. Constrained single-token decode over an OpenAI-compatible endpoint that exposes `logprobs` and `logit_bias` (llama.cpp server, vLLM): one shared prefill of the state, forked per question, softmax over the label logits for `p`. Not a chat completion asked for JSON. If the engine cannot constrain, the adapter refuses to start rather than returning an uncalibrated number. Same fixtures as Jev, same `calibrate` output, `--compare` prints one side-by-side table. The requirement is a capability, not a product: this document's earlier "Ollama / vLLM" named engines, and an engine that exposes `logprobs` but not `logit_bias` cannot be constrained and is refused. Check the engine's current support rather than the name. See `docs/adr/005-the-local-adapter.md`.
-- **Router:** UserPromptSubmit hook, `skills: auto` discovery, min-confidence gating, `/bouncer:calibrate --router` using "which skill did the user end up invoking" as label.
 - DoD (adapter): within 5 pts of Jev on the fixture Brier score, or the README says exactly how far off it is. `--compare` prints that sentence itself.
-- DoD (router): on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.
+
+*Router, designed in [ADR-006](adr/006-the-skill-router.md), which supersedes this entry and the `router:` block in §6*
+- `UserPromptSubmit` hook, `skills: auto` discovery, a `needs_skill` noul plus a `which_skill` choice over the discovered registry, gated on probability *and* margin. Its own `off | observe | suggest` mode, observing by default, and in `observe` it makes no classifier call at all — it records state and the harness replays it offline.
+- `bouncer calibrate --router` over hand-labelled `fixtures/router.jsonl`, plus `--review`, which pairs observe-mode records with the skill Claude actually loaded and prints the disagreements as the hand-labelling queue.
+- ~~DoD: on the author's skill set, top-1 agreement ≥ 80% at confidence ≥ 0.7 over one week of prompts.~~ Withdrawn: agreement with the skill the model already picked measures imitation of the incumbent, and 100% agreement would be worth nothing. See ADR-006 § Calibration.
+- DoD: ≥ 60 hand-labelled near-miss fixtures over a committed registry of real public skill names, at least a third labelled `none`; top-1 accuracy ≥ 0.85 among the prompts the router answers on; false-suggestion rate ≤ 0.05; **coverage ≥ 0.25** among fixtures labelled as needing a skill, so a router that passes by abstaining is visibly doing that; table published in the README before `suggest` is recommended.
 
 **v0.3 — Enforcement defaults**
 - Whatever two weeks of observe-mode data says about moving `guard` closer to the default, and the `local:` policy block the adapter needs before it is a supported hook backend rather than a calibration one.
@@ -219,6 +224,11 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 - **ADR-003** Fail-to-prompt, never fail-open; dry-run default; auto-allow off until calibrated.
 - **ADR-004** Policy as YAML in the repo; questions in plain English; no thresholds in code.
 - **ADR-005** ~~What leaves the machine, and redaction rules.~~ Written instead as *the local adapter* — constrained decoding, and why it refuses to start rather than degrade. Redaction is covered by §9 and the table-driven tests; nothing contradicted it, so it never needed a decision record.
+
+ADR-004 is still unwritten; its content lives in `policy/default.yaml`'s comments.
+**ADR-005** was written on 2026-09-18, on the local adapter rather than on redaction — the
+number was claimed by the design that needed a record. Numbering is not reused, so the
+router's design is **ADR-006** rather than filling the remaining gap.
 
 ## 14. Test plan
 
@@ -239,7 +249,7 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 1. ~~Exact current Claude Code hook schema and timeout.~~ **Answered.** Captured from a live session on 2026-09-18; the payloads are in `test/fixtures/payloads/` and the pinned facts are in `docs/adr/001`. Read a fixture rather than the docs.
 2. ~~Jev state-size limit and rate limits.~~ **Answered.** 64k tokens for state plus all questions, 32k for state plus the longest question. Rate limits are documented as dynamically adjusting, so nothing hardcodes them.
 3. ~~Does Jev's confidence on Noul questions carry information beyond `|p − 0.5|`?~~ **Answered, and the question was wrong.** `noul` answers have no confidence field at all; only `choice` and `score` return one. Uncertainty rules are written as ranges on `p`.
-4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question.
+4. Should the router inject context or actually invoke the skill? v0.2 injects only; invoking is a bigger permission question. **Still open, and now has a prior question in front of it:** whether the injected line goes to the model (`additionalContext` — the only form that can save tokens, and the only form that can cost them) or to the human (`systemMessage` — no routing risk, no token saving). ADR-006 recommends the former, behind a `suggest` mode that is not the default.
 5. Marketplace: publish under `clownware/plugins` or a dedicated repo? Recommend dedicated repo, listed in the existing marketplace.
 
 ## 17. Project brief (paste into the Claude Code project)

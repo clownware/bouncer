@@ -9477,6 +9477,395 @@ async function startIfNeeded(adapter) {
   }
 }
 
+// src/engine/registry.ts
+var import_yaml2 = __toESM(require_dist(), 1);
+var PRECEDENCE = {
+  project: 0,
+  user: 1,
+  plugin: 2,
+  "synced-skill": 3
+};
+var MAX_DESCRIPTION_CHARS = 200;
+function buildRegistry(raw) {
+  const best = /* @__PURE__ */ new Map();
+  const duplicates = [];
+  for (const candidate of raw) {
+    const description = descriptionOf(candidate);
+    if (description === void 0) continue;
+    const qualifiedName = qualify(candidate);
+    if (qualifiedName === void 0) continue;
+    const precedence = PRECEDENCE[candidate.origin];
+    const existing = best.get(qualifiedName);
+    if (existing !== void 0) {
+      duplicates.push(qualifiedName);
+      if (existing.precedence <= precedence) continue;
+    }
+    best.set(qualifiedName, {
+      precedence,
+      skill: { qualifiedName, description: truncate(description), origin: candidate.origin }
+    });
+  }
+  const skills2 = [...best.values()].map((entry) => entry.skill).sort((a, b) => a.qualifiedName < b.qualifiedName ? -1 : a.qualifiedName > b.qualifiedName ? 1 : 0);
+  return { skills: skills2, fingerprint: fingerprintOf(skills2), duplicates: [...new Set(duplicates)].sort() };
+}
+function criteriaFor(registry) {
+  const criteria = {};
+  for (const skill of registry.skills) criteria[skill.qualifiedName] = skill.description;
+  return criteria;
+}
+function parseFrontmatter(text) {
+  const match = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (match === null) return {};
+  let parsed;
+  try {
+    parsed = (0, import_yaml2.parse)(match[1] ?? "");
+  } catch {
+    return {};
+  }
+  if (!isRecord4(parsed)) return {};
+  return {
+    ...typeof parsed["name"] === "string" ? { name: parsed["name"] } : {},
+    ...typeof parsed["description"] === "string" ? { description: parsed["description"] } : {}
+  };
+}
+function parsePluginManifest(json) {
+  const plugins = arrayUnder(json, "plugins");
+  const entries = [];
+  for (const value of plugins) {
+    if (!isRecord4(value)) continue;
+    const name = value["name"];
+    if (typeof name !== "string" || name.length === 0) continue;
+    const preference = value["installationPreference"];
+    entries.push({
+      name,
+      ...typeof preference === "string" ? { installationPreference: preference } : {}
+    });
+  }
+  return entries;
+}
+function parseSkillsManifest(json) {
+  const skills2 = arrayUnder(json, "skills");
+  const entries = [];
+  for (const value of skills2) {
+    if (!isRecord4(value)) continue;
+    const name = value["name"] ?? value["skillId"];
+    const description = value["description"];
+    if (typeof name !== "string" || name.length === 0) continue;
+    if (typeof description !== "string" || description.length === 0) continue;
+    entries.push({ name, description });
+  }
+  return entries;
+}
+function pluginIsActive(entry) {
+  const preference = entry.installationPreference?.toLowerCase();
+  return preference !== "disabled" && preference !== "uninstalled" && preference !== "none";
+}
+function descriptionOf(candidate) {
+  if (candidate.description !== void 0 && candidate.description.trim().length > 0) {
+    return candidate.description.trim();
+  }
+  if (candidate.frontmatter === void 0) return void 0;
+  const parsed = parseFrontmatter(candidate.frontmatter);
+  const description = parsed.description?.trim();
+  return description !== void 0 && description.length > 0 ? description : void 0;
+}
+function qualify(candidate) {
+  const bare = candidate.dirName.trim();
+  if (bare.length === 0) return void 0;
+  if (candidate.namespace === void 0 || candidate.namespace.length === 0) return bare;
+  return `${candidate.namespace}:${bare}`;
+}
+function truncate(description) {
+  const collapsed = description.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= MAX_DESCRIPTION_CHARS) return collapsed;
+  const head = collapsed.slice(0, MAX_DESCRIPTION_CHARS);
+  const stop = head.lastIndexOf(". ");
+  if (stop >= MAX_DESCRIPTION_CHARS / 2) return head.slice(0, stop + 1);
+  return `${head.trimEnd()}\u2026`;
+}
+function fingerprintOf(skills2) {
+  let hash = 2166136261;
+  for (const skill of skills2) {
+    for (const char of `${skill.qualifiedName}\0`) {
+      hash ^= char.codePointAt(0) ?? 0;
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+  }
+  return `${skills2.length}-${hash.toString(16).padStart(8, "0")}`;
+}
+function arrayUnder(json, key) {
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!isRecord4(parsed)) return [];
+  const value = parsed[key];
+  return Array.isArray(value) ? value : [];
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/io/skills.ts
+var import_node_fs6 = require("node:fs");
+var import_node_os2 = require("node:os");
+var import_node_path6 = require("node:path");
+var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
+var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
+var MAX_SESSION_DIRS = 64;
+function discoverSkills(cwd) {
+  const raw = [];
+  const sources = [];
+  const roots = [];
+  const collect = (path, gather) => {
+    if (!(0, import_node_fs6.existsSync)(path)) return;
+    const before = raw.length;
+    try {
+      raw.push(...gather());
+    } catch {
+    }
+    roots.push({ path, found: raw.length - before });
+    sources.push(path);
+  };
+  const home = (0, import_node_os2.homedir)();
+  const projectSkills = projectSkillsDir(cwd);
+  if (projectSkills !== void 0) {
+    collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
+  }
+  const userSkills = (0, import_node_path6.join)(home, ".claude", "skills");
+  collect(userSkills, () => plainSkillDir(userSkills, "user"));
+  for (const bucket of bucketsIn((0, import_node_path6.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
+    collect(manifest, () => syncedSkills(manifest));
+  }
+  for (const bucket of bucketsIn((0, import_node_path6.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path6.join)(bucket, name, "skills")));
+  }
+  const installed = (0, import_node_path6.join)(home, ".claude", "plugins", "installed_plugins.json");
+  collect(installed, () => installedPluginSkills(installed));
+  for (const manifest of desktopManifests(home)) {
+    collect(manifest.path, manifest.gather);
+  }
+  return { registry: buildRegistry(raw), sources, roots };
+}
+function plainSkillDir(dir, origin) {
+  const skills2 = [];
+  for (const name of directoriesIn(dir)) {
+    if (NOT_A_SKILL.has(name)) continue;
+    const frontmatter = read2((0, import_node_path6.join)(dir, name, "SKILL.md"));
+    if (frontmatter === void 0) continue;
+    skills2.push({ dirName: name, origin, frontmatter });
+  }
+  return skills2;
+}
+function syncedSkills(manifest) {
+  const json = read2(manifest);
+  if (json === void 0) return [];
+  return parseSkillsManifest(json).map((skill) => ({
+    namespace: SYNCED_SKILL_NAMESPACE,
+    dirName: skill.name,
+    origin: "synced-skill",
+    description: skill.description
+  }));
+}
+function pluginSkills(manifest, _bucket, skillsDirFor) {
+  const json = read2(manifest);
+  if (json === void 0) return [];
+  const skills2 = [];
+  for (const plugin of parsePluginManifest(json)) {
+    if (!pluginIsActive(plugin)) continue;
+    const dir = skillsDirFor(plugin.name);
+    for (const name of directoriesIn(dir)) {
+      const frontmatter = read2((0, import_node_path6.join)(dir, name, "SKILL.md"));
+      if (frontmatter === void 0) continue;
+      skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
+    }
+  }
+  return skills2;
+}
+function installedPluginSkills(file) {
+  const json = read2(file);
+  if (json === void 0) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const skills2 = [];
+  const entries = Array.isArray(parsed["plugins"]) ? parsed["plugins"] : Object.values(parsed);
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record2 = entry;
+    const name = record2["name"];
+    const installPath = record2["installPath"];
+    if (typeof name !== "string" || typeof installPath !== "string") continue;
+    if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
+    const dir = (0, import_node_path6.join)(installPath, "skills");
+    for (const skillName of directoriesIn(dir)) {
+      const frontmatter = read2((0, import_node_path6.join)(dir, skillName, "SKILL.md"));
+      if (frontmatter === void 0) continue;
+      skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
+    }
+  }
+  return skills2;
+}
+function desktopManifests(home) {
+  const root = (0, import_node_path6.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs6.existsSync)(root)) return [];
+  const found = [];
+  let visited = 0;
+  for (const outer of directoriesIn(root)) {
+    for (const inner of directoriesIn((0, import_node_path6.join)(root, outer))) {
+      if (++visited > MAX_SESSION_DIRS) return found;
+      const session = (0, import_node_path6.join)(root, outer, inner);
+      const rpm = (0, import_node_path6.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs6.existsSync)(rpm)) {
+        found.push({
+          path: rpm,
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path6.join)(session, "rpm", `plugin_${name}`, "skills"))
+        });
+      }
+      for (const bucket of nestedBuckets((0, import_node_path6.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path6.join)(bucket, "manifest.json");
+        if ((0, import_node_fs6.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      }
+    }
+  }
+  return found;
+}
+function bucketsIn(dir) {
+  return directoriesIn(dir).map((name) => (0, import_node_path6.join)(dir, name));
+}
+function nestedBuckets(dir) {
+  const buckets = [];
+  for (const outer of directoriesIn(dir)) {
+    for (const inner of directoriesIn((0, import_node_path6.join)(dir, outer))) {
+      buckets.push((0, import_node_path6.join)(dir, outer, inner));
+    }
+  }
+  return buckets;
+}
+function directoriesIn(dir) {
+  try {
+    return (0, import_node_fs6.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+function read2(file) {
+  try {
+    return (0, import_node_fs6.readFileSync)(file, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function preferenceOf(record2) {
+  const preference = record2["installationPreference"] ?? record2["installation_preference"];
+  return typeof preference === "string" ? { installationPreference: preference } : {};
+}
+function signatureOf(sources) {
+  const parts = [];
+  for (const source of sources) {
+    try {
+      const stat = (0, import_node_fs6.statSync)(source);
+      parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
+    } catch {
+      parts.push(`${source}:absent`);
+    }
+  }
+  return parts.join("|");
+}
+function projectSkillsDir(cwd) {
+  const root = findRepoRoot2(cwd);
+  return root === void 0 ? void 0 : (0, import_node_path6.join)(root, ".claude", "skills");
+}
+function findRepoRoot2(from) {
+  let current = from;
+  for (let depth = 0; depth < 32; depth++) {
+    if ((0, import_node_fs6.existsSync)((0, import_node_path6.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path6.dirname)(current);
+    if (parent === current) return void 0;
+    current = parent;
+  }
+  return void 0;
+}
+
+// src/commands/skills.ts
+function parseArgs2(argv) {
+  return { json: argv.includes("--json"), verbose: argv.includes("--verbose") || argv.includes("-v") };
+}
+function skills(options, cwd = process.cwd()) {
+  const discovery = discoverSkills(cwd);
+  const { registry } = discovery;
+  if (options.json) {
+    return `${JSON.stringify({ fingerprint: registry.fingerprint, criteria: criteriaFor(registry) }, null, 2)}
+`;
+  }
+  const lines = [];
+  lines.push(`${registry.skills.length} skill${registry.skills.length === 1 ? "" : "s"} \xB7 fingerprint ${registry.fingerprint}`);
+  lines.push("");
+  const byOrigin = /* @__PURE__ */ new Map();
+  for (const skill of registry.skills) {
+    byOrigin.set(skill.origin, (byOrigin.get(skill.origin) ?? 0) + 1);
+  }
+  lines.push("Where they came from:");
+  for (const root of discovery.roots) {
+    lines.push(`  ${String(root.found).padStart(4)}  ${root.path}`);
+  }
+  if (discovery.roots.length === 0) {
+    lines.push("  none \u2014 no skills directory or manifest was found anywhere.");
+  }
+  lines.push("");
+  lines.push(`By origin: ${[...byOrigin.entries()].map(([o, n]) => `${o} ${n}`).join(", ") || "none"}`);
+  if (registry.duplicates.length > 0) {
+    lines.push(
+      `Resolved ${registry.duplicates.length} duplicate name${registry.duplicates.length === 1 ? "" : "s"} by precedence: ${registry.duplicates.slice(0, 5).join(", ")}${registry.duplicates.length > 5 ? " \u2026" : ""}`
+    );
+  }
+  if (options.verbose) {
+    lines.push("");
+    for (const skill of registry.skills) {
+      lines.push(`  ${skill.qualifiedName}`);
+      lines.push(`      ${skill.description}`);
+    }
+  } else if (registry.skills.length > 0) {
+    lines.push("");
+    lines.push("Names the router could suggest:");
+    lines.push(...wrap(registry.skills.map((s) => s.qualifiedName)));
+    lines.push("");
+    lines.push("Run with --verbose for descriptions, or --json for the criteria map.");
+  }
+  lines.push("");
+  lines.push(
+    registry.skills.length === 0 ? "An empty registry means the router would never suggest anything. That is safe, and it is also useless \u2014 see docs/adr/006." : "A missing skill here is worse than a short list: the classifier renormalises over what it is offered, so an absent option becomes a confident wrong pick."
+  );
+  lines.push("");
+  lines.push(`Sources signature: ${shorten(signatureOf(discovery.sources))}`);
+  return `${lines.join("\n")}
+`;
+}
+function wrap(names, width = 92) {
+  const lines = [];
+  let current = " ";
+  for (const name of names) {
+    if (current.length + name.length + 2 > width) {
+      lines.push(current);
+      current = " ";
+    }
+    current += ` ${name}`;
+  }
+  if (current.trim().length > 0) lines.push(current);
+  return lines;
+}
+function shorten(signature) {
+  return signature.length <= 120 ? signature : `${signature.slice(0, 117)}\u2026`;
+}
+
 // src/io/stdin.ts
 async function readPayload() {
   const raw = await readAll();
@@ -9518,6 +9907,9 @@ async function main(argv) {
       return OK;
     case "calibrate":
       return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
+    case "skills":
+      process.stdout.write(skills(parseArgs2(argv.slice(3))));
+      return OK;
     case "--version":
       process.stdout.write("0.1.0\n");
       return OK;
