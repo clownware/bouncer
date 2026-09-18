@@ -20,8 +20,13 @@ frontier model buys a paragraph of deliberation for a question whose answer is a
 
 Bouncer puts a judgment model in that spot instead. It is a Claude Code `PreToolUse` hook:
 every proposed tool call gets classified against a YAML policy you own — seven questions in
-one call, a couple of hundred milliseconds, roughly four cents a day. It ships in observe mode, which emits no decision at all and just
-writes down what it would have said.
+one call, a couple of hundred milliseconds, roughly four cents a day. It ships in observe
+mode, which emits no decision at all and just writes down what it would have said.
+
+It is not a stricter permission system. If you run `--dangerously-skip-permissions` — most
+people running agents seriously do — Bouncer never prompts you. It replaces a judgment call
+you were paying a reasoning model for, and puts a deterministic floor under the handful of
+things that are never okay. That is the whole product.
 
 v0.2 is mostly one lesson, learned the hard way.
 
