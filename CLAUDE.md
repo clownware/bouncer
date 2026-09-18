@@ -1,0 +1,67 @@
+# Bouncer — working notes for Claude
+
+A decision layer for Claude Code hooks. A `PreToolUse` hook classifies the proposed tool
+call against a policy the user owns and returns allow / ask / deny, using a fast System One
+model (TypeSafe Jev) instead of a frontier LLM. Ships observing only.
+
+Read `bouncer-prd.md` for the product spec and `docs/adr/` for decisions already made and
+the reasoning behind them. The ADRs win over the PRD where they disagree — several PRD
+details were corrected once the hook payloads and the Jev API were actually verified.
+
+## The rules that matter
+
+**Never exit 2.** Claude Code treats exit 2 from `PreToolUse` as "block this tool call",
+regardless of stdout. A crash that exits 2 silently breaks the user's session. Uncaught
+Node exceptions exit 1, which is a safe non-blocking error. There is a test asserting this;
+do not weaken it.
+
+**Never fail open, never fail loud.** Every error path — timeout, 401, 429, unparseable
+policy, internal crash — resolves to emitting no decision, which falls through to Claude
+Code's normal permission flow. Bouncer being broken must never be why something dangerous
+ran, and must never be why a session is unusable.
+
+**Adding friction is the failure mode.** The entire premise is reducing interruptions. A
+change that makes Bouncer prompt more often than not having it installed is a bug, even if
+every individual verdict is correct. This is why observe mode emits nothing rather than
+`ask` (ADR-003).
+
+**Latency is a feature.** `npm run bench` gates hook overhead at 80 ms p95. Adding a
+dependency has a direct, measurable cost — bundling is what keeps startup at ~45 ms rather
+than ~87 ms (ADR-002). Run the bench before and after anything that touches imports.
+
+**No thresholds in code.** Questions are plain English and thresholds are numbers, both
+living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the
+number belongs in `policy/default.yaml` instead.
+
+## Verified facts, do not re-derive from memory
+
+Both were checked against live sources on 2026-09-18. If something contradicts these,
+re-verify rather than assuming the note is stale.
+
+**Jev** (`POST https://api.typesafe.ai/v1/systemone`, Bearer auth, model `jev-latest`):
+- `questions` is a **map** keyed by caller-chosen names, not an array. Answers return under
+  the same keys. Fields are `instructions` and `criteria` — not `prompt`/`options`/`levels`.
+- **`noul` returns only `{type:"noul", noul: 0..1}`. There is no confidence field.**
+  `choice` and `score` do return `confidence`, but the docs describe it as a statistic
+  derived from the distribution, so it carries no independent signal. Write uncertainty
+  rules as ranges on `p`.
+- Pricing is $0.042 per million input tokens, output free. Cost is not a design constraint.
+- Limits: 64k tokens for state + all questions, 32k for state + longest question.
+  Rate limits documented as dynamically adjusting — do not hardcode them.
+- `jev-1.13` reads negations and scoping words literally, and is unreliable at counting,
+  arithmetic and date ordering. Write question `instructions` positively and put exclusions
+  in `criteria.false`. Compute anything numeric in the state builder instead of asking.
+
+**Claude Code hooks** — see the pinned facts section of `docs/adr/001`.
+
+## Conventions
+
+- Conventional commits. Branch per thread. PRs only, no `--no-verify`.
+- Zero runtime dependencies. Dev dependencies are fine; anything reaching `bin/bouncer.mjs`
+  is not.
+- `bin/bouncer.mjs` is a committed build artifact. Rebuild and commit it whenever `src/`
+  changes; CI verifies it matches a fresh build.
+- Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
+  functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
+- **No real API key in any thread.** Jev calls are stubbed in tests; live calibration runs
+  are done by Chris locally.
