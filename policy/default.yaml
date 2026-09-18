@@ -31,6 +31,20 @@ on_error: passthrough
 # going to run anyway, so a classifier call would be pure latency.
 skip_permission_modes: [plan]
 
+# The bar `bouncer calibrate` holds each question to, printed as a pass/fail table under
+# the buckets. These are PRD §12's numbers, and they are here rather than in the code for
+# the same reason the rule thresholds are: how good a question has to be before you trust
+# it is your call, not the plugin's. Raise the bar before enabling `guard` if you want to.
+#
+# `confidence_floor` is the confidence an answer needs before it counts — the gate measures
+# whether a question is right when it is sure, since an unsure answer is caught by the
+# uncertainty rule anyway. Confidence is max(p, 1 − p), so it cannot go below 0.5.
+# `accuracy_bar` is compared against the exact ratio, never the printed percentage:
+# 11 of 13 is 0.846, which is under this bar however it rounds on screen.
+calibration:
+  confidence_floor: 0.80
+  accuracy_bar: 0.85
+
 gate:
   # MultiEdit is deliberately absent: it does not exist in Claude Code 2.1.201, where the
   # Edit tool absorbed it. Listing a tool that never fires reads as coverage you do not have.

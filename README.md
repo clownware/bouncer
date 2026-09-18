@@ -27,6 +27,12 @@ README claiming the classifier is good. Run it yourself:
 BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate
 ```
 
+It prints the bucket table below, then a pass/fail row per question against the
+`calibration` block in the policy — 0.85 accuracy among answers at 0.8 confidence or
+higher, which you can raise before trusting a question. That bar is compared on the exact
+ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a passing-looking
+85%.
+
 <!-- CALIBRATION-TABLE:START -->
 Live run against `jev-1.13.0` on 2026-09-18. Confidence is `max(p, 1 − p)`.
 

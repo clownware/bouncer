@@ -7611,6 +7611,8 @@ var ON_ERROR = ["passthrough", "deny"];
 var DEFAULT_TIMEOUT_MS = 800;
 var MIN_TIMEOUT_MS = 50;
 var MAX_TIMEOUT_MS = 3e4;
+var DEFAULT_CONFIDENCE_FLOOR = 0.8;
+var DEFAULT_ACCURACY_BAR = 0.85;
 function loadPolicy(source) {
   const diagnostics = [];
   const error = (path, message) => diagnostics.push({ severity: "error", path, message });
@@ -7647,6 +7649,26 @@ function loadPolicy(source) {
     }
   }
   const skipPermissionModes = readStringList(raw["skip_permission_modes"], ["plan"], "skip_permission_modes", error);
+  const calibrationRaw = raw["calibration"];
+  if (calibrationRaw !== void 0 && !isRecord(calibrationRaw)) {
+    error("calibration", "must be a mapping");
+  }
+  const calibrationFields = isRecord(calibrationRaw) ? calibrationRaw : {};
+  const confidenceFloor = readProbability(
+    calibrationFields["confidence_floor"],
+    DEFAULT_CONFIDENCE_FLOOR,
+    "calibration.confidence_floor",
+    error
+  );
+  const accuracyBar = readProbability(
+    calibrationFields["accuracy_bar"],
+    DEFAULT_ACCURACY_BAR,
+    "calibration.accuracy_bar",
+    error
+  );
+  if (confidenceFloor < 0.5) {
+    error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
+  }
   const gateRaw = raw["gate"];
   if (!isRecord(gateRaw)) {
     error("gate", "missing or not a mapping");
@@ -7669,7 +7691,8 @@ function loadPolicy(source) {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, questions, rules }
+    gate: { tools, fastPath, questions, rules },
+    calibration: { confidenceFloor, accuracyBar }
   };
   return { policy, diagnostics };
 }
@@ -7845,6 +7868,18 @@ function readEnum(value, allowed, fallback, path, error) {
   if (typeof value === "string" && allowed.includes(value)) return value;
   error(path, `must be one of ${allowed.join(", ")}`);
   return fallback;
+}
+function readProbability(value, fallback, path, error) {
+  if (value === void 0) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    error(path, "must be a number");
+    return fallback;
+  }
+  if (value < 0 || value > 1) {
+    error(path, "must be between 0 and 1");
+    return fallback;
+  }
+  return value;
 }
 function readStringList(value, fallback, path, error) {
   if (value === void 0) return fallback;
@@ -8754,7 +8789,7 @@ async function score(fixtures, policy, adapter, onProgress) {
   }
   return results;
 }
-function report(scored) {
+function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
   for (const s of scored) {
     const list = byQuestion.get(s.question) ?? [];
@@ -8764,6 +8799,7 @@ function report(scored) {
   return [...byQuestion.entries()].map(([question, items]) => ({
     question,
     n: items.length,
+    gate: gateResult(items, calibration),
     accuracy: items.filter((i) => i.correct).length / items.length,
     brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
     buckets: BUCKETS.map(([low, high]) => {
@@ -8778,9 +8814,19 @@ function report(scored) {
     misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
   })).sort((a, b) => a.question.localeCompare(b.question));
 }
-function formatReport(reports, backend) {
+function gateResult(items, calibration) {
+  const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
+  const correct = confident.filter((i) => i.correct).length;
+  if (confident.length === 0) {
+    return { n: 0, correct: 0, accuracy: Number.NaN, passes: false };
+  }
+  const accuracy = correct / confident.length;
+  return { n: confident.length, correct, accuracy, passes: accuracy >= calibration.accuracyBar };
+}
+function formatReport(reports, backend, calibration) {
   const lines = [];
   const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  const gatePct = (n) => Number.isNaN(n) ? "    \u2014" : `${(n * 100).toFixed(1).padStart(4)}%`;
   lines.push(`Backend: ${backend}`, "");
   lines.push("| question | n | accuracy | Brier | 0.5\u20130.6 | 0.6\u20130.7 | 0.7\u20130.8 | 0.8\u20130.9 | 0.9\u20131.0 |");
   lines.push("|---|---|---|---|---|---|---|---|---|");
@@ -8788,6 +8834,21 @@ function formatReport(reports, backend) {
     const buckets = r.buckets.map((b) => b.n === 0 ? " \u2014 " : `${pct(b.accuracy)} (${b.n})`).join(" | ");
     lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} | ${buckets} |`);
   }
+  const floor = calibration.confidenceFloor.toFixed(2);
+  const bar2 = calibration.accuracyBar.toFixed(2);
+  lines.push("", `Against the gate (\u2265 ${bar2} accuracy at confidence \u2265 ${floor}):`, "");
+  lines.push("| question | correct / n | accuracy | passes |");
+  lines.push("|---|---|---|---|");
+  for (const r of reports) {
+    const g = r.gate;
+    const counts = g.n === 0 ? "\u2014 / 0" : `${g.correct} / ${g.n}`;
+    lines.push(`| ${r.question} | ${counts} | ${gatePct(g.accuracy)} | ${g.passes ? "yes" : "no"} |`);
+  }
+  const failing = reports.filter((r) => !r.gate.passes);
+  lines.push(
+    "",
+    failing.length === 0 ? `Every question clears the bar (${reports.length} of ${reports.length}).` : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`
+  );
   const all = reports.flatMap((r) => r.misses);
   if (all.length > 0) {
     lines.push("", `Disagreements (${all.length}), most confident first:`, "");
@@ -8859,13 +8920,13 @@ async function calibrate(args, write2) {
     if (!args.json) process.stderr.write(`\r  ${done}/${total} fixtures`);
   });
   if (!args.json) process.stderr.write("\r\x1B[K");
-  const reports = report(scored);
+  const reports = report(scored, resolved.policy.calibration);
   if (args.json === true) {
     write2(`${JSON.stringify({ backend, fixtures: fixtures.length, reports }, null, 2)}
 `);
     return 0;
   }
-  write2(formatReport(reports, backend));
+  write2(formatReport(reports, backend, resolved.policy.calibration));
   return 0;
 }
 

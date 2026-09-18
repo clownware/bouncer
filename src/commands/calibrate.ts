@@ -74,13 +74,13 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   });
   if (!args.json) process.stderr.write("\r\x1b[K");
 
-  const reports = report(scored);
+  const reports = report(scored, resolved.policy.calibration);
 
   if (args.json === true) {
     write(`${JSON.stringify({ backend, fixtures: fixtures.length, reports }, null, 2)}\n`);
     return 0;
   }
 
-  write(formatReport(reports, backend));
+  write(formatReport(reports, backend, resolved.policy.calibration));
   return 0;
 }

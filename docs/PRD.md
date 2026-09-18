@@ -167,7 +167,7 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 `bouncer calibrate [--from decisions.jsonl | --fixtures fixtures/*.jsonl] [--backend jev|local]`
 
 - Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 94, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
-- Output: per-question reliability table — confidence buckets (0.5–0.6 … 0.9–1.0) vs. observed accuracy, plus Brier score. Optional `--compare` runs two backends on the same fixtures side by side.
+- Output: per-question reliability table — confidence buckets (0.5–0.6 … 0.9–1.0) vs. observed accuracy, plus Brier score — followed by the release-gate table below, which reports correct/n and pass/fail per question against the `calibration` block in the policy (defaulting to this section's 0.85 at confidence 0.8). The gate is compared on the exact ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a passing-looking 85%. Optional `--compare` runs two backends on the same fixtures side by side.
 - From live log: pair each logged verdict with what the user actually did next (approved/denied at the prompt, or the tool ran) and treat that as the label.
 - This is a release gate: v0.1 README must publish the fixture table for Jev so users see the numbers before enabling `enforce`.
 

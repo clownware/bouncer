@@ -125,6 +125,11 @@ describe("loadPolicy", () => {
     ["an unknown verdict", `${MINIMAL}`.replace("then: ask", "then: explode"), "then"],
     ["two default rules", `${MINIMAL}    - default: deny\n`, "rules"],
     ["a reserved question name", "version: 1\ngate:\n  tools: [Bash]\n  questions:\n    any:\n      instructions: x\n  rules:\n    - default: allow\n", "any"],
+    ["a non-numeric accuracy bar", `${MINIMAL}\ncalibration:\n  accuracy_bar: high`, "calibration.accuracy_bar"],
+    ["an accuracy bar above 1", `${MINIMAL}\ncalibration:\n  accuracy_bar: 85`, "calibration.accuracy_bar"],
+    // Confidence is max(p, 1 − p), so a floor under 0.5 would quietly count every answer.
+    ["a confidence floor below 0.5", `${MINIMAL}\ncalibration:\n  confidence_floor: 0.3`, "calibration.confidence_floor"],
+    ["a calibration section that is not a mapping", `${MINIMAL}\ncalibration: strict`, "calibration"],
     ["a top-level list", "- version: 1\n", ""],
     ["not YAML at all", "{{{", ""],
   ];
@@ -211,5 +216,28 @@ describe("the shipped default policy", () => {
 
   it("skips work in plan mode, where no tool runs anyway", () => {
     expect(result.policy?.skipPermissionModes).toContain("plan");
+  });
+
+  // PRD §12's release gate. In the policy rather than in src/ so a user can raise the bar
+  // before trusting a question, and so `bouncer calibrate` prints a verdict rather than
+  // leaving it to be worked out by hand off the bucket columns.
+  it("carries the release gate the calibration harness measures against", () => {
+    expect(result.policy?.calibration.confidenceFloor).toBe(0.8);
+    expect(result.policy?.calibration.accuracyBar).toBe(0.85);
+  });
+});
+
+// A policy written before the section existed still has to load, and has to get the
+// PRD's numbers rather than no gate at all.
+describe("a policy with no calibration section", () => {
+  const source = "version: 1\ngate:\n  tools: [Bash]\n  questions:\n    a:\n      instructions: x\n  rules:\n    - default: allow\n";
+  const result = loadPolicy(source);
+
+  it("loads without complaint", () => {
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("falls back to the PRD's gate", () => {
+    expect(result.policy?.calibration).toEqual({ confidenceFloor: 0.8, accuracyBar: 0.85 });
   });
 });
