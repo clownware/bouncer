@@ -6,7 +6,8 @@
 import { manifestOf, type EscalationItem } from "../engine/escalation.js";
 import * as breaker from "../io/breaker.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
-import { tail, type DecisionRecord } from "../io/log.js";
+import { LOG_FILE, tail, type DecisionRecord } from "../io/log.js";
+import { join } from "node:path";
 
 const SAMPLE = 200;
 
@@ -32,6 +33,10 @@ export function status(): string {
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
   lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
+  // The log's path is the first thing someone asks for when they want to watch what
+  // bouncer is doing, and nothing else prints it: the data directory is an environment
+  // variable with a fallback, so it is not guessable from the outside.
+  lines.push(`Log:     ${join(dir, LOG_FILE)}`);
 
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
