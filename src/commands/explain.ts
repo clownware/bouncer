@@ -78,6 +78,8 @@ function describe(record: DecisionRecord): string {
         : `rule ${reason.ruleIndex} matched: ${reason.question} was ${reason.p.toFixed(2)}`;
     case "fast-path":
       return `the command matched the fast path (${reason.prefix.trim()}), so the classifier was never called`;
+    case "hard-rule":
+      return `the command matched the hard rule "${reason.name}", so the classifier was never called: ${reason.because}`;
     case "tool-not-gated":
       return `${reason.tool} is not in this policy's gate.tools`;
     case "permission-mode-skipped":

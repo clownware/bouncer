@@ -159,7 +159,7 @@ describe("the release gate in report()", () => {
         correct: right,
         confidence,
         verdict: "allow" as const,
-        verdictReason: { question: "default", p: Number.NaN },
+        verdictReason: { question: "default", p: Number.NaN, source: "rule" as const },
       };
     });
 

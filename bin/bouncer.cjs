@@ -7882,359 +7882,6 @@ var MockAdapter = class {
   }
 };
 
-// src/engine/policy.ts
-var import_yaml = __toESM(require_dist(), 1);
-
-// src/engine/types.ts
-var ANY_QUESTION = "any";
-
-// src/engine/policy.ts
-var MODES = ["observe", "guard", "full"];
-var VERDICTS = ["allow", "ask", "deny"];
-var ON_ERROR = ["passthrough", "deny"];
-var DEFAULT_TIMEOUT_MS = 800;
-var MIN_TIMEOUT_MS = 50;
-var MAX_TIMEOUT_MS = 3e4;
-var DEFAULT_CONFIDENCE_FLOOR = 0.8;
-var DEFAULT_ACCURACY_BAR = 0.85;
-function loadPolicy(source) {
-  const diagnostics = [];
-  const error = (path, message) => diagnostics.push({ severity: "error", path, message });
-  const warn = (path, message) => diagnostics.push({ severity: "warning", path, message });
-  let raw;
-  try {
-    raw = (0, import_yaml.parse)(source);
-  } catch (err) {
-    error("", `not valid YAML: ${err instanceof Error ? err.message : String(err)}`);
-    return { diagnostics };
-  }
-  if (!isRecord(raw)) {
-    error("", "policy must be a mapping at the top level");
-    return { diagnostics };
-  }
-  if (raw["version"] !== 1) {
-    error("version", `expected 1, got ${JSON.stringify(raw["version"])}`);
-  }
-  const backend = typeof raw["backend"] === "string" ? raw["backend"] : "jev";
-  if (raw["backend"] !== void 0 && typeof raw["backend"] !== "string") {
-    error("backend", "must be a string");
-  }
-  const mode = readEnum(raw["mode"], MODES, "observe", "mode", error);
-  const onError = readEnum(raw["on_error"], ON_ERROR, "passthrough", "on_error", error);
-  let timeoutMs = DEFAULT_TIMEOUT_MS;
-  const rawTimeout = raw["timeout_ms"];
-  if (rawTimeout !== void 0) {
-    if (typeof rawTimeout !== "number" || !Number.isFinite(rawTimeout)) {
-      error("timeout_ms", "must be a number");
-    } else if (rawTimeout < MIN_TIMEOUT_MS || rawTimeout > MAX_TIMEOUT_MS) {
-      error("timeout_ms", `must be between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`);
-    } else {
-      timeoutMs = rawTimeout;
-    }
-  }
-  const skipPermissionModes = readStringList(raw["skip_permission_modes"], ["plan"], "skip_permission_modes", error);
-  const calibrationRaw = raw["calibration"];
-  if (calibrationRaw !== void 0 && !isRecord(calibrationRaw)) {
-    error("calibration", "must be a mapping");
-  }
-  const calibrationFields = isRecord(calibrationRaw) ? calibrationRaw : {};
-  const confidenceFloor = readProbability2(
-    calibrationFields["confidence_floor"],
-    DEFAULT_CONFIDENCE_FLOOR,
-    "calibration.confidence_floor",
-    error
-  );
-  const accuracyBar = readProbability2(
-    calibrationFields["accuracy_bar"],
-    DEFAULT_ACCURACY_BAR,
-    "calibration.accuracy_bar",
-    error
-  );
-  if (confidenceFloor < 0.5) {
-    error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
-  }
-  const gateRaw = raw["gate"];
-  if (!isRecord(gateRaw)) {
-    error("gate", "missing or not a mapping");
-    return { diagnostics };
-  }
-  const tools = readStringList(gateRaw["tools"], [], "gate.tools", error);
-  if (tools.length === 0) {
-    warn("gate.tools", "no tools listed, so the gate will never run");
-  }
-  const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
-  const questions = readQuestions(gateRaw["questions"], error);
-  const rules = readRules(gateRaw["rules"], questions, error, warn);
-  if (diagnostics.some((d) => d.severity === "error")) {
-    return { diagnostics };
-  }
-  const policy = {
-    version: 1,
-    backend,
-    mode,
-    timeoutMs,
-    onError,
-    skipPermissionModes,
-    gate: { tools, fastPath, questions, rules },
-    calibration: { confidenceFloor, accuracyBar }
-  };
-  return { policy, diagnostics };
-}
-function readQuestions(raw, error) {
-  const questions = {};
-  if (!isRecord(raw)) {
-    error("gate.questions", "missing or not a mapping");
-    return questions;
-  }
-  for (const [name, value] of Object.entries(raw)) {
-    const path = `gate.questions.${name}`;
-    if (name === ANY_QUESTION) {
-      error(path, `"${ANY_QUESTION}" is reserved for rules that match any question`);
-      continue;
-    }
-    if (!isRecord(value)) {
-      error(path, "must be a mapping with `instructions`");
-      continue;
-    }
-    const instructions = value["instructions"];
-    if (typeof instructions !== "string" || instructions.trim().length === 0) {
-      error(`${path}.instructions`, "must be a non-empty string");
-      continue;
-    }
-    const question = { instructions };
-    const criteriaRaw = value["criteria"];
-    if (criteriaRaw !== void 0) {
-      if (!isRecord(criteriaRaw)) {
-        error(`${path}.criteria`, "must be a mapping with `true` and/or `false` keys");
-      } else {
-        const criteria = {};
-        for (const key of ["true", "false"]) {
-          const described = criteriaRaw[key];
-          if (described === void 0) continue;
-          if (typeof described !== "string") {
-            error(`${path}.criteria.${key}`, "must be a string");
-          } else {
-            criteria[key] = described;
-          }
-        }
-        if (Object.keys(criteria).length > 0) question.criteria = criteria;
-      }
-    }
-    questions[name] = question;
-  }
-  if (Object.keys(questions).length === 0) {
-    error("gate.questions", "at least one question is required");
-  }
-  return questions;
-}
-function readRules(raw, questions, error, warn) {
-  const rules = [];
-  if (!Array.isArray(raw)) {
-    error("gate.rules", "missing or not a list");
-    return rules;
-  }
-  let terminalAt;
-  raw.forEach((entry, i) => {
-    const index = i + 1;
-    const path = `gate.rules[${i}]`;
-    if (!isRecord(entry)) {
-      error(path, "must be a mapping");
-      return;
-    }
-    if ("default" in entry) {
-      const verdict = entry["default"];
-      if (!isVerdict(verdict)) {
-        error(`${path}.default`, `must be one of ${VERDICTS.join(", ")}`);
-        return;
-      }
-      if (terminalAt !== void 0) {
-        error(path, "a second `default` rule \u2014 only one is allowed");
-        return;
-      }
-      terminalAt = i;
-      rules.push({ verdict, index });
-      return;
-    }
-    if (terminalAt !== void 0) {
-      warn(path, `unreachable: rule ${terminalAt + 1} is the default rule and always matches`);
-    }
-    const when = entry["when"];
-    const then = entry["then"];
-    if (!isRecord(when)) {
-      error(`${path}.when`, "must be a mapping of a question name to a condition");
-      return;
-    }
-    if (!isVerdict(then)) {
-      error(`${path}.then`, `must be one of ${VERDICTS.join(", ")}`);
-      return;
-    }
-    const entries = Object.entries(when);
-    if (entries.length !== 1) {
-      error(`${path}.when`, `must name exactly one question, got ${entries.length}`);
-      return;
-    }
-    const [question, conditionRaw] = entries[0];
-    if (question !== ANY_QUESTION && !(question in questions)) {
-      error(`${path}.when.${question}`, `no question named "${question}" is defined in gate.questions`);
-      return;
-    }
-    if (!isRecord(conditionRaw) || typeof conditionRaw["p"] !== "string") {
-      error(`${path}.when.${question}`, 'must be a mapping with a `p` string, for example { p: ">=0.7" }');
-      return;
-    }
-    const comparison = parseComparison(conditionRaw["p"]);
-    if (comparison === void 0) {
-      error(
-        `${path}.when.${question}.p`,
-        `cannot read "${conditionRaw["p"]}" \u2014 expected >=, >, <=, < followed by a number between 0 and 1, or a range like "0.4..0.6"`
-      );
-      return;
-    }
-    const condition = { question, comparison };
-    rules.push({ condition, verdict: then, index });
-  });
-  if (terminalAt === void 0 && rules.length > 0) {
-    warn("gate.rules", "no `default` rule, so a tool call matching nothing gets no decision");
-  }
-  return rules;
-}
-function parseComparison(input) {
-  const text = input.trim();
-  const range = /^(\d*\.?\d+)\.\.(\d*\.?\d+)$/.exec(text);
-  if (range) {
-    const low = Number(range[1]);
-    const high = Number(range[2]);
-    if (!inUnitInterval(low) || !inUnitInterval(high) || low > high) return void 0;
-    return { kind: "range", low, high };
-  }
-  const compared = /^(>=|<=|>|<)\s*(\d*\.?\d+)$/.exec(text);
-  if (compared) {
-    const value = Number(compared[2]);
-    if (!inUnitInterval(value)) return void 0;
-    switch (compared[1]) {
-      case ">=":
-        return { kind: "gte", value };
-      case ">":
-        return { kind: "gt", value };
-      case "<=":
-        return { kind: "lte", value };
-      case "<":
-        return { kind: "lt", value };
-    }
-  }
-  return void 0;
-}
-function satisfies(p, comparison) {
-  switch (comparison.kind) {
-    case "gte":
-      return p >= comparison.value;
-    case "gt":
-      return p > comparison.value;
-    case "lte":
-      return p <= comparison.value;
-    case "lt":
-      return p < comparison.value;
-    case "range":
-      return p >= comparison.low && p <= comparison.high;
-  }
-}
-function inUnitInterval(n) {
-  return Number.isFinite(n) && n >= 0 && n <= 1;
-}
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function isVerdict(value) {
-  return typeof value === "string" && VERDICTS.includes(value);
-}
-function readEnum(value, allowed, fallback, path, error) {
-  if (value === void 0) return fallback;
-  if (typeof value === "string" && allowed.includes(value)) return value;
-  error(path, `must be one of ${allowed.join(", ")}`);
-  return fallback;
-}
-function readProbability2(value, fallback, path, error) {
-  if (value === void 0) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    error(path, "must be a number");
-    return fallback;
-  }
-  if (value < 0 || value > 1) {
-    error(path, "must be between 0 and 1");
-    return fallback;
-  }
-  return value;
-}
-function readStringList(value, fallback, path, error) {
-  if (value === void 0) return fallback;
-  if (!Array.isArray(value)) {
-    error(path, "must be a list");
-    return fallback;
-  }
-  const out = [];
-  value.forEach((item, i) => {
-    if (typeof item !== "string") error(`${path}[${i}]`, "must be a string");
-    else out.push(item);
-  });
-  return out;
-}
-
-// src/engine/evaluate.ts
-function shortCircuit(policy, input) {
-  if (input.permissionMode !== void 0 && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
-  }
-  if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy, "allow", { kind: "tool-not-gated", tool: input.tool });
-  }
-  const prefix = matchFastPath(policy.gate.fastPath, input.command);
-  if (prefix !== void 0) {
-    return decide(policy, "allow", { kind: "fast-path", prefix });
-  }
-  return void 0;
-}
-function evaluate(policy, answers) {
-  for (const rule of policy.gate.rules) {
-    if (rule.condition === void 0) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
-    }
-    const { question, comparison } = rule.condition;
-    if (question === ANY_QUESTION) {
-      for (const [name, p2] of Object.entries(answers)) {
-        if (satisfies(p2, comparison)) {
-          return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
-        }
-      }
-      continue;
-    }
-    const p = answers[question];
-    if (p === void 0) continue;
-    if (satisfies(p, comparison)) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
-    }
-  }
-  return { verdict: "allow", reason: { kind: "no-rule-matched" }, emit: void 0 };
-}
-function decide(policy, verdict, reason) {
-  return { verdict, reason, emit: emitFor(policy.mode, verdict) };
-}
-function emitFor(mode, verdict) {
-  if (mode === "observe") return void 0;
-  if (verdict === "allow") return mode === "full" ? "allow" : void 0;
-  return verdict;
-}
-function matchFastPath(prefixes, command) {
-  const trimmed = command.trim();
-  if (trimmed.length === 0) return void 0;
-  if (/[;&|]|\$\(|`|\n/.test(trimmed)) return void 0;
-  for (const prefix of prefixes) {
-    if (trimmed === prefix.trim()) return prefix;
-    if (prefix.endsWith(" ") && trimmed.startsWith(prefix)) return prefix;
-    if (!prefix.endsWith(" ") && trimmed.startsWith(`${prefix} `)) return prefix;
-  }
-  return void 0;
-}
-
 // src/engine/state.ts
 var import_node_path = require("node:path");
 
@@ -8333,7 +7980,7 @@ function buildState(input) {
   if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) {
     truncated = true;
     const action = state["action"];
-    if (isRecord2(action)) {
+    if (isRecord(action)) {
       state["action"] = truncateStrings(action, 512);
     }
     text = JSON.stringify(state);
@@ -8444,6 +8091,10 @@ function describeSensitivity(path) {
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
   if (/^\.env(\..+)?$/.test(name)) return "environment_file";
   if (/^(\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.dockercfg)$/.test(name)) return "credentials_file";
+  if (parts.includes(".aws") && /^(credentials|config)$/.test(name)) return "credentials_file";
+  if (parts.includes(".kube") && name === "config") return "credentials_file";
+  if (parts.includes(".docker") && name === "config.json") return "credentials_file";
+  if (parts.includes(".gnupg")) return "credentials_file";
   if (/^(id_rsa|id_ed25519|id_ecdsa)(\.pub)?$/.test(name)) return "ssh_key";
   if (/^(\.bashrc|\.zshrc|\.profile|\.bash_profile)$/.test(name)) return "shell_startup_file";
   return void 0;
@@ -8465,8 +8116,550 @@ function truncateStrings(record2, limit) {
     )
   );
 }
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/engine/hardrules.ts
+function matchHardRule(rules, command) {
+  const trimmed = command.trim();
+  if (trimmed.length === 0 || rules.length === 0) return void 0;
+  const facts = factsFor(trimmed);
+  for (const rule of rules) {
+    if (holds(rule, facts)) return rule;
+  }
+  return void 0;
+}
+function factsFor(command) {
+  const tokens = tokenize(command);
+  const pathLabels = /* @__PURE__ */ new Set();
+  for (const token of tokens) {
+    for (const candidate of pathsIn(token)) {
+      const label = describeSensitivity(candidate);
+      if (label !== void 0) pathLabels.add(label);
+    }
+  }
+  return {
+    tokens,
+    lower: command.toLowerCase(),
+    pathLabels,
+    // The redactor is the project's one tested table of credential shapes. Reusing it
+    // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
+    // added there is a shape the hard rule catches on the same day.
+    redactionKinds: new Set(redact(command).kinds)
+  };
+}
+function holds(rule, facts) {
+  const { when } = rule;
+  let asserted = false;
+  if (when.firstToken !== void 0) {
+    asserted = true;
+    if (!when.firstToken.includes(facts.tokens[0] ?? "")) return false;
+  }
+  if (when.tokens !== void 0) {
+    asserted = true;
+    if (!when.tokens.every((t) => facts.tokens.includes(t))) return false;
+  }
+  if (when.text !== void 0) {
+    asserted = true;
+    if (!when.text.some((t) => facts.lower.includes(t.toLowerCase()))) return false;
+  }
+  if (when.pathLabelled !== void 0) {
+    asserted = true;
+    if (!when.pathLabelled.some((label) => facts.pathLabels.has(label))) return false;
+  }
+  if (when.redactsAs !== void 0) {
+    asserted = true;
+    if (!when.redactsAs.some((kind) => facts.redactionKinds.has(kind))) return false;
+  }
+  if (when.notTokens !== void 0 && when.notTokens.some((t) => facts.tokens.includes(t))) {
+    return false;
+  }
+  return asserted;
+}
+function tokenize(command) {
+  const out = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+  while ((match = pattern.exec(command)) !== null) {
+    const token = match[1] ?? match[2] ?? match[3] ?? "";
+    if (token.length > 0) out.push(token);
+  }
+  return out;
+}
+function pathsIn(token) {
+  const candidates = [token.startsWith("~/") ? token.slice(2) : token];
+  const colon = token.lastIndexOf(":");
+  if (colon > 0 && colon < token.length - 1) {
+    candidates.push(token.slice(colon + 1));
+  }
+  return candidates;
+}
+
+// src/engine/policy.ts
+var import_yaml = __toESM(require_dist(), 1);
+
+// src/engine/types.ts
+var ANY_QUESTION = "any";
+
+// src/engine/policy.ts
+var MODES = ["observe", "guard", "full", "seatbelt"];
+var HARD_RULE_PREDICATES = [
+  "first_token",
+  "tokens",
+  "not_tokens",
+  "text",
+  "path_labelled",
+  "redacts_as"
+];
+var VERDICTS = ["allow", "ask", "deny"];
+var ON_ERROR = ["passthrough", "deny"];
+var DEFAULT_TIMEOUT_MS = 800;
+var MIN_TIMEOUT_MS = 50;
+var MAX_TIMEOUT_MS = 3e4;
+var DEFAULT_CONFIDENCE_FLOOR = 0.8;
+var DEFAULT_ACCURACY_BAR = 0.85;
+function loadPolicy(source) {
+  const diagnostics = [];
+  const error = (path, message) => diagnostics.push({ severity: "error", path, message });
+  const warn = (path, message) => diagnostics.push({ severity: "warning", path, message });
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(source);
+  } catch (err) {
+    error("", `not valid YAML: ${err instanceof Error ? err.message : String(err)}`);
+    return { diagnostics };
+  }
+  if (!isRecord2(raw)) {
+    error("", "policy must be a mapping at the top level");
+    return { diagnostics };
+  }
+  if (raw["version"] !== 1) {
+    error("version", `expected 1, got ${JSON.stringify(raw["version"])}`);
+  }
+  const backend = typeof raw["backend"] === "string" ? raw["backend"] : "jev";
+  if (raw["backend"] !== void 0 && typeof raw["backend"] !== "string") {
+    error("backend", "must be a string");
+  }
+  const mode = readEnum(raw["mode"], MODES, "observe", "mode", error);
+  const onError = readEnum(raw["on_error"], ON_ERROR, "passthrough", "on_error", error);
+  let timeoutMs = DEFAULT_TIMEOUT_MS;
+  const rawTimeout = raw["timeout_ms"];
+  if (rawTimeout !== void 0) {
+    if (typeof rawTimeout !== "number" || !Number.isFinite(rawTimeout)) {
+      error("timeout_ms", "must be a number");
+    } else if (rawTimeout < MIN_TIMEOUT_MS || rawTimeout > MAX_TIMEOUT_MS) {
+      error("timeout_ms", `must be between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`);
+    } else {
+      timeoutMs = rawTimeout;
+    }
+  }
+  const skipPermissionModes = readStringList(raw["skip_permission_modes"], ["plan"], "skip_permission_modes", error);
+  const calibrationRaw = raw["calibration"];
+  if (calibrationRaw !== void 0 && !isRecord2(calibrationRaw)) {
+    error("calibration", "must be a mapping");
+  }
+  const calibrationFields = isRecord2(calibrationRaw) ? calibrationRaw : {};
+  const confidenceFloor = readProbability2(
+    calibrationFields["confidence_floor"],
+    DEFAULT_CONFIDENCE_FLOOR,
+    "calibration.confidence_floor",
+    error
+  );
+  const accuracyBar = readProbability2(
+    calibrationFields["accuracy_bar"],
+    DEFAULT_ACCURACY_BAR,
+    "calibration.accuracy_bar",
+    error
+  );
+  if (confidenceFloor < 0.5) {
+    error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
+  }
+  const gateRaw = raw["gate"];
+  if (!isRecord2(gateRaw)) {
+    error("gate", "missing or not a mapping");
+    return { diagnostics };
+  }
+  const tools = readStringList(gateRaw["tools"], [], "gate.tools", error);
+  if (tools.length === 0) {
+    warn("gate.tools", "no tools listed, so the gate will never run");
+  }
+  const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
+  const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
+  const questions = readQuestions(gateRaw["questions"], error);
+  const rules = readRules(gateRaw["rules"], questions, error, warn);
+  if (diagnostics.some((d) => d.severity === "error")) {
+    return { diagnostics };
+  }
+  const policy = {
+    version: 1,
+    backend,
+    mode,
+    timeoutMs,
+    onError,
+    skipPermissionModes,
+    gate: { tools, fastPath, hardRules, questions, rules },
+    calibration: { confidenceFloor, accuracyBar }
+  };
+  return { policy, diagnostics };
+}
+function readQuestions(raw, error) {
+  const questions = {};
+  if (!isRecord2(raw)) {
+    error("gate.questions", "missing or not a mapping");
+    return questions;
+  }
+  for (const [name, value] of Object.entries(raw)) {
+    const path = `gate.questions.${name}`;
+    if (name === ANY_QUESTION) {
+      error(path, `"${ANY_QUESTION}" is reserved for rules that match any question`);
+      continue;
+    }
+    if (!isRecord2(value)) {
+      error(path, "must be a mapping with `instructions`");
+      continue;
+    }
+    const instructions = value["instructions"];
+    if (typeof instructions !== "string" || instructions.trim().length === 0) {
+      error(`${path}.instructions`, "must be a non-empty string");
+      continue;
+    }
+    const question = { instructions };
+    const criteriaRaw = value["criteria"];
+    if (criteriaRaw !== void 0) {
+      if (!isRecord2(criteriaRaw)) {
+        error(`${path}.criteria`, "must be a mapping with `true` and/or `false` keys");
+      } else {
+        const criteria = {};
+        for (const key of ["true", "false"]) {
+          const described = criteriaRaw[key];
+          if (described === void 0) continue;
+          if (typeof described !== "string") {
+            error(`${path}.criteria.${key}`, "must be a string");
+          } else {
+            criteria[key] = described;
+          }
+        }
+        if (Object.keys(criteria).length > 0) question.criteria = criteria;
+      }
+    }
+    questions[name] = question;
+  }
+  if (Object.keys(questions).length === 0) {
+    error("gate.questions", "at least one question is required");
+  }
+  return questions;
+}
+function readHardRules(raw, error, warn) {
+  const rules = [];
+  if (raw === void 0) return rules;
+  if (!Array.isArray(raw)) {
+    error("gate.hard_rules", "must be a list");
+    return rules;
+  }
+  const seen = /* @__PURE__ */ new Set();
+  raw.forEach((entry, i) => {
+    const path = `gate.hard_rules[${i}]`;
+    if (!isRecord2(entry)) {
+      error(path, "must be a mapping");
+      return;
+    }
+    const name = entry["name"];
+    if (typeof name !== "string" || name.trim().length === 0) {
+      error(`${path}.name`, "must be a non-empty string");
+      return;
+    }
+    if (seen.has(name)) {
+      error(`${path}.name`, `duplicate hard rule name "${name}"`);
+      return;
+    }
+    seen.add(name);
+    const because = entry["because"];
+    if (typeof because !== "string" || because.trim().length === 0) {
+      error(`${path}.because`, "must be a non-empty string \u2014 it is the reason the user reads");
+      return;
+    }
+    const then = entry["then"] ?? "ask";
+    if (!isVerdict(then)) {
+      error(`${path}.then`, `must be one of ${VERDICTS.join(", ")}`);
+      return;
+    }
+    if (then === "allow") {
+      error(`${path}.then`, "must be `ask` or `deny`; `gate.fast_path` is where allow-without-judging lives");
+      return;
+    }
+    if (then === "deny") {
+      warn(
+        path,
+        "`then: deny` blocks the tool call in guard and full. `ask` is the shipped default and `seatbelt` already denies on it \u2014 see docs/adr/003"
+      );
+    }
+    const whenRaw = entry["when"];
+    if (!isRecord2(whenRaw)) {
+      error(`${path}.when`, `must be a mapping of at least one of ${HARD_RULE_PREDICATES.join(", ")}`);
+      return;
+    }
+    for (const key of Object.keys(whenRaw)) {
+      if (!HARD_RULE_PREDICATES.includes(key)) {
+        error(`${path}.when.${key}`, `unknown predicate \u2014 expected one of ${HARD_RULE_PREDICATES.join(", ")}`);
+        return;
+      }
+    }
+    const when = {};
+    let failed = false;
+    const list = (key) => {
+      if (whenRaw[key] === void 0) return void 0;
+      const value = readStringList(whenRaw[key], [], `${path}.when.${key}`, error);
+      if (value.length === 0) {
+        error(`${path}.when.${key}`, "must be a non-empty list");
+        failed = true;
+      }
+      return value;
+    };
+    const firstToken = list("first_token");
+    const tokens = list("tokens");
+    const notTokens = list("not_tokens");
+    const text = list("text");
+    const pathLabelled = list("path_labelled");
+    const redactsAs = list("redacts_as");
+    if (failed) return;
+    if (firstToken !== void 0) when.firstToken = firstToken;
+    if (tokens !== void 0) when.tokens = tokens;
+    if (notTokens !== void 0) when.notTokens = notTokens;
+    if (text !== void 0) when.text = text;
+    if (pathLabelled !== void 0) when.pathLabelled = pathLabelled;
+    if (redactsAs !== void 0) when.redactsAs = redactsAs;
+    const narrowingOnly = Object.keys(when).length === 1 && when.notTokens !== void 0;
+    if (Object.keys(when).length === 0 || narrowingOnly) {
+      error(
+        `${path}.when`,
+        "needs at least one predicate that matches something \u2014 `not_tokens` only excludes"
+      );
+      return;
+    }
+    rules.push({ name, verdict: then, because, when, index: i + 1 });
+  });
+  return rules;
+}
+function readRules(raw, questions, error, warn) {
+  const rules = [];
+  if (!Array.isArray(raw)) {
+    error("gate.rules", "missing or not a list");
+    return rules;
+  }
+  let terminalAt;
+  raw.forEach((entry, i) => {
+    const index = i + 1;
+    const path = `gate.rules[${i}]`;
+    if (!isRecord2(entry)) {
+      error(path, "must be a mapping");
+      return;
+    }
+    if ("default" in entry) {
+      const verdict = entry["default"];
+      if (!isVerdict(verdict)) {
+        error(`${path}.default`, `must be one of ${VERDICTS.join(", ")}`);
+        return;
+      }
+      if (terminalAt !== void 0) {
+        error(path, "a second `default` rule \u2014 only one is allowed");
+        return;
+      }
+      terminalAt = i;
+      rules.push({ verdict, index });
+      return;
+    }
+    if (terminalAt !== void 0) {
+      warn(path, `unreachable: rule ${terminalAt + 1} is the default rule and always matches`);
+    }
+    const when = entry["when"];
+    const then = entry["then"];
+    if (!isRecord2(when)) {
+      error(`${path}.when`, "must be a mapping of a question name to a condition");
+      return;
+    }
+    if (!isVerdict(then)) {
+      error(`${path}.then`, `must be one of ${VERDICTS.join(", ")}`);
+      return;
+    }
+    const entries = Object.entries(when);
+    if (entries.length !== 1) {
+      error(`${path}.when`, `must name exactly one question, got ${entries.length}`);
+      return;
+    }
+    const [question, conditionRaw] = entries[0];
+    if (question !== ANY_QUESTION && !(question in questions)) {
+      error(`${path}.when.${question}`, `no question named "${question}" is defined in gate.questions`);
+      return;
+    }
+    if (!isRecord2(conditionRaw) || typeof conditionRaw["p"] !== "string") {
+      error(`${path}.when.${question}`, 'must be a mapping with a `p` string, for example { p: ">=0.7" }');
+      return;
+    }
+    const comparison = parseComparison(conditionRaw["p"]);
+    if (comparison === void 0) {
+      error(
+        `${path}.when.${question}.p`,
+        `cannot read "${conditionRaw["p"]}" \u2014 expected >=, >, <=, < followed by a number between 0 and 1, or a range like "0.4..0.6"`
+      );
+      return;
+    }
+    const condition = { question, comparison };
+    rules.push({ condition, verdict: then, index });
+  });
+  if (terminalAt === void 0 && rules.length > 0) {
+    warn("gate.rules", "no `default` rule, so a tool call matching nothing gets no decision");
+  }
+  return rules;
+}
+function parseComparison(input) {
+  const text = input.trim();
+  const range = /^(\d*\.?\d+)\.\.(\d*\.?\d+)$/.exec(text);
+  if (range) {
+    const low = Number(range[1]);
+    const high = Number(range[2]);
+    if (!inUnitInterval(low) || !inUnitInterval(high) || low > high) return void 0;
+    return { kind: "range", low, high };
+  }
+  const compared = /^(>=|<=|>|<)\s*(\d*\.?\d+)$/.exec(text);
+  if (compared) {
+    const value = Number(compared[2]);
+    if (!inUnitInterval(value)) return void 0;
+    switch (compared[1]) {
+      case ">=":
+        return { kind: "gte", value };
+      case ">":
+        return { kind: "gt", value };
+      case "<=":
+        return { kind: "lte", value };
+      case "<":
+        return { kind: "lt", value };
+    }
+  }
+  return void 0;
+}
+function satisfies(p, comparison) {
+  switch (comparison.kind) {
+    case "gte":
+      return p >= comparison.value;
+    case "gt":
+      return p > comparison.value;
+    case "lte":
+      return p <= comparison.value;
+    case "lt":
+      return p < comparison.value;
+    case "range":
+      return p >= comparison.low && p <= comparison.high;
+  }
+}
+function inUnitInterval(n) {
+  return Number.isFinite(n) && n >= 0 && n <= 1;
+}
 function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isVerdict(value) {
+  return typeof value === "string" && VERDICTS.includes(value);
+}
+function readEnum(value, allowed, fallback, path, error) {
+  if (value === void 0) return fallback;
+  if (typeof value === "string" && allowed.includes(value)) return value;
+  error(path, `must be one of ${allowed.join(", ")}`);
+  return fallback;
+}
+function readProbability2(value, fallback, path, error) {
+  if (value === void 0) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    error(path, "must be a number");
+    return fallback;
+  }
+  if (value < 0 || value > 1) {
+    error(path, "must be between 0 and 1");
+    return fallback;
+  }
+  return value;
+}
+function readStringList(value, fallback, path, error) {
+  if (value === void 0) return fallback;
+  if (!Array.isArray(value)) {
+    error(path, "must be a list");
+    return fallback;
+  }
+  const out = [];
+  value.forEach((item, i) => {
+    if (typeof item !== "string") error(`${path}[${i}]`, "must be a string");
+    else out.push(item);
+  });
+  return out;
+}
+
+// src/engine/evaluate.ts
+function shortCircuit(policy, input) {
+  if (input.permissionMode !== void 0 && policy.skipPermissionModes.includes(input.permissionMode)) {
+    return decide(policy, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+  }
+  if (!policy.gate.tools.includes(input.tool)) {
+    return decide(policy, "allow", { kind: "tool-not-gated", tool: input.tool });
+  }
+  const hard = matchHardRule(policy.gate.hardRules, input.command);
+  if (hard !== void 0) {
+    return decideHard(policy, hard);
+  }
+  const prefix = matchFastPath(policy.gate.fastPath, input.command);
+  if (prefix !== void 0) {
+    return decide(policy, "allow", { kind: "fast-path", prefix });
+  }
+  return void 0;
+}
+function decideHard(policy, rule) {
+  const reason = { kind: "hard-rule", name: rule.name, because: rule.because };
+  return {
+    verdict: rule.verdict,
+    reason,
+    emit: emitFor(policy.mode, rule.verdict, true)
+  };
+}
+function evaluate(policy, answers) {
+  for (const rule of policy.gate.rules) {
+    if (rule.condition === void 0) {
+      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
+    }
+    const { question, comparison } = rule.condition;
+    if (question === ANY_QUESTION) {
+      for (const [name, p2] of Object.entries(answers)) {
+        if (satisfies(p2, comparison)) {
+          return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
+        }
+      }
+      continue;
+    }
+    const p = answers[question];
+    if (p === void 0) continue;
+    if (satisfies(p, comparison)) {
+      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
+    }
+  }
+  return { verdict: "allow", reason: { kind: "no-rule-matched" }, emit: void 0 };
+}
+function decide(policy, verdict, reason) {
+  return { verdict, reason, emit: emitFor(policy.mode, verdict) };
+}
+function emitFor(mode, verdict, fromHardRule = false) {
+  if (mode === "observe") return void 0;
+  if (verdict === "allow") return mode === "full" ? "allow" : void 0;
+  if (mode === "seatbelt" && verdict === "ask") return fromHardRule ? "deny" : void 0;
+  return verdict;
+}
+function matchFastPath(prefixes, command) {
+  const trimmed = command.trim();
+  if (trimmed.length === 0) return void 0;
+  if (/[;&|]|\$\(|`|\n/.test(trimmed)) return void 0;
+  for (const prefix of prefixes) {
+    if (trimmed === prefix.trim()) return prefix;
+    if (prefix.endsWith(" ") && trimmed.startsWith(prefix)) return prefix;
+    if (!prefix.endsWith(" ") && trimmed.startsWith(`${prefix} `)) return prefix;
+  }
+  return void 0;
 }
 
 // src/io/breaker.ts
@@ -8696,6 +8889,24 @@ async function runPreToolUse(payload, options = {}) {
     ...permissionMode !== void 0 ? { permissionMode } : {}
   });
   if (early !== void 0) {
+    if (early.reason.kind === "hard-rule") {
+      const hardState = buildState({
+        toolName: tool,
+        toolInput,
+        cwd,
+        ...permissionMode !== void 0 ? { permissionMode } : {},
+        ...agentType !== void 0 ? { agentType } : {},
+        ...targetExistsFor(tool, toolInput, options)
+      });
+      append(dir, {
+        ...base,
+        ...verdictFields(early),
+        state: hardState.text,
+        redacted_kinds: hardState.redactedKinds,
+        latency_ms: { total: now() - started }
+      });
+      return outputFor(early, policy);
+    }
     if (early.reason.kind === "fast-path") {
       append(dir, { ...base, ...verdictFields(early), latency_ms: { total: now() - started } });
     }
@@ -8808,6 +9019,8 @@ function explain(decision, policy) {
     }
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
+    case "hard-rule":
+      return `bouncer: ${reason.because} (hard rule: ${reason.name})`;
     case "tool-not-gated":
       return `bouncer: ${reason.tool} is not gated by this policy.`;
     case "permission-mode-skipped":
@@ -8820,8 +9033,19 @@ function verdictFields(decision) {
   return {
     verdict: decision.verdict,
     emitted: decision.emit ?? null,
-    reason: decision.reason
+    reason: decision.reason,
+    source: sourceOf(decision)
   };
+}
+function sourceOf(decision) {
+  switch (decision.reason.kind) {
+    case "hard-rule":
+      return "hard_rule";
+    case "fast-path":
+      return "fast_path";
+    default:
+      return "judge";
+  }
 }
 function questionsFor(policy) {
   const questions = {};
@@ -9009,6 +9233,8 @@ function describe(record2) {
       return reason.question === "default" ? "no rule matched, so the policy's default applied" : `rule ${reason.ruleIndex} matched: ${reason.question} was ${reason.p.toFixed(2)}`;
     case "fast-path":
       return `the command matched the fast path (${reason.prefix.trim()}), so the classifier was never called`;
+    case "hard-rule":
+      return `the command matched the hard rule "${reason.name}", so the classifier was never called: ${reason.because}`;
     case "tool-not-gated":
       return `${reason.tool} is not in this policy's gate.tools`;
     case "permission-mode-skipped":
@@ -9081,10 +9307,13 @@ async function score(fixtures, policy, adapter, onProgress) {
       const value = noulProbability(response.answers[name]);
       if (value !== void 0) answers[name] = value;
     }
-    const decision = evaluate(policy, answers);
-    const verdictReason = {
-      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
-      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN
+    const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
+    const decision = hard === void 0 ? evaluate(policy, answers) : void 0;
+    const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
+    const verdictReason = hard !== void 0 ? { question: hard.name, p: Number.NaN, source: "hard_rule" } : {
+      question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision?.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+      source: "rule"
     };
     for (const [question, expected] of Object.entries(fixture.expect)) {
       const p = noulProbability(response.answers[question]);
@@ -9098,7 +9327,7 @@ async function score(fixtures, policy, adapter, onProgress) {
         predicted,
         correct: predicted === expected,
         confidence: Math.max(p, 1 - p),
-        verdict: decision.verdict,
+        verdict,
         verdictReason
       });
     }
@@ -9167,6 +9396,9 @@ function disagreements(scored) {
     (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id)
   );
 }
+function describeSource(d) {
+  return Number.isNaN(d.p) ? `hard rule ${d.question}` : `${d.question} ${d.p.toFixed(2)}`;
+}
 function gateResult(items, calibration) {
   const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
   const correct = confident.filter((i) => i.correct).length;
@@ -9209,7 +9441,7 @@ function formatReport(reports, backend, calibration, scored = []) {
   } else {
     for (const d of disagreed) {
       lines.push(
-        d.kind === "missed" ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}` : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${d.question} ${d.p.toFixed(2)}`
+        d.kind === "missed" ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}` : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${describeSource(d)}`
       );
     }
     lines.push(

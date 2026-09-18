@@ -17,8 +17,9 @@
 import { readFileSync } from "node:fs";
 import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
-import { buildState } from "./engine/state.js";
+import { buildState, commandOf } from "./engine/state.js";
 import { evaluate } from "./engine/evaluate.js";
+import { matchHardRule } from "./engine/hardrules.js";
 import type { CalibrationPolicy, Policy, Verdict } from "./engine/types.js";
 
 export interface Fixture {
@@ -55,8 +56,18 @@ export interface Scored {
    * That gap is what `disagreements` below reports.
    */
   readonly verdict: Verdict;
-  /** The question and probability the winning rule matched on, for explaining a verdict. */
-  readonly verdictReason: { readonly question: string; readonly p: number };
+  /**
+   * What produced the verdict, for explaining it.
+   *
+   * `source` is `hard_rule` when a `gate.hard_rules` entry decided, in which case `question`
+   * is the entry's name and `p` is NaN — a hard rule has no probability, which is the point
+   * of it.
+   */
+  readonly verdictReason: {
+    readonly question: string;
+    readonly p: number;
+    readonly source: "hard_rule" | "rule";
+  };
 }
 
 /**
@@ -182,11 +193,26 @@ export async function score(
       const value = noulProbability(response.answers[name]);
       if (value !== undefined) answers[name] = value;
     }
-    const decision = evaluate(policy, answers);
-    const verdictReason = {
-      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
-      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
-    };
+    // Hard rules decide before the classifier at hook time, so the verdict reported here
+    // has to come from them too — otherwise the `missed` and `friction` sections describe
+    // a policy that is not the one installed. The adapter is still called for every
+    // fixture regardless: the accuracy and Brier columns measure the classifier, and hard
+    // rules neither help nor hurt a question's answer.
+    //
+    // The fast path is deliberately still not modelled here, unchanged from run 7. It
+    // would only ever turn an `ask` into an `allow`, and doing it in the same run as this
+    // change would make two things move at once.
+    const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
+    const decision = hard === undefined ? evaluate(policy, answers) : undefined;
+
+    const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
+    const verdictReason = hard !== undefined
+      ? { question: hard.name, p: Number.NaN, source: "hard_rule" as const }
+      : {
+          question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
+          p: decision?.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+          source: "rule" as const,
+        };
 
     for (const [question, expected] of Object.entries(fixture.expect)) {
       const p = noulProbability(response.answers[question]);
@@ -203,7 +229,7 @@ export async function score(
         predicted,
         correct: predicted === expected,
         confidence: Math.max(p, 1 - p),
-        verdict: decision.verdict,
+        verdict,
         verdictReason,
       });
     }
@@ -298,6 +324,11 @@ export function disagreements(scored: readonly Scored[]): Disagreement[] {
   );
 }
 
+/** `outside_repo 0.77`, or `hard rule reads-a-credential-file` when there is no number. */
+function describeSource(d: Disagreement): string {
+  return Number.isNaN(d.p) ? `hard rule ${d.question}` : `${d.question} ${d.p.toFixed(2)}`;
+}
+
 function gateResult(items: readonly Scored[], calibration: CalibrationPolicy): GateResult {
   const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
   const correct = confident.filter((i) => i.correct).length;
@@ -363,7 +394,7 @@ export function formatReport(
       lines.push(
         d.kind === "missed"
           ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}`
-          : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${d.question} ${d.p.toFixed(2)}`,
+          : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${describeSource(d)}`,
       );
     }
     lines.push(

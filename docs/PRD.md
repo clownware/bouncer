@@ -217,18 +217,29 @@ Language: TypeScript, bundled to one file (esbuild), runs on the Node Claude Cod
 
 **Later / maybe:** MCP tool gating, team policy inheritance, Ops integration (post decisions to `vendor_api:typesafe` spend rows), event-gating adapter for long-running agents.
 
-## 13. ADRs to write during v0.1
+## 13. ADRs
 
-- **ADR-001** Hook-layer decision, not MCP tools — why the model never sees the judge.
-- **ADR-002** Backend-pluggable adapter interface; Jev first, local second; System One primitive set as the contract.
-- **ADR-003** Fail-to-prompt, never fail-open; dry-run default; auto-allow off until calibrated.
-- **ADR-004** Policy as YAML in the repo; questions in plain English; no thresholds in code.
-- **ADR-005** ~~What leaves the machine, and redaction rules.~~ Written instead as *the local adapter* — constrained decoding, and why it refuses to start rather than degrade. Redaction is covered by §9 and the table-driven tests; nothing contradicted it, so it never needed a decision record.
+This list tracks the decision records that actually exist. A number is assigned when an ADR
+is written, in the order it was decided. A number that has been *used* is never reused, even
+if that ADR is later superseded; a number this document once *planned* for a topic that was
+never written carries no reservation, and the next ADR to be written may take it. ADR-004 is
+the precedent: this section originally earmarked it for policy-as-YAML, and it was written
+for hard rules instead.
 
-ADR-004 is still unwritten; its content lives in `policy/default.yaml`'s comments.
-**ADR-005** was written on 2026-09-18, on the local adapter rather than on redaction — the
-number was claimed by the design that needed a record. Numbering is not reused, so the
-router's design is **ADR-006** rather than filling the remaining gap.
+- **ADR-001** Decide at the hook layer, not as MCP tools — why the model never sees the judge.
+- **ADR-002** A single bundled JS file on Node, with the bundle committed — the packaging and latency bet.
+- **ADR-003** Fail to the prompt, observe by default, and ship no deny rules until calibrated.
+- **ADR-004** Hard rules before the judge, and `seatbelt` mode for bypass sessions.
+- **ADR-005** The local adapter — constrained decoding, and `calibrate --compare`.
+- **ADR-006** The skill router (v0.2), superseding the router half of §5 and §6.
+
+Two topics this section originally earmarked for ADRs were settled without one, so no ADR
+carries their titles and nothing is reserved for them:
+
+- **Policy as YAML, questions in plain English, no thresholds in code** — this is enforced
+  by the code and documented in `policy/default.yaml`'s own comments, not a separate ADR.
+- **What leaves the machine, and redaction rules** — recorded in §9 above and implemented
+  in `src/engine/redact.ts`.
 
 ## 14. Test plan
 

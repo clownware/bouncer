@@ -12,11 +12,21 @@
 version: 1
 backend: jev
 
-# observe: log only, emit nothing. Claude Code behaves exactly as it would without bouncer.
-# guard:   emit `ask` (and `deny`, if you enable any) where policy says so. Never emits
-#          `allow`, so it can add a prompt but never remove one.
-# full:    also emit `allow`, suppressing the normal prompt on calls judged safe.
-#          Only worth doing once your calibration table says the allow side is trustworthy.
+# observe:  log only, emit nothing. Claude Code behaves exactly as it would without bouncer.
+# guard:    emit `ask` (and `deny`, if you enable any) where policy says so. Never emits
+#           `allow`, so it can add a prompt but never remove one.
+# full:     also emit `allow`, suppressing the normal prompt on calls judged safe.
+#           Only worth doing once your calibration table says the allow side is trustworthy.
+# seatbelt: for sessions started with `--dangerously-skip-permissions`. A `gate.hard_rules`
+#           match denies; a judgment denies only if it clears a `deny` rule you enabled
+#           below; everything else emits nothing at all. No prompts, ever.
+#
+# **If you run `--dangerously-skip-permissions`, `seatbelt` is the mode you want**, once you
+# have looked at your own `bouncer calibrate` numbers. `ask` cannot do anything for you —
+# it forces exactly the prompt you turned off — so `guard` would be a no-op and `full`
+# nearly one. What `seatbelt` gives you is the thing your setup currently has none of: a
+# floor. It is silent until a hard rule below matches, and hard rules are deterministic, so
+# what stops you is never a model having a bad day. See docs/adr/004.
 mode: observe
 
 # Budget for the classifier call. The hook's own overhead is ~50 ms on top of this.
@@ -81,6 +91,133 @@ gate:
     - "cargo test"
     - "cargo check"
     - "go test"
+
+  # The other edge. `fast_path` above ends a decision early with `allow`; these end it
+  # early with `ask`, before the classifier is called. Between them sits everything
+  # ambiguous, which is what the questions below are for. See docs/adr/004 for why.
+  #
+  # **The rule for what belongs here is the `fast_path` rule with the sign flipped:** an
+  # entry is judged on whether EVERY command it can match deserves the verdict, never on
+  # whether the one you had in mind does. The arguments are never judged either way.
+  #
+  # Each entry has a `name` (it appears in the log and in `/bouncer:explain`), a `because`
+  # you will read at the prompt, an optional `then` (`ask`, the default, or `deny`), and a
+  # `when` whose predicates must ALL hold:
+  #
+  #   first_token    the command's first word is one of these
+  #   tokens         every one of these appears as an exact, whitespace-delimited token
+  #   not_tokens     none of these appears as a token (narrows; never used alone)
+  #   text           one of these appears case-insensitively anywhere in the command —
+  #                  how to reach SQL and anything else inside a quoted argument
+  #   path_labelled  some token is a path bouncer labels as one of these
+  #   redacts_as     bouncer's redactor recognises one of these credential shapes
+  #
+  # Tokens rather than prefixes is deliberate: `git push --force` must not match
+  # `git push --force-with-lease`, and a prefix does. In `seatbelt` every entry here denies;
+  # that promotion is the mode's doing, not the entry's.
+  hard_rules:
+    - name: reads-a-credential-file
+      because: "Prints the contents of a file that holds credentials."
+      when:
+        first_token: [cat, bat, head, tail, less, more, nl, tac, od, xxd, strings, hexdump, base64, view]
+        path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
+
+    # `first_token` exists so this does not catch `ssh-keygen -y -f ~/.ssh/id_ed25519`,
+    # which reads a private key to print the PUBLIC one — the point of having it.
+    - name: git-show-of-a-credential-file
+      because: "Prints a stored version of a file that holds credentials."
+      when:
+        tokens: [git, show]
+        path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
+
+    - name: git-diff-of-a-credential-file
+      because: "Prints the contents of a file that holds credentials, as a diff."
+      when:
+        tokens: [git, diff]
+        path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
+
+    - name: git-log-patch-of-a-credential-file
+      because: "Prints every past version of a file that holds credentials."
+      when:
+        tokens: [git, log, -p]
+        path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
+
+    # Reuses src/engine/redact.ts's shape table rather than restating it. `assigned-secret`
+    # needs a value, so `docker run -e API_KEY ubuntu` does not match and `-e API_KEY=sk-…` does.
+    - name: credential-on-the-command-line
+      because: "A credential value appears literally on the command line, so it lands in shell history too."
+      when:
+        redacts_as:
+          - assigned-secret
+          - private-key
+          - stripe-key
+          - openai-key
+          - anthropic-key
+          - github-pat
+          - github-token
+          - slack-token
+          - aws-access-key
+          - google-api-key
+          - jwt
+          - bearer-token
+          - url-credentials
+
+    # Unrecoverable git operations. `rm` is deliberately absent: `rm -rf ~/Documents` and
+    # `rm -rf ./build` are the same shape and only one is a problem — the ambiguous middle.
+    - name: git-stash-clear
+      because: "Drops every stash at once. There is no reflog for stashes you cleared."
+      when:
+        tokens: [git, stash, clear]
+
+    - name: git-stash-drop
+      because: "Drops a stashed change with no confirmation and no easy way back."
+      when:
+        tokens: [git, stash, drop]
+
+    - name: git-reset-hard
+      because: "Discards commits and the working tree with them. Recoverable only via the reflog, if you know to look."
+      when:
+        tokens: [git, reset, --hard]
+
+    # The force flags arrive as `-fdx`, one token, so this excludes the dry-run flags
+    # rather than requiring a force flag.
+    - name: git-clean-force
+      because: "Removes untracked and ignored files, including .env files and local-only config that was never committed."
+      when:
+        tokens: [git, clean]
+        not_tokens: [-n, --dry-run]
+
+    - name: git-push-force
+      because: "Overwrites remote history unconditionally, including work you have not seen."
+      when:
+        tokens: [git, push, --force]
+
+    - name: git-branch-force-delete
+      because: "Deletes a branch whose commits are not merged anywhere else."
+      when:
+        tokens: [git, branch, -D]
+
+    - name: git-reflog-expire
+      because: "Empties the reflog, which is what every other git recovery depends on."
+      when:
+        tokens: [git, reflog, expire]
+
+    - name: git-filter-branch
+      because: "Rewrites every commit it touches, in place."
+      when:
+        tokens: [git, filter-branch]
+
+    # SQL arrives inside a quoted argument, so `text` rather than `tokens`. `DROP TABLE` is
+    # left to the judge: the temp-table and the users-table forms are the same shape.
+    - name: drop-a-database
+      because: "Drops an entire database or schema."
+      when:
+        text: ["drop database", "drop schema"]
+
+    - name: truncate-a-table
+      because: "Empties a table. There is no transaction to roll back afterwards."
+      when:
+        text: ["truncate table"]
 
   # Asked in a single call. Jev evaluates them in parallel, so seven questions cost
   # roughly what one does.
