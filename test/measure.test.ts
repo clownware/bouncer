@@ -218,7 +218,8 @@ describe("the printed report", () => {
   // model. A harness that could only report savings would never say so.
   it("says plainly when the cascade cost more than the reasoning pass alone", async () => {
     const out = formatMeasurement(await run([true, true], 0.5, new Scripted(true, { in: 1000, out: 100 })));
-    expect(out).toMatch(/cost \d+% MORE input tokens/);
+    // `<1%` when the judge's own tokens are all the cascade added, which is this case.
+    expect(out).toMatch(/cost (<1|\d+)% MORE input tokens/);
     expect(out).toContain("not worth running");
   });
 
@@ -230,5 +231,61 @@ describe("the printed report", () => {
     expect(formatMeasurement(await run([true], 0.5, new Scripted(true)))).toContain(
       "agreement with the fixture labels",
     );
+  });
+});
+
+describe("the report stays readable and stays honest", () => {
+  /** A reasoning backend named the way a real one is: a whole shell pipeline. */
+  class Piped implements ReasoningBackend {
+    readonly name =
+      "claude -p --output-format json \"$(cat)\" | jq -c '{answers: .a," +
+      " input_tokens: (.usage | .input_tokens + .cache_read_input_tokens)}'";
+    constructor(private readonly tokens: number) {}
+    async answer(request: ReasoningRequest): Promise<ReasoningResponse> {
+      return {
+        answers: Object.fromEntries(Object.keys(request.questions).map((q) => [q, 1])),
+        inputTokens: this.tokens,
+      };
+    }
+  }
+
+  it("puts a long command in a legend rather than in the cell", async () => {
+    const backend = new Piped(50_000);
+    const out = formatMeasurement(await run([true, true], 0.02, backend));
+
+    const row = out.split("\n").find((l) => l.startsWith("| reasoning |")) as string;
+    expect(row).toContain("| claude |");
+    expect(row).not.toContain("jq -c");
+    expect(out).toContain(`  claude = ${backend.name}`);
+  });
+
+  it("does not split a cascade's cell on a separator the command itself contains", async () => {
+    // The jq filter above adds two token fields, so its name contains " + ". Splitting the
+    // cascade's composed name on that separator would shred the command into fake backends.
+    const out = formatMeasurement(await run([true, true], 0.02, new Piped(50_000)));
+    const row = out.split("\n").find((l) => l.startsWith("| cascade |")) as string;
+    expect(row).toContain("| mock + claude |");
+    expect(row).not.toContain("cache_read_input_tokens");
+  });
+
+  it("says >99% rather than rounding a real spend up to 100% fewer", async () => {
+    // Judge 2 items at 10 tokens each against a reasoning pass at 50,000: 99.98% saved.
+    const out = formatMeasurement(await run([true, true], 0.02, new Piped(50_000)));
+    expect(out).toContain(">99% fewer input tokens");
+    expect(out).not.toContain("100% fewer");
+  });
+
+  it("still says 100% when the cascade genuinely escalated nothing", async () => {
+    // 0.02 settles every item, so the cascade calls the reasoning model zero times — but
+    // the mock still reports its own input tokens, so this only holds when they are absent.
+    const m = await measure(fixtures([true, true]), {
+      setName: "content",
+      set: SET,
+      mode: POLICY.mode,
+      adapter: { name: "free", async decide() { return { answers: { unsupported_claim: { type: "noul" as const, noul: 0.02 } }, latencyMs: 0, inputTokens: 0 }; } },
+      reasoning: new Piped(50_000),
+      timeoutMs: 1000,
+    });
+    expect(formatMeasurement(m)).toContain("100% fewer input tokens");
   });
 });

@@ -10795,13 +10795,22 @@ function formatMeasurement(m) {
   const pct = (n) => Number.isNaN(n) ? "     \u2014" : `${(n * 100).toFixed(1).padStart(5)}%`;
   const num = (n) => n === void 0 ? "\u2014" : n.toLocaleString("en-US");
   const per = (total, items) => total === void 0 || items === 0 ? "\u2014" : Math.round(total / items).toLocaleString("en-US");
+  const legend = /* @__PURE__ */ new Map();
   lines.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
   lines.push("| pass | by | accuracy | n | input | output | in/item |");
   lines.push("|---|---|---|---|---|---|---|");
+  const atoms = ["judge", "reasoning"].flatMap((n) => {
+    const found = m.passes.find((p) => p.name === n);
+    return found === void 0 ? [] : [found.by];
+  });
   for (const p of m.passes) {
     lines.push(
-      `| ${p.name} | ${p.by} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
+      `| ${p.name} | ${labelFor(p.by, legend, atoms)} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
     );
+  }
+  if (legend.size > 0) {
+    lines.push("");
+    for (const [short, full2] of legend) lines.push(`  ${short} = ${full2}`);
   }
   lines.push("");
   lines.push(
@@ -10816,10 +10825,12 @@ function formatMeasurement(m) {
     const points = `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} points of accuracy against the labels`;
     lines.push("");
     if (ratio <= 1) {
-      lines.push(`The cascade used ${((1 - ratio) * 100).toFixed(0)}% fewer input tokens than the reasoning pass, at ${points}.`);
+      const saved = (1 - ratio) * 100;
+      const savedText = cascade.inputTokens === 0 ? "100" : saved >= 99.5 ? ">99" : saved.toFixed(0);
+      lines.push(`The cascade used ${savedText}% fewer input tokens than the reasoning pass, at ${points}.`);
     } else {
       lines.push(
-        `The cascade cost ${((ratio - 1) * 100).toFixed(0)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
+        `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
         `At ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation it is not worth running: either the thresholds are too wide or the questions are not separating the batch.`
       );
     }
@@ -10848,6 +10859,27 @@ function formatMeasurement(m) {
   );
   return `${lines.join("\n")}
 `;
+}
+function moreText(ratio) {
+  const more = (ratio - 1) * 100;
+  return more < 0.5 ? "<1" : more.toFixed(0);
+}
+function labelFor(by, legend, names) {
+  const composed = names.join(" + ");
+  if (by === composed && names.length > 1) {
+    return names.map((name) => shortAtom(name, legend)).join(" + ");
+  }
+  return shortAtom(by, legend);
+}
+var MAX_CELL = 24;
+function shortAtom(atom, legend) {
+  if (atom.length <= MAX_CELL) return atom;
+  const program = (atom.trim().split(/\s/)[0] ?? atom).split("/").pop() ?? atom;
+  const base = program.length > 0 && program.length <= MAX_CELL ? program : atom.slice(0, MAX_CELL);
+  let short = base;
+  for (let n = 2; legend.has(short) && legend.get(short) !== atom; n++) short = `${base}#${n}`;
+  legend.set(short, atom);
+  return short;
 }
 
 // src/io/reasoning.ts

@@ -253,15 +253,32 @@ export function formatMeasurement(m: Measurement): string {
   const per = (total: number | undefined, items: number) =>
     total === undefined || items === 0 ? "—" : Math.round(total / items).toLocaleString("en-US");
 
+  const legend = new Map<string, string>();
+
   lines.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
   lines.push("| pass | by | accuracy | n | input | output | in/item |");
   lines.push("|---|---|---|---|---|---|---|");
 
+  // The atoms a cascade cell is composed of, in the order `measure()` joined them.
+  const atoms = ["judge", "reasoning"].flatMap((n) => {
+    const found = m.passes.find((p) => p.name === n);
+    return found === undefined ? [] : [found.by];
+  });
+
   for (const p of m.passes) {
     lines.push(
-      `| ${p.name} | ${p.by} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ` +
+      `| ${p.name} | ${labelFor(p.by, legend, atoms)} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ` +
         `${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`,
     );
+  }
+
+  // Any realistic reasoning command is a shell pipeline. Printed in the cell it turns the
+  // table into one unreadable line, and the table is the deliverable — so the cell gets a
+  // short name and the command is printed once, in full, underneath. Truncating in place
+  // would have been worse than either: a command you cannot read and cannot look up.
+  if (legend.size > 0) {
+    lines.push("");
+    for (const [short, full] of legend) lines.push(`  ${short} = ${full}`);
   }
 
   lines.push("");
@@ -290,13 +307,17 @@ export function formatMeasurement(m: Measurement): string {
     if (ratio <= 1) {
       // The sentence the whole table exists to support, with both halves in it. A token
       // saving stated without what it cost in accuracy is the number a vendor would print.
-      lines.push(`The cascade used ${((1 - ratio) * 100).toFixed(0)}% fewer input tokens than the reasoning pass, at ${points}.`);
+      // 99.86% rounds to "100% fewer", which reads as free. It is not free, and the one
+      // number this whole command exists to produce should not overstate itself by rounding.
+      const saved = (1 - ratio) * 100;
+      const savedText = cascade.inputTokens === 0 ? "100" : saved >= 99.5 ? ">99" : saved.toFixed(0);
+      lines.push(`The cascade used ${savedText}% fewer input tokens than the reasoning pass, at ${points}.`);
     } else {
       // The honest failure mode, and the reason the rate is printed next to the cost: past
       // some escalation rate, judging first and then re-asking costs more than just asking.
       // A harness that could only report savings would never say so.
       lines.push(
-        `The cascade cost ${((ratio - 1) * 100).toFixed(0)}% MORE input tokens than simply running the` +
+        `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the` +
           ` reasoning pass on everything, at ${points}.`,
         `At ${m.judged === 0 ? "this" : `${((m.escalated / m.judged) * 100).toFixed(0)}%`} escalation it is not` +
           " worth running: either the thresholds are too wide or the questions are not separating the batch.",
@@ -334,4 +355,47 @@ export function formatMeasurement(m: Measurement): string {
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+/** Rounds away from zero, so a cascade that cost more never reports costing 0% more. */
+function moreText(ratio: number): string {
+  const more = (ratio - 1) * 100;
+  return more < 0.5 ? "<1" : more.toFixed(0);
+}
+
+/**
+ * The name for the `by` cell, registering anything shortened in the legend.
+ *
+ * A backend name like `mock` or `jev` is already short and passes through untouched. A
+ * reasoning command is a whole shell pipeline, so it becomes the basename of the program it
+ * starts with.
+ *
+ * `names` is how the cascade's cell gets both of its halves shortened. It is built from the
+ * two backends the cascade was composed from, never by splitting the cascade's own string on
+ * the `" + "` this module joined it with: a reasoning command is arbitrary shell and a `jq`
+ * filter that adds two token fields contains that exact separator.
+ */
+function labelFor(by: string, legend: Map<string, string>, names: readonly string[]): string {
+  const composed = names.join(" + ");
+  if (by === composed && names.length > 1) {
+    return names.map((name) => shortAtom(name, legend)).join(" + ");
+  }
+  return shortAtom(by, legend);
+}
+
+const MAX_CELL = 24;
+
+function shortAtom(atom: string, legend: Map<string, string>): string {
+  if (atom.length <= MAX_CELL) return atom;
+
+  const program = (atom.trim().split(/\s/)[0] ?? atom).split("/").pop() ?? atom;
+  const base = program.length > 0 && program.length <= MAX_CELL ? program : atom.slice(0, MAX_CELL);
+
+  // Two different commands starting with the same program would otherwise share one legend
+  // entry and the table would claim they were the same pass.
+  let short = base;
+  for (let n = 2; legend.has(short) && legend.get(short) !== atom; n++) short = `${base}#${n}`;
+
+  legend.set(short, atom);
+  return short;
 }

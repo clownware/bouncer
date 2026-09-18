@@ -334,6 +334,7 @@ above — `seatbelt` if you run `--dangerously-skip-permissions`.
 
 Then watch it: [docs/dogfooding.md](docs/dogfooding.md) covers where the log lives, how it
 rotates, and the queries worth having.
+
 ## Batch judging: `bouncer judge`
 
 The gate is the demo. This is where the bill goes down.
@@ -435,11 +436,23 @@ bouncer measure fixtures/judge-example.jsonl \
 For a real run, point `--reasoning` at whatever CLI you already have. With Claude Code:
 
 ```
-export BOUNCER_REASONING_CMD='claude -p "$(cat)
-Answer only with {\"answers\":{\"<question>\":true|false}} for every question above."'
+export BOUNCER_REASONING_CMD='claude -p --output-format json "$(cat)
+Reply with only {\"answers\":{\"<name>\":true|false}}, one entry per question above." \
+  | jq -c "{answers: (.result | sub(\"^[^{]*\";\"\") | sub(\"[^}]*$\";\"\") | fromjson | .answers),
+            input_tokens: (.usage | .input_tokens + .cache_creation_input_tokens + .cache_read_input_tokens),
+            output_tokens: .usage.output_tokens}"'
 
 bouncer measure my-batch.jsonl --set content --backend jev
 ```
+
+Two things in that `jq` filter are load-bearing rather than decoration. The two `sub`s throw
+away everything outside the outermost braces, because a model that wraps its answer in a
+```` ```json ```` fence is the normal case and not an error. And the input count is
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`, because Claude Code
+reports cached input separately: on a warm session `usage.input_tokens` alone can read `2`
+against a real 48,644, which would make the `reasoning` row's bill look like nothing and the
+cascade look like it saved nothing. Whatever CLI you point at, check that its token fields
+mean what the column says before believing a row.
 
 Tokens are reported; money is not. A price per million is a number that goes stale, and
 putting one in the code would be the same mistake as putting a threshold there.
