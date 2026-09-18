@@ -196,12 +196,12 @@ describe("the compiled-policy cache", () => {
       "{backend:string,calibration:{accuracyBar:number,confidenceFloor:number}," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
-        "redactsAs:[string],text:[string],tokens:[string]}}]," +
+        "redactsAs:[string],text:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
         "index:number,verdict:string}],tools:[string]}," +
         "mode:string,onError:string,skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(1);
+    expect(CACHE_VERSION).toBe(2);
   });
 });

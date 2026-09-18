@@ -27,8 +27,12 @@ import { loadPolicy, type LoadResult } from "../engine/policy.js";
  * absent rule list is the failure this file must not introduce. `test/policycache.test.ts`
  * pins the compiled shape against this number, so adding a field to `Policy` fails a test
  * until the version moves.
+ *
+ * 1 → 2: `gate.probeQuestions` (ADR/PR #19). The first time this guard fired, and on the
+ * commit after the cache landed — a cache entry written by the previous build deserialises
+ * into a policy with no probe questions at all, which is silent rather than noisy.
  */
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 
 const DIR = "policy-cache";
 
