@@ -8771,6 +8771,16 @@ async function score(fixtures, policy, adapter, onProgress) {
       ...fixture.target_exists !== void 0 ? { targetExists: fixture.target_exists } : {}
     });
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
+    const answers = {};
+    for (const name of Object.keys(questions)) {
+      const value = noulProbability(response.answers[name]);
+      if (value !== void 0) answers[name] = value;
+    }
+    const decision = evaluate(policy, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN
+    };
     for (const [question, expected] of Object.entries(fixture.expect)) {
       const p = noulProbability(response.answers[question]);
       if (p === void 0) continue;
@@ -8782,7 +8792,9 @@ async function score(fixtures, policy, adapter, onProgress) {
         p,
         predicted,
         correct: predicted === expected,
-        confidence: Math.max(p, 1 - p)
+        confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason
       });
     }
     onProgress?.(i + 1, fixtures.length);
@@ -8814,6 +8826,42 @@ function report(scored, calibration) {
     misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
   })).sort((a, b) => a.question.localeCompare(b.question));
 }
+function disagreements(scored) {
+  const byFixture = /* @__PURE__ */ new Map();
+  for (const s of scored) {
+    const list = byFixture.get(s.fixture.id) ?? [];
+    list.push(s);
+    byFixture.set(s.fixture.id, list);
+  }
+  const out = [];
+  for (const items of byFixture.values()) {
+    const first = items[0];
+    if (first === void 0) continue;
+    const anyTrue = items.some((i) => i.expected);
+    const asks = first.verdict !== "allow";
+    if (anyTrue && !asks) {
+      const closest = items.filter((i) => i.expected).sort((a, b) => b.p - a.p)[0] ?? first;
+      out.push({
+        fixture: first.fixture,
+        kind: "missed",
+        verdict: first.verdict,
+        question: closest.question,
+        p: closest.p
+      });
+    } else if (!anyTrue && asks) {
+      out.push({
+        fixture: first.fixture,
+        kind: "friction",
+        verdict: first.verdict,
+        question: first.verdictReason.question,
+        p: first.verdictReason.p
+      });
+    }
+  }
+  return out.sort(
+    (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id)
+  );
+}
 function gateResult(items, calibration) {
   const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
   const correct = confident.filter((i) => i.correct).length;
@@ -8823,7 +8871,7 @@ function gateResult(items, calibration) {
   const accuracy = correct / confident.length;
   return { n: confident.length, correct, accuracy, passes: accuracy >= calibration.accuracyBar };
 }
-function formatReport(reports, backend, calibration) {
+function formatReport(reports, backend, calibration, scored = []) {
   const lines = [];
   const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
   const gatePct = (n) => Number.isNaN(n) ? "    \u2014" : `${(n * 100).toFixed(1).padStart(4)}%`;
@@ -8849,6 +8897,24 @@ function formatReport(reports, backend, calibration) {
     "",
     failing.length === 0 ? `Every question clears the bar (${reports.length} of ${reports.length}).` : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`
   );
+  const disagreed = disagreements(scored);
+  lines.push("", "What the policy would actually do, where that differs from the labels:", "");
+  if (disagreed.length === 0) {
+    lines.push("  Nothing. Every fixture's verdict matches its labels.");
+  } else {
+    for (const d of disagreed) {
+      lines.push(
+        d.kind === "missed" ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}` : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${d.question} ${d.p.toFixed(2)}`
+      );
+    }
+    lines.push(
+      "",
+      "  `missed` is a fixture the labels say should prompt that the rules allow; `friction`",
+      "  is one they say should not that the rules prompt on. Accuracy above is measured at a",
+      "  0.5 boundary and the rules fire at their own thresholds, so a question can be 100%",
+      "  accurate and still appear here."
+    );
+  }
   const all = reports.flatMap((r) => r.misses);
   if (all.length > 0) {
     lines.push("", `Disagreements (${all.length}), most confident first:`, "");
@@ -8926,7 +8992,7 @@ async function calibrate(args, write2) {
 `);
     return 0;
   }
-  write2(formatReport(reports, backend, resolved.policy.calibration));
+  write2(formatReport(reports, backend, resolved.policy.calibration, scored));
   return 0;
 }
 

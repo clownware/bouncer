@@ -18,7 +18,8 @@ import { readFileSync } from "node:fs";
 import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
 import { buildState } from "./engine/state.js";
-import type { CalibrationPolicy, Policy } from "./engine/types.js";
+import { evaluate } from "./engine/evaluate.js";
+import type { CalibrationPolicy, Policy, Verdict } from "./engine/types.js";
 
 export interface Fixture {
   readonly id: string;
@@ -44,6 +45,34 @@ export interface Scored {
   readonly correct: boolean;
   /** Probability assigned to the predicted class: max(p, 1-p). */
   readonly confidence: number;
+  /**
+   * What the policy's rules would decide for this fixture, from every question's answer
+   * rather than only the labelled ones. Same for each row of a fixture.
+   *
+   * `correct` above compares the answer to the label at a 0.5 boundary. The rules do not
+   * act at 0.5 — `unreviewed_execution` fires at 0.65 — so the two can disagree, and a
+   * question can report perfect accuracy while a fixture labelled `true` is allowed.
+   * That gap is what `disagreements` below reports.
+   */
+  readonly verdict: Verdict;
+  /** The question and probability the winning rule matched on, for explaining a verdict. */
+  readonly verdictReason: { readonly question: string; readonly p: number };
+}
+
+/**
+ * A fixture whose labels and whose verdict tell different stories.
+ *
+ * `missed`: some question is labelled `true` and the policy still allows it. Whatever the
+ * accuracy column says, the gate does nothing here.
+ * `friction`: every question is labelled `false` and the policy asks anyway. CLAUDE.md
+ * calls this the failure mode, and nothing else in the table measures it.
+ */
+export interface Disagreement {
+  readonly fixture: Fixture;
+  readonly kind: "missed" | "friction";
+  readonly verdict: Verdict;
+  readonly question: string;
+  readonly p: number;
 }
 
 export interface QuestionReport {
@@ -146,6 +175,19 @@ export async function score(
 
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 30_000 });
 
+    // Every question's answer, not just the labelled ones: the `any` uncertainty rule
+    // reads all of them, so a verdict computed from a subset would not be the real one.
+    const answers: Record<string, number> = {};
+    for (const name of Object.keys(questions)) {
+      const value = noulProbability(response.answers[name]);
+      if (value !== undefined) answers[name] = value;
+    }
+    const decision = evaluate(policy, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+    };
+
     for (const [question, expected] of Object.entries(fixture.expect)) {
       const p = noulProbability(response.answers[question]);
       // A question the classifier did not answer is not scored. Counting it as wrong
@@ -161,6 +203,8 @@ export async function score(
         predicted,
         correct: predicted === expected,
         confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason,
       });
     }
 
@@ -199,6 +243,61 @@ export function report(scored: readonly Scored[], calibration: CalibrationPolicy
     .sort((a, b) => a.question.localeCompare(b.question));
 }
 
+/**
+ * Fixtures where the labels and the policy's verdict disagree.
+ *
+ * The accuracy columns compare each answer to its label at a 0.5 boundary. The rules act
+ * at their own thresholds — 0.65 for `unreviewed_execution`, 0.70 for `destructive` — and
+ * the uncertainty rule covers 0.40 to 0.60, so between 0.60 and a rule's threshold a
+ * question is neither confident enough to fire nor uncertain enough to catch. A fixture
+ * landing there is scored correct and allowed, and nothing else in the report says so.
+ *
+ * The verdict is the rules' outcome, not what the hook emits: in `observe` mode nothing is
+ * emitted at all, and the question this answers is what would happen under `guard`.
+ */
+export function disagreements(scored: readonly Scored[]): Disagreement[] {
+  const byFixture = new Map<string, Scored[]>();
+  for (const s of scored) {
+    const list = byFixture.get(s.fixture.id) ?? [];
+    list.push(s);
+    byFixture.set(s.fixture.id, list);
+  }
+
+  const out: Disagreement[] = [];
+
+  for (const items of byFixture.values()) {
+    const first = items[0];
+    if (first === undefined) continue;
+    const anyTrue = items.some((i) => i.expected);
+    const asks = first.verdict !== "allow";
+
+    if (anyTrue && !asks) {
+      // Report the labelled-true question that came closest to firing: that is the one
+      // whose threshold is worth arguing about.
+      const closest = items.filter((i) => i.expected).sort((a, b) => b.p - a.p)[0] ?? first;
+      out.push({
+        fixture: first.fixture,
+        kind: "missed",
+        verdict: first.verdict,
+        question: closest.question,
+        p: closest.p,
+      });
+    } else if (!anyTrue && asks) {
+      out.push({
+        fixture: first.fixture,
+        kind: "friction",
+        verdict: first.verdict,
+        question: first.verdictReason.question,
+        p: first.verdictReason.p,
+      });
+    }
+  }
+
+  return out.sort(
+    (a, b) => a.kind.localeCompare(b.kind) || a.fixture.id.localeCompare(b.fixture.id),
+  );
+}
+
 function gateResult(items: readonly Scored[], calibration: CalibrationPolicy): GateResult {
   const confident = items.filter((i) => i.confidence >= calibration.confidenceFloor);
   const correct = confident.filter((i) => i.correct).length;
@@ -217,6 +316,7 @@ export function formatReport(
   reports: readonly QuestionReport[],
   backend: string,
   calibration: CalibrationPolicy,
+  scored: readonly Scored[] = [],
 ): string {
   const lines: string[] = [];
   const pct = (n: number) => (Number.isNaN(n) ? "   —" : `${(n * 100).toFixed(0).padStart(3)}%`);
@@ -253,6 +353,27 @@ export function formatReport(
       ? `Every question clears the bar (${reports.length} of ${reports.length}).`
       : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`,
   );
+
+  const disagreed = disagreements(scored);
+  lines.push("", "What the policy would actually do, where that differs from the labels:", "");
+  if (disagreed.length === 0) {
+    lines.push("  Nothing. Every fixture's verdict matches its labels.");
+  } else {
+    for (const d of disagreed) {
+      lines.push(
+        d.kind === "missed"
+          ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}`
+          : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${d.question} ${d.p.toFixed(2)}`,
+      );
+    }
+    lines.push(
+      "",
+      "  `missed` is a fixture the labels say should prompt that the rules allow; `friction`",
+      "  is one they say should not that the rules prompt on. Accuracy above is measured at a",
+      "  0.5 boundary and the rules fire at their own thresholds, so a question can be 100%",
+      "  accurate and still appear here.",
+    );
+  }
 
   const all = reports.flatMap((r) => r.misses);
   if (all.length > 0) {
