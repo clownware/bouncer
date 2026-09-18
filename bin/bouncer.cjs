@@ -8745,7 +8745,7 @@ var import_node_path4 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs2 = require("node:fs");
 var import_node_path3 = require("node:path");
-var CACHE_VERSION = 1;
+var CACHE_VERSION = 2;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
