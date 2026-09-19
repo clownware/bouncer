@@ -1,6 +1,6 @@
 # ADR-007: Cache the compiled policy on disk, keyed on the policy text
 
-- **Status:** accepted
+- **Status:** accepted, with a measurement consequence added on 2026-09-19, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.2
 - **Reverses:** ADR-002, item 2 — "Caching the parsed policy as JSON is not worth doing …
@@ -111,3 +111,35 @@ have to bump a cache version to do it.
   code; cached, the same path runs at 53 ms median. Whether the local default becomes a
   tighter number against the cached path, or stops being a gate, is its own decision. CI's
   gate is 150 ms and is unaffected.
+
+## What this costs a paired bench (added 2026-09-19)
+
+`CACHE_VERSION` is part of the key, so two bundles built either side of a bump share no
+cached policy. That is correct, and it has a consequence nothing said out loud until a
+thread tripped over it: `scripts/bench.mjs --against` gave both arms one scratch
+`CLAUDE_PLUGIN_DATA`, so the two bundles wrote the same entry and rejected each other's on
+every call. Both arms then ran uncached, and the interleaving the flag exists for kept that
+invisible — the pairing still cancelled machine drift, so the numbers looked as trustworthy
+as any other.
+
+Measured here on 2026-09-19, `8384ad0` against `9d0b90c`, 60 pairs, the same machine within
+the same minute:
+
+| | before p50 | after p50 | paired median |
+|---|---|---|---|
+| one data directory per arm | 72.6 ms | 73.9 ms | +1.3 ms |
+| one shared directory | 103.6 ms | 108.1 ms | +4.1 ms |
+
+Two things are wrong in the second row and only one of them is the obvious one. The
+absolute is about 32 ms high, which is the cache doing its job being undone. And the
+*difference* is the cold-parse difference rather than the warm one, which is larger here —
+the same pair reads +5.5 ms with `BOUNCER_NO_CACHE=1` set honestly on both arms. So the
+shared directory does not merely add a constant to both sides; it silently swaps the
+question for a different one.
+
+The fix is one data directory per arm, which is also what a real installation looks like:
+one bundle, one entry, warm. `--against` now does that, and prints each bundle's
+`CACHE_VERSION` so a cross-version comparison says so in its own header.
+
+The general rule, which is not specific to this cache: an arm's *environment* is part of
+the control. Interleaving equalises the machine, not a resource the two arms fight over.
