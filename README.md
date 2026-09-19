@@ -309,7 +309,21 @@ probability, whose false-positive rate is a property of the model's day.
 
 ## Install
 
-Two commands inside Claude Code. The repository is its own single-plugin marketplace.
+The repository is its own single-plugin marketplace. Merge two keys into
+`~/.claude/settings.json` — keeping whatever marketplaces and plugins it already lists —
+and Claude Code installs it at the next session start, in the terminal and the desktop app
+alike:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
+  },
+  "enabledPlugins": { "bouncer@bouncer": true }
+}
+```
+
+Or, at a Claude Code prompt rather than a shell prompt, the same thing as two commands:
 
 ```
 /plugin marketplace add clownware/bouncer
@@ -329,9 +343,10 @@ takes only `PATH` and its own variables out of your profile, so the key has to g
 key every call takes the error path, which emits nothing — so a missing key is invisible
 unless you look at `/bouncer:status`, which says so on the backend line.
 
-The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed in the
-terminal is already there; its **Chat** tab is a different product and runs no hooks at
-all. [docs/dogfooding.md](docs/dogfooding.md) has the detail.
+The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed anywhere
+is already there; its **Chat** tab is a different product and runs no hooks at all.
+[docs/dogfooding.md](docs/dogfooding.md) has the detail, including why the settings keys
+rather than the plugin browser are what registers a marketplace.
 
 It ships in `observe`, which emits nothing at all. To change that, copy the policy file
 `/bouncer:status` printed to `~/.bouncer/bouncer.yaml` and edit the `mode:` line; the
