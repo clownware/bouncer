@@ -8817,6 +8817,13 @@ function decideHard(policy, rule) {
   };
 }
 function evaluate(set, mode, answers) {
+  const decision = applyRules(set, mode, answers);
+  if (decision.verdict !== "allow") return decision;
+  const missing = Object.keys(set.questions).filter((name) => answers[name] === void 0);
+  if (missing.length === 0) return decision;
+  return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: void 0 };
+}
+function applyRules(set, mode, answers) {
   for (const rule of set.rules) {
     if (rule.condition === void 0) {
       return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
@@ -9246,6 +9253,9 @@ async function runPreToolUse(payload, options = {}) {
       else answers[name] = p;
     }
     const decision = evaluate(policy.gate, policy.mode, answers);
+    if (decision.reason.kind === "unanswered") {
+      throw new AdapterError("malformed_response", `no answer for: ${decision.reason.missing.join(", ")}`);
+    }
     const escalation = escalationFor(policy.gate, decision, answers, itemId);
     const next = record(breakerState, {
       failed: false,
@@ -9328,6 +9338,8 @@ function explain(decision, policy, escalation) {
       return `bouncer: skipped in ${reason.permissionMode} mode.`;
     case "no-rule-matched":
       return "bouncer: no rule matched.";
+    case "unanswered":
+      return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
   }
 }
 function verdictFields(decision) {
@@ -9578,6 +9590,8 @@ function describe(record2) {
       return `bouncer skips ${reason.permissionMode} mode`;
     case "no-rule-matched":
       return "no rule matched and the policy has no default";
+    case "unanswered":
+      return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
   }
 }
 function bar(p) {
@@ -9747,7 +9761,7 @@ function scoreAnswered(answered, policy, set, setName) {
   const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
   const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
   const reason = hard !== void 0 ? { kind: "hard-rule", name: hard.name, because: hard.because } : decision?.reason ?? { kind: "no-rule-matched" };
-  const verdictReason = reason.kind === "hard-rule" ? { question: reason.name, p: Number.NaN, source: "hard_rule" } : {
+  const verdictReason = reason.kind === "hard-rule" ? { question: reason.name, p: Number.NaN, source: "hard_rule" } : reason.kind === "unanswered" ? { question: reason.missing.join(", "), p: Number.NaN, source: "unanswered" } : {
     question: reason.kind === "rule" ? reason.question : "default",
     p: reason.kind === "rule" ? reason.p : Number.NaN,
     source: "rule"
@@ -9873,6 +9887,7 @@ function disagreements(scored) {
   for (const items of byFixture.values()) {
     const first = items[0];
     if (first === void 0) continue;
+    if (first.verdictReason.source === "unanswered") continue;
     const anyTrue = items.some((i) => i.expected);
     const asks = first.verdict !== "allow";
     if (anyTrue && !asks) {
@@ -10434,6 +10449,16 @@ async function judgeOne(id, state, questions, probeNames, options) {
     else answers[name] = p;
   }
   const decision = evaluate(options.set, options.mode, answers);
+  if (decision.reason.kind === "unanswered") {
+    return {
+      ...base,
+      verdict: "allow",
+      reason: { kind: "no-rule-matched" },
+      answers: {},
+      latencyMs: response.latencyMs,
+      error: { kind: "malformed_response", message: `no answer for: ${decision.reason.missing.join(", ")}` }
+    };
+  }
   const escalation = escalationFor(options.set, decision, answers, id);
   return {
     ...base,

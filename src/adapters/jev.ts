@@ -157,8 +157,9 @@ function parseResponse(payload: unknown, latencyMs: number): DecideResponse {
   for (const [name, value] of Object.entries(rawAnswers as Record<string, unknown>)) {
     const answer = parseAnswer(value);
     // A single unreadable answer is dropped rather than failing the whole call. The rule
-    // evaluator treats a missing answer as absence of evidence and skips that rule, which
-    // is the right reading — four good answers still decide.
+    // evaluator skips a rule whose answer is missing, so four good answers still decide an
+    // `ask` or a `deny`. They cannot decide an `allow`: `evaluate` refuses one while any
+    // question is unanswered, which is what makes dropping an answer here safe.
     if (answer !== undefined) answers[name] = answer;
   }
 

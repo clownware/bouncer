@@ -195,6 +195,14 @@ export async function runPreToolUse(
 
     const decision = evaluate(policy.gate, policy.mode, answers);
 
+    // The classifier answered part of the request and the rest would have been an allow.
+    // That is the adapter failing, not a judgment, so it takes the error path with every
+    // other failure: nothing emitted, the breaker counts it, and the log line carries an
+    // error and no answers — a half-answered call is not evidence about the classifier.
+    if (decision.reason.kind === "unanswered") {
+      throw new AdapterError("malformed_response", `no answer for: ${decision.reason.missing.join(", ")}`);
+    }
+
     // The escalation manifest item, from the same answers and the same rules. It adds a
     // second pass over a handful of rules and no I/O, and it is what makes "how often did
     // the judge need help" answerable from the log rather than by eye. See docs/adr/008.
@@ -324,6 +332,8 @@ function explain(decision: Decision, policy: Policy, escalation?: EscalationItem
       return `bouncer: skipped in ${reason.permissionMode} mode.`;
     case "no-rule-matched":
       return "bouncer: no rule matched.";
+    case "unanswered":
+      return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
   }
 }
 
