@@ -34,7 +34,7 @@ function decide(command: string): { source: string; verdict: string } {
   const payload = JSON.stringify({
     session_id: "00000000-0000-0000-0000-000000000000",
     transcript_path: "/home/user/.claude/transcript.jsonl",
-    cwd: process.cwd(),
+    cwd: "/home/user/project",
     permission_mode: "default",
     hook_event_name: "PreToolUse",
     tool_name: "Bash",
