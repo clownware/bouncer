@@ -116,10 +116,12 @@ function summarize(records: readonly DecisionRecord[]): string[] {
     );
   }
 
-  // Warm-up is excluded: it reflects connection setup, not steady-state behaviour, and
-  // including it makes a healthy session look slow.
+  // Every call, the first of a session included. It used to be left out as connection
+  // setup the rest of the session would not pay, but the hook is a process per call and
+  // pays it every time — and this is the line the README sends people to for what they
+  // actually wait for. The first call is part of that whether or not it is typical.
   const adapterCalls = records
-    .filter((r) => r.warmup !== true && typeof r.latency_ms.adapter === "number")
+    .filter((r) => typeof r.latency_ms.adapter === "number")
     .map((r) => r.latency_ms.adapter as number)
     .sort((a, b) => a - b);
 

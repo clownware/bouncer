@@ -44,6 +44,21 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+describe("classifier latency", () => {
+  // The user waited for the first call of the session too. Leaving it out made sense while
+  // it was believed to be the only cold one; from the hook, every call is.
+  it("counts the first call of a session along with the rest", () => {
+    const timed = (adapter: number, warmup = false): DecisionRecord => ({
+      ...record("jev", "allow"),
+      latency_ms: { total: adapter + 5, adapter },
+      ...(warmup ? { warmup: true } : {}),
+    });
+    seed([timed(900, true), timed(400), timed(400)]);
+
+    expect(status()).toContain("Classifier latency over 3 calls: p50 400ms, p95 900ms");
+  });
+});
+
 describe("mock-backend records", () => {
   // The bench wrote seventy of these into a real log, and status reported them as a 100%
   // ask rate with a sub-millisecond classifier. The mock scores from fixed keyword

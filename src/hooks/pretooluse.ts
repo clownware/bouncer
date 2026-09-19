@@ -111,7 +111,7 @@ export async function runPreToolUse(
     // three reasons the log exists (answer "why was this prompted", seed fixtures from real
     // history, re-score after a policy change) all need the command, and the classifier
     // never saw this one. Building the state costs a fraction of a millisecond, against the
-    // ~190 ms adapter call the hit just skipped.
+    // several hundred the adapter call it just skipped would have (docs/adr/003).
     if (early.reason.kind === "hard-rule") {
       const hardState = buildState({
         toolName: tool,

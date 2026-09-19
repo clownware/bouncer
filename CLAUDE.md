@@ -119,6 +119,12 @@ re-verify rather than assuming the note is stale.
 - `choice` takes up to 255 options; `score` takes 2 to 10 ordered levels. Every question in
   the policy is a `noul` today. If one becomes a `score`, that is the range it has.
 - Pricing is $0.042 per million input tokens, output free. Cost is not a design constraint.
+- **The hook never gets a warm connection.** It is a process per tool call, so every call
+  pays TCP and TLS setup: ~193 ms of a ~437 ms median adapter call, measured from an
+  installed plugin's log on 2026-09-18 (p95 549 ms, 66 calls, ~95 ms from the host). The
+  "~190 ms steady state" in older notes came from `scripts/jev-latency.mjs` looping inside
+  one process over a kept-alive connection. Do not quote a latency measured that way as
+  the hook's; read `latency_ms.adapter` out of a real `decisions.jsonl` instead.
 - Limits: 64k tokens for state + all questions, 32k for state + longest question.
   Rate limits documented as dynamically adjusting — do not hardcode them.
 - `jev-1.13` reads negations and scoping words literally, and is unreliable at counting,

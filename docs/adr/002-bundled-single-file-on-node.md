@@ -55,6 +55,14 @@ A long-lived process on a unix socket would cut per-call overhead to single-digi
 also introduces lifecycle, staleness, orphaned-process and multi-session-contention
 problems, for a saving that is small next to the adapter call. Not for v0.1.
 
+> **The premise changed on 2026-09-18; the decision has not been revisited.** This priced a
+> daemon's saving as process overhead alone. A long-lived process would also keep its
+> connection to the classifier, and a process per call cannot: measured from an installed
+> plugin, ~190 ms of a ~437 ms adapter call is TCP and TLS setup paid again on every tool
+> call (ADR-003, corrected the same day). So the saving is not small next to the adapter
+> call — it is most of half of it. The lifecycle problems listed above are exactly as real
+> as they were, which is why this is a note and not a reversal.
+
 ## Consequences
 
 - `bin/bouncer.cjs` is a build artifact **in git**. It must be rebuilt and committed
