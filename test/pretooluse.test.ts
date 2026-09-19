@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { JevAdapter } from "../src/adapters/jev.js";
 import { MockAdapter } from "../src/adapters/mock.js";
 import { AdapterError } from "../src/adapters/types.js";
 import { runPreToolUse } from "../src/hooks/pretooluse.js";
@@ -110,6 +111,44 @@ describe("full mode", () => {
   it("emits allow, suppressing the prompt", async () => {
     const output = await runPreToolUse(payload(), { adapter: harmless });
     expect(output?.hookSpecificOutput?.permissionDecision).toBe("allow");
+  });
+
+  // The mock answers every question it is asked, so nothing above can see this. A real
+  // classifier can return part of the fan-out, and the jev adapter keeps whatever parsed.
+  //
+  // The real adapter over a stubbed response, so both halves of the hole are in the test:
+  // the adapter dropping `secrets` as unreadable, and the evaluator walking past the rest.
+  const partial = (p: number) =>
+    new JevAdapter({
+      apiKey: "test-key",
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({ answers: { destructive: { type: "noul", noul: p }, secrets: { type: "noul", noul: "very" } } }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        )) as typeof globalThis.fetch,
+    });
+
+  // The fail-open this guards: one low answer, six questions never assessed, and the hook
+  // used to emit `allow` — bouncer approving a call on the strength of what it never asked.
+  it("does not emit allow when the classifier answered only part of the request", async () => {
+    const output = await runPreToolUse(payload(), { adapter: partial(0.01) });
+    expect(output?.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("logs a partial response as an error rather than a judgment", async () => {
+    await runPreToolUse(payload(), { adapter: partial(0.01) });
+    const [record] = logLines();
+    expect(record.emitted).toBeNull();
+    expect(record.error.kind).toBe("malformed_response");
+    expect(record.error.message).toContain("secrets");
+    expect(record.error.message).not.toContain("destructive");
+    // No answers on the line, so `calibrate --from` sets it aside as unscorable.
+    expect(record.answers).toBeUndefined();
+  });
+
+  it("still asks on a partial response whose one answer clears a threshold", async () => {
+    const output = await runPreToolUse(payload(), { adapter: partial(0.95) });
+    expect(output?.hookSpecificOutput?.permissionDecision).toBe("ask");
   });
 });
 

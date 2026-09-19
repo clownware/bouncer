@@ -124,10 +124,90 @@ describe("evaluate", () => {
     expect(decision.reason).toMatchObject({ question: "secrets" });
   });
 
-  it("falls through to the default when no question was answered at all", () => {
-    const decision = evaluate(GUARD.gate, GUARD.mode, {});
-    expect(decision.verdict).toBe("allow");
-    expect(decision.reason).toMatchObject({ kind: "rule", question: "default" });
+  // Skipping is only safe for the verdicts that stop. Every skipped rule brings the walk a
+  // step nearer `default: allow`, so a response carrying one low answer used to be approved
+  // with the rest never assessed: in `full` mode that was bouncer emitting `allow` on
+  // `destructive: 0.01` alone. An allow needs every question answered.
+  describe("an allow reached with questions unanswered", () => {
+    const table: ReadonlyArray<{
+      readonly name: string;
+      readonly answers: Record<string, number>;
+      readonly missing: readonly string[];
+    }> = [
+      { name: "nothing answered at all", answers: {}, missing: ["destructive", "secrets", "prod"] },
+      { name: "one confident low answer", answers: { destructive: 0.01 }, missing: ["secrets", "prod"] },
+      { name: "all but one", answers: { destructive: 0.01, secrets: 0.02 }, missing: ["prod"] },
+      // 0.65 clears the uncertainty band and sits under its own threshold, so it would allow.
+      { name: "an answer just under its threshold", answers: { destructive: 0.65, prod: 0.1 }, missing: ["secrets"] },
+    ];
+
+    for (const { name, answers, missing } of table) {
+      it(`is refused: ${name}`, () => {
+        const decision = evaluate(GUARD.gate, "full", answers);
+        expect(decision.verdict).toBe("ask");
+        expect(decision.reason).toEqual({ kind: "unanswered", missing });
+      });
+    }
+
+    // The refusal is an error path, and an error path never adds a prompt. `full` is the
+    // column that matters most: it is the only mode that ever emitted the allow.
+    it.each(["observe", "guard", "full", "seatbelt"] as const)("emits nothing in %s mode", (mode) => {
+      expect(evaluate(GUARD.gate, mode, { destructive: 0.01 }).emit).toBeUndefined();
+    });
+
+    it("still allows, and in full mode still emits it, once every question is answered", () => {
+      const decision = evaluate(GUARD.gate, "full", { destructive: 0.01, secrets: 0.02, prod: 0.03 });
+      expect(decision.verdict).toBe("allow");
+      expect(decision.emit).toBe("allow");
+    });
+
+    // An ask rests on the answer that did arrive, so a partial response can still stop.
+    it("leaves an ask from a partial response alone", () => {
+      const decision = evaluate(GUARD.gate, "full", { destructive: 0.95 });
+      expect(decision.reason).toMatchObject({ kind: "rule", question: "destructive" });
+      expect(decision.emit).toBe("ask");
+    });
+
+    it("leaves an ask from the uncertainty band alone", () => {
+      const decision = evaluate(GUARD.gate, "full", { secrets: 0.5 });
+      expect(decision.reason).toMatchObject({ kind: "rule", question: "secrets", p: 0.5 });
+    });
+
+    const ALLOW_FIRST = policyFrom(`
+version: 1
+mode: full
+gate:
+  tools: [Bash]
+  questions:
+    routine:
+      instructions: "It is routine work."
+    destructive:
+      instructions: "It destroys something."
+  probe_questions:
+    routine_v2:
+      instructions: "A candidate rewording."
+  rules:
+    - when: { destructive: { p: ">=0.70" } }
+      then: ask
+    - when: { routine: { p: ">=0.90" } }
+      then: allow
+    - default: ask
+`);
+
+    // Not only `default`: an allow rule matched on real evidence is still an allow reached
+    // past a rule that was skipped for want of an answer.
+    it("refuses an explicit allow rule that sits below a skipped rule", () => {
+      const decision = evaluate(ALLOW_FIRST.gate, "full", { routine: 0.97 });
+      expect(decision.reason).toEqual({ kind: "unanswered", missing: ["destructive"] });
+      expect(decision.emit).toBeUndefined();
+    });
+
+    // Probes are split out before `evaluate` is called, so one can never be missing.
+    it("does not count a probe question as unanswered", () => {
+      const decision = evaluate(ALLOW_FIRST.gate, "full", { routine: 0.97, destructive: 0.02 });
+      expect(decision.verdict).toBe("allow");
+      expect(decision.emit).toBe("allow");
+    });
   });
 
   it("emits nothing when no rule matched and there is no default", () => {
@@ -362,6 +442,7 @@ describe("the shipped default policy, end to end", () => {
       egress: 0.02,
       prod: 0.02,
       sensitive_target: 0.03,
+      unreviewed_execution: 0.02,
     });
     expect(decision.verdict).toBe("allow");
   });

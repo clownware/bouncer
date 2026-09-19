@@ -1,6 +1,7 @@
 # ADR-003: Fail to the prompt, observe by default, and ship no deny rules
 
-- **Status:** accepted; the steady-state latency figures corrected on 2026-09-18, in place
+- **Status:** accepted; the steady-state latency figures and the list of failure paths
+  corrected on 2026-09-18, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -13,6 +14,22 @@ would without Bouncer installed":
    invalid policy file, or an internal crash all resolve to "emit no decision" — the normal
    permission flow runs. Bouncer being broken must never be the reason something dangerous
    ran unchallenged, and must never be the reason a session is bricked either.
+
+   > **Corrected on 2026-09-18.** That list missed a failure with no error attached: a
+   > response that answers part of the request. The Jev adapter keeps whatever parsed, and
+   > `evaluate()` skipped each rule whose answer was missing — which is right for a rule
+   > that stops, and wrong for the walk as a whole, because every skipped rule is a step
+   > nearer `default: allow`. With the shipped policy in `full` mode, a response carrying
+   > `destructive: 0.01` and nothing else emitted `allow` with six questions never
+   > assessed. Found by `docs/adr-review-2026-09-18.md` and confirmed in the code; no test
+   > saw it, because the mock adapter answers everything it is asked.
+   >
+   > `evaluate()` now refuses an `allow` while any question in the set is unanswered. An
+   > `ask` or a `deny` from a partial response still stands, since it rests on an answer
+   > that arrived. In the gate the refusal takes this same path — `malformed_response`,
+   > nothing emitted, counted by the breaker, logged with an error and no answers — and in
+   > `bouncer judge` it is a failed item, outside the denominator. The check lives in the
+   > engine rather than in each caller so the next consumer cannot forget it.
 
 2. **Observe mode is the shipped default, and it emits nothing at all.**
 

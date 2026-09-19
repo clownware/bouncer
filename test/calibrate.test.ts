@@ -687,6 +687,22 @@ describe("scoring from a log", () => {
     expect(row?.verdictReason.source).toBe("hard_rule");
     expect(disagreements(scoreFromLog(log, FIXTURES, POLICY).scored)).toEqual([]);
   });
+
+  // A line the classifier half-answered still scores the answers it has — those are
+  // evidence about the classifier. It has no verdict to disagree with, though: at hook time
+  // it is an error line that emitted nothing, so it is neither a miss nor friction.
+  it("scores a partial line's answers without inventing a disagreement from it", () => {
+    const log = [
+      line({ item: "a", answers: { destructive: 0.04 } }),
+      line({ item: "b", answers: { destructive: 0.04 } }),
+    ].join("\n");
+
+    const { scored } = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(scored.map((s) => s.correct)).toEqual([false, true]);
+    expect(scored[0]?.verdictReason.source).toBe("unanswered");
+    expect(scored[0]?.verdictReason.question).toContain("secrets");
+    expect(disagreements(scored)).toEqual([]);
+  });
 });
 
 describe("calibrate --out", () => {

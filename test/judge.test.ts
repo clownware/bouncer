@@ -165,6 +165,30 @@ describe("when the classifier cannot answer", () => {
     expect(result.failed).toBe(1);
     expect(result.judged).toBe(3);
   });
+
+  // The mock answers everything it is asked, so a partial response needs its own adapter.
+  const partial = (p: number): Adapter => ({
+    name: "partial",
+    async decide(): Promise<DecideResponse> {
+      return { answers: { unsupported_claim: { type: "noul", noul: p } }, latencyMs: 1 };
+    },
+  });
+
+  // `overclaims` was never assessed, so this is not an item the judge settled. It used to
+  // come back `allow` with no error: accepted, and absent from the escalation manifest.
+  it("fails an item whose answers were partial and would otherwise have been accepted", async () => {
+    const result = await run({}, 2, partial(0.02));
+    expect(result.items[0]?.error).toEqual({ kind: "malformed_response", message: "no answer for: overclaims" });
+    expect(result.judged).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(tally(result).allow).toBe(0);
+  });
+
+  it("still escalates a partial item whose one answer crossed a threshold", async () => {
+    const result = await run({}, 1, partial(0.9));
+    expect(result.items[0]?.error).toBeUndefined();
+    expect(result.manifest.items.map((i) => i.verdict)).toEqual(["ask"]);
+  });
 });
 
 describe("concurrency", () => {

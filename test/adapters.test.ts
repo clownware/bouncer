@@ -209,8 +209,9 @@ describe("JevAdapter", () => {
       expect((error as AdapterError).kind).toBe("malformed_response");
     });
 
-    // Four good answers still decide. The rule evaluator skips a rule whose question has
-    // no answer, which is the right reading of absent evidence.
+    // Four good answers still decide an ask or a deny. They cannot decide an allow:
+    // `evaluate` refuses one while a question is unanswered, which is what makes dropping
+    // the broken answer here safe rather than a way to approve a call half-assessed.
     it("keeps the readable answers and drops only the broken one", async () => {
       const body = {
         answers: {

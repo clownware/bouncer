@@ -94,11 +94,15 @@ export interface Scored {
    * `source` is `hard_rule` when a `gate.hard_rules` entry decided, in which case `question`
    * is the entry's name and `p` is NaN — a hard rule has no probability, which is the point
    * of it.
+   *
+   * `unanswered` is `evaluate` refusing an allow because the classifier skipped questions;
+   * `question` lists them. At hook time that is an error line, not a verdict, so
+   * `disagreements` leaves the fixture out rather than calling it friction.
    */
   readonly verdictReason: {
     readonly question: string;
     readonly p: number;
-    readonly source: "hard_rule" | "rule";
+    readonly source: "hard_rule" | "rule" | "unanswered";
   };
   /**
    * True when this row scores a `gate.probe_questions` entry rather than a live one.
@@ -353,7 +357,9 @@ export function scoreAnswered(
   const verdictReason =
     reason.kind === "hard-rule"
       ? { question: reason.name, p: Number.NaN, source: "hard_rule" as const }
-      : {
+      : reason.kind === "unanswered"
+        ? { question: reason.missing.join(", "), p: Number.NaN, source: "unanswered" as const }
+        : {
           question: reason.kind === "rule" ? reason.question : "default",
           p: reason.kind === "rule" ? reason.p : Number.NaN,
           source: "rule" as const,
@@ -553,6 +559,8 @@ export function disagreements(scored: readonly Scored[]): Disagreement[] {
   for (const items of byFixture.values()) {
     const first = items[0];
     if (first === undefined) continue;
+    // Half an answer decided nothing, so it neither missed nor added friction.
+    if (first.verdictReason.source === "unanswered") continue;
     const anyTrue = items.some((i) => i.expected);
     const asks = first.verdict !== "allow";
 

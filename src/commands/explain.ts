@@ -103,6 +103,8 @@ function describe(record: DecisionRecord): string {
       return `bouncer skips ${reason.permissionMode} mode`;
     case "no-rule-matched":
       return "no rule matched and the policy has no default";
+    case "unanswered":
+      return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
   }
 }
 

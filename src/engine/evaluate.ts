@@ -20,7 +20,9 @@ export type Reason =
   /** `permission_mode` is listed in `skip_permission_modes`. */
   | { readonly kind: "permission-mode-skipped"; readonly permissionMode: string }
   /** No rule matched and the policy has no `default`. */
-  | { readonly kind: "no-rule-matched" };
+  | { readonly kind: "no-rule-matched" }
+  /** The rules reached an `allow`, but the classifier never answered these questions. */
+  | { readonly kind: "unanswered"; readonly missing: readonly string[] };
 
 export interface Decision {
   /** What policy concluded, before mode is applied. */
@@ -93,8 +95,29 @@ function decideHard(policy: Policy, rule: HardRule): Decision {
  * `answers` maps question name to probability. A question the classifier did not answer
  * is skipped rather than treated as zero: a missing answer is an absence of evidence, and
  * reading it as "definitely not destructive" would be exactly the wrong default.
+ *
+ * Skipping is only half of that, and until 2026-09-18 it was the only half here: every
+ * skipped rule brought the walk one step nearer `default: allow`, so a response carrying
+ * `destructive: 0.01` and nothing else was approved with six questions never assessed —
+ * the wrong default, reached by another road. So an `allow` needs every question in
+ * `set.questions` answered. An `ask` or a `deny` does not: that verdict rests on an answer
+ * that did arrive, and four good answers still decide when what they decide is to stop.
+ *
+ * The refusal is an `ask` that emits nothing in any mode. `ask`, so a consumer reading only
+ * `verdict` lands on the safe side; nothing emitted, because a classifier that answered
+ * half the request is an error path, and an error path never adds a prompt (docs/adr/003).
+ * Probes are not required — they are split out before this is called and no rule reads one.
  */
 export function evaluate(set: PolicySet, mode: Mode, answers: Readonly<Record<string, number>>): Decision {
+  const decision = applyRules(set, mode, answers);
+  if (decision.verdict !== "allow") return decision;
+
+  const missing = Object.keys(set.questions).filter((name) => answers[name] === undefined);
+  if (missing.length === 0) return decision;
+  return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: undefined };
+}
+
+function applyRules(set: PolicySet, mode: Mode, answers: Readonly<Record<string, number>>): Decision {
   for (const rule of set.rules) {
     if (rule.condition === undefined) {
       // The terminal `default` rule.

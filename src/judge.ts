@@ -178,6 +178,20 @@ async function judgeOne(
   }
 
   const decision = evaluate(options.set, options.mode, answers);
+
+  // Half an answer is a failed item, the same as none: it stays out of the tallies and out
+  // of the denominator, because nothing here was judged.
+  if (decision.reason.kind === "unanswered") {
+    return {
+      ...base,
+      verdict: "allow",
+      reason: { kind: "no-rule-matched" },
+      answers: {},
+      latencyMs: response.latencyMs,
+      error: { kind: "malformed_response", message: `no answer for: ${decision.reason.missing.join(", ")}` },
+    };
+  }
+
   const escalation = escalationFor(options.set, decision, answers, id);
 
   return {
