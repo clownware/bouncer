@@ -22,8 +22,9 @@ readings are worth distinguishing:
   disagrees, the question's wording is wrong for their situation, or the threshold is.
 - **Everything near 0.5** — genuine uncertainty, which the `any` range rule converts into
   a prompt. Working as intended.
-- **`fast-path` in the reason** — the classifier was never called. The command matched a
-  prefix in `gate.fast_path` and was allowed without judgment.
+- **`fast-path` in the reason** — the classifier was never called. The command matched an
+  entry in `gate.fast_path` and was allowed without judgment. An entry ending in a space
+  matches any arguments; one without matches only the command as written.
 
 ## Editing the policy
 

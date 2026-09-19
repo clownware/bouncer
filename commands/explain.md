@@ -17,4 +17,5 @@ the user act on it:
 - A probability near 0.5 means the classifier was genuinely unsure, not that it was
   wrong. That is what the uncertainty rule exists for.
 - If the reason says the fast path matched, the classifier was never called at all, and
-  the fix is to remove that prefix from `gate.fast_path`.
+  the fix is to remove that entry from `gate.fast_path`, or to take the trailing space off
+  it so that it stops matching arguments.

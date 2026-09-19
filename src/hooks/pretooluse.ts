@@ -97,8 +97,9 @@ export async function runPreToolUse(
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
 
   // Cheap outs first: tool not gated, permission mode skipped, command on the fast path.
-  // None of these touch the network, and the fast path is the main reason a heavy session
-  // stays responsive.
+  // None of these touch the network. The fast path only helps a command run bare, though:
+  // an agent chains (`npm test 2>&1 | tail`), a chained command is rightly refused, and on
+  // the first real traffic it matched 0 of 88 calls. See docs/adr/010.
   const early = shortCircuit(policy, {
     tool,
     command: commandOf(tool, toolInput),
