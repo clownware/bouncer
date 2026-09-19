@@ -113,6 +113,28 @@ describe("full mode", () => {
     expect(output?.hookSpecificOutput?.permissionDecision).toBe("allow");
   });
 
+  // The hook is registered for Bash, Edit, Write and NotebookEdit whatever the policy says,
+  // so a policy that gates only Bash still sees every Write. It used to approve them: a
+  // Write to ~/.ssh/config came back `allow`, "Write is not gated by this policy", with no
+  // log line to show it had happened.
+  it("says nothing about a tool the policy does not gate, rather than approving it", async () => {
+    usePolicy("full");
+    writeFileSync(policyPath, readFileSync(policyPath, "utf8").replace("tools: [Bash, Edit, Write, NotebookEdit]", "tools: [Bash]"), "utf8");
+
+    const adapter = { name: "explode", decide: async () => { throw new Error("should not be called"); } };
+    const output = await runPreToolUse(
+      payload({ tool_name: "Write", tool_input: { file_path: "/home/user/.ssh/config", content: "Host *" } }),
+      { adapter },
+    );
+    expect(output).toBeUndefined();
+  });
+
+  it("says nothing in a skipped permission mode, rather than approving everything in it", async () => {
+    const adapter = { name: "explode", decide: async () => { throw new Error("should not be called"); } };
+    const output = await runPreToolUse(payload({ permission_mode: "plan" }), { adapter });
+    expect(output).toBeUndefined();
+  });
+
   // The mock answers every question it is asked, so nothing above can see this. A real
   // classifier can return part of the fan-out, and the jev adapter keeps whatever parsed.
   //

@@ -59,17 +59,26 @@ export interface Decision {
  * fast path — that way round, because the fast path is an allowlist whose entries have to
  * be safe for every argument they can be given, and a deterministic backstop that ran
  * after it could not back anything up. See docs/adr/004.
+ *
+ * "No business here" means saying nothing, in every mode. Until 2026-09-19 those first two
+ * went through `decide`, so in `full` they emitted `allow` — which suppresses the host's own
+ * prompt — for a call nothing had looked at. The plugin registers the hook for four tools,
+ * so a policy that narrowed `gate.tools` to `[Bash]` approved a `Write` to
+ * `~/.ssh/config` with "Write is not gated by this policy", and a mode added to
+ * `skip_permission_modes` approved everything in it. `full` suppresses the prompt on calls
+ * judged safe, and these were not judged. The fast path still emits its `allow`: that is
+ * the policy's own allowlist deciding, not the absence of a decision.
  */
 export function shortCircuit(
   policy: Policy,
   input: { readonly tool: string; readonly command: string; readonly permissionMode?: string },
 ): Decision | undefined {
   if (input.permissionMode !== undefined && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy.mode, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+    return standAside({ kind: "permission-mode-skipped", permissionMode: input.permissionMode });
   }
 
   if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy.mode, "allow", { kind: "tool-not-gated", tool: input.tool });
+    return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
 
   const hard = matchHardRule(policy.gate.hardRules, input.command);
@@ -83,6 +92,17 @@ export function shortCircuit(
   }
 
   return undefined;
+}
+
+/**
+ * Bouncer has no opinion, so the host decides exactly as it would without it.
+ *
+ * `verdict` is `allow` for the reason `no-rule-matched` has always carried one: the type
+ * has three values and "nothing objected" is the nearest. `emit` is what reaches Claude
+ * Code, and it is undefined whatever the mode.
+ */
+function standAside(reason: Reason): Decision {
+  return { verdict: "allow", reason, emit: undefined };
 }
 
 /** A hard rule's verdict, with `seatbelt`'s promotion applied. */
