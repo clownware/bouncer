@@ -146,6 +146,37 @@ describe("full mode", () => {
     expect(record.answers).toBeUndefined();
   });
 
+  // Seven confident lows, all of them about the first 512 characters. The mock answers
+  // whatever it is told to, which is the point: the classifier was never shown the end.
+  const longCommand = `echo ok\n${"# padding\n".repeat(600)}rm -rf ~/Documents`;
+
+  it("does not emit allow for a call too long to show the classifier whole", async () => {
+    const output = await runPreToolUse(payload({ tool_input: { command: longCommand } }), { adapter: harmless });
+    expect(output?.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("logs a truncated call as the judgment it was, and says it was cut", async () => {
+    await runPreToolUse(payload({ tool_input: { command: longCommand } }), { adapter: harmless });
+    const [record] = logLines();
+    expect(record.truncated).toBe(true);
+    expect(record.reason).toEqual({ kind: "truncated" });
+    expect(record.emitted).toBeNull();
+    // A real judgment of what was shown, so unlike a partial response it keeps its answers.
+    expect(record.answers.destructive).toBe(0.01);
+    expect(record.error).toBeUndefined();
+  });
+
+  it("still asks on a truncated call whose head alone clears a threshold", async () => {
+    const output = await runPreToolUse(payload({ tool_input: { command: longCommand } }), { adapter: dangerous });
+    expect(output?.hookSpecificOutput?.permissionDecision).toBe("ask");
+    expect(logLines()[0].truncated).toBe(true);
+  });
+
+  it("does not mark a call that fit", async () => {
+    await runPreToolUse(payload(), { adapter: harmless });
+    expect(logLines()[0].truncated).toBeUndefined();
+  });
+
   it("still asks on a partial response whose one answer clears a threshold", async () => {
     const output = await runPreToolUse(payload(), { adapter: partial(0.95) });
     expect(output?.hookSpecificOutput?.permissionDecision).toBe("ask");
@@ -199,6 +230,20 @@ describe("failure handling", () => {
     writeFileSync(policyPath, POLICY.replace(/^mode: observe$/m, "mode: guard").replace(/^on_error: passthrough$/m, "on_error: deny"), "utf8");
     const output = await runPreToolUse(payload(), { adapter: failing });
     expect(output?.hookSpecificOutput?.permissionDecision).toBe("deny");
+  });
+
+  // Observe emits nothing at all, and the error path is not an exception to that. It was:
+  // `standDown` never looked at the mode, so a timeout in the mode that ships blocked the
+  // call. The line still records the error; what it must not record is a deny it did not emit.
+  it("does not deny on error in observe mode, whatever on_error says", async () => {
+    writeFileSync(policyPath, POLICY.replace(/^on_error: passthrough$/m, "on_error: deny"), "utf8");
+    const output = await runPreToolUse(payload(), { adapter: failing });
+    expect(output?.hookSpecificOutput).toBeUndefined();
+
+    const [record] = logLines();
+    expect(record.mode).toBe("observe");
+    expect(record.emitted).toBeNull();
+    expect(record.error.kind).toBe("timeout");
   });
 
   it("emits nothing when the policy file itself is broken", async () => {

@@ -105,6 +105,8 @@ function describe(record: DecisionRecord): string {
       return "no rule matched and the policy has no default";
     case "unanswered":
       return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
+    case "truncated":
+      return "the rules reached an allow, but the call was too long to show the classifier whole, so nothing was approved";
   }
 }
 

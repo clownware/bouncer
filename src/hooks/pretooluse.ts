@@ -11,7 +11,7 @@ import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
 import { escalationFor, type EscalationItem } from "../engine/escalation.js";
-import { evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
+import { emitFor, evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
 import { buildState, commandOf } from "../engine/state.js";
 import type { Policy, Verdict } from "../engine/types.js";
 import * as breaker from "../io/breaker.js";
@@ -193,7 +193,7 @@ export async function runPreToolUse(
       else answers[name] = p;
     }
 
-    const decision = evaluate(policy.gate, policy.mode, answers);
+    const decision = evaluate(policy.gate, policy.mode, answers, { truncated: state.truncated });
 
     // The classifier answered part of the request and the rest would have been an allow.
     // That is the adapter failing, not a judgment, so it takes the error path with every
@@ -223,6 +223,9 @@ export async function runPreToolUse(
       ...(escalation !== undefined ? { escalation } : {}),
       state: state.text,
       redacted_kinds: state.redactedKinds,
+      // On every cut state, not only the ones refused an allow: an `ask` reached on the head
+      // of a command is still an answer about the head, and a re-score should be able to tell.
+      ...(state.truncated ? { truncated: true } : {}),
       latency_ms: { total: now() - started, adapter: adapterMs },
       ...(status.warmup ? { warmup: true } : {}),
     });
@@ -242,6 +245,10 @@ export async function runPreToolUse(
  *
  * `on_error` decides, and its default is to emit nothing. `deny` is available and
  * documented as a footgun; it is honoured here because a user who set it meant it.
+ *
+ * It goes through `emitFor` like every other verdict, so the mode table has the last word.
+ * Until 2026-09-19 it did not, and `mode: observe` with `on_error: deny` blocked a tool call
+ * on a timeout — the one thing observe promises never to do (docs/adr/003).
  */
 function standDown(
   dir: string,
@@ -259,17 +266,19 @@ function standDown(
   const next = breaker.record(state, { failed: true, overBudget: false, warmup: status.warmup });
   breaker.write(dir, next.state);
 
+  const denies = policy.onError === "deny" && emitFor(policy.mode, "deny") === "deny";
+
   append(dir, {
     ...base,
     verdict: "allow",
-    emitted: policy.onError === "deny" ? "deny" : null,
+    emitted: denies ? "deny" : null,
     reason: { kind: "no-rule-matched" },
     latency_ms: { total: totalMs },
     error,
     ...(status.warmup ? { warmup: true } : {}),
   });
 
-  if (policy.onError === "deny") {
+  if (denies) {
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -334,6 +343,8 @@ function explain(decision: Decision, policy: Policy, escalation?: EscalationItem
       return "bouncer: no rule matched.";
     case "unanswered":
       return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
+    case "truncated":
+      return "bouncer: the call was too long to show the classifier whole, so it was not approved.";
   }
 }
 

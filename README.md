@@ -546,6 +546,16 @@ rate limit, unparseable policy, internal crash — falls through to Claude Code'
 permission flow. Bouncer being broken is never the reason something dangerous ran, and
 never the reason your session is unusable.
 
+The same goes for evidence that is incomplete rather than missing. A classifier response
+that answers only some of the questions, or a call too long to show the classifier whole
+(the state is capped at 4 KB), can still stop a call — an `ask` rests on the part that was
+read — but it can never approve one.
+
+There is one exception, and you have to write it yourself: `on_error: deny` blocks the call
+when the classifier cannot answer. The shipped policy calls it a footgun, because a flaky
+network becomes a dead session. It has no effect in `observe`, which never emits anything,
+and the policy loader says so if you combine them.
+
 **Adding friction is treated as a bug.** Even a correct verdict is a regression if it
 interrupts you where nothing would have interrupted you before. For a prompted user that
 means strictly fewer prompts than not installing it; for a bypass user, whose baseline has

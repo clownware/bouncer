@@ -7939,6 +7939,12 @@ function loadPolicy(source) {
   }
   const mode = readEnum(raw["mode"], MODES, "observe", "mode", error);
   const onError = readEnum(raw["on_error"], ON_ERROR, "passthrough", "on_error", error);
+  if (mode === "observe" && onError === "deny") {
+    warn(
+      "on_error",
+      "`on_error: deny` does nothing while `mode` is `observe`, which never emits a decision. It takes effect in guard, full and seatbelt \u2014 see docs/adr/003"
+    );
+  }
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   const rawTimeout = raw["timeout_ms"];
   if (rawTimeout !== void 0) {
@@ -8816,12 +8822,13 @@ function decideHard(policy, rule) {
     emit: emitFor(policy.mode, rule.verdict, true)
   };
 }
-function evaluate(set, mode, answers) {
+function evaluate(set, mode, answers, evidence = {}) {
   const decision = applyRules(set, mode, answers);
   if (decision.verdict !== "allow") return decision;
   const missing = Object.keys(set.questions).filter((name) => answers[name] === void 0);
-  if (missing.length === 0) return decision;
-  return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: void 0 };
+  if (missing.length > 0) return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: void 0 };
+  if (evidence.truncated === true) return { verdict: "ask", reason: { kind: "truncated" }, emit: void 0 };
+  return decision;
 }
 function applyRules(set, mode, answers) {
   for (const rule of set.rules) {
@@ -9267,7 +9274,7 @@ async function runPreToolUse(payload, options = {}) {
       if (name in policy.gate.probeQuestions) probes[name] = p;
       else answers[name] = p;
     }
-    const decision = evaluate(policy.gate, policy.mode, answers);
+    const decision = evaluate(policy.gate, policy.mode, answers, { truncated: state.truncated });
     if (decision.reason.kind === "unanswered") {
       throw new AdapterError("malformed_response", `no answer for: ${decision.reason.missing.join(", ")}`);
     }
@@ -9286,6 +9293,9 @@ async function runPreToolUse(payload, options = {}) {
       ...escalation !== void 0 ? { escalation } : {},
       state: state.text,
       redacted_kinds: state.redactedKinds,
+      // On every cut state, not only the ones refused an allow: an `ask` reached on the head
+      // of a command is still an answer about the head, and a re-score should be able to tell.
+      ...state.truncated ? { truncated: true } : {},
       latency_ms: { total: now() - started, adapter: adapterMs },
       ...status2.warmup ? { warmup: true } : {}
     });
@@ -9302,16 +9312,17 @@ function standDown(dir, base, state, status2, err, totalMs, policy) {
   const error = err instanceof AdapterError ? { kind: err.kind, message: err.message } : { kind: "unknown", message: err instanceof Error ? err.message : String(err) };
   const next = record(state, { failed: true, overBudget: false, warmup: status2.warmup });
   write(dir, next.state);
+  const denies = policy.onError === "deny" && emitFor(policy.mode, "deny") === "deny";
   append(dir, {
     ...base,
     verdict: "allow",
-    emitted: policy.onError === "deny" ? "deny" : null,
+    emitted: denies ? "deny" : null,
     reason: { kind: "no-rule-matched" },
     latency_ms: { total: totalMs },
     error,
     ...status2.warmup ? { warmup: true } : {}
   });
-  if (policy.onError === "deny") {
+  if (denies) {
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -9355,6 +9366,8 @@ function explain(decision, policy, escalation) {
       return "bouncer: no rule matched.";
     case "unanswered":
       return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
+    case "truncated":
+      return "bouncer: the call was too long to show the classifier whole, so it was not approved.";
   }
 }
 function verdictFields(decision) {
@@ -9601,6 +9614,8 @@ function describe(record2) {
       return "no rule matched and the policy has no default";
     case "unanswered":
       return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
+    case "truncated":
+      return "the rules reached an allow, but the call was too long to show the classifier whole, so nothing was approved";
   }
 }
 function bar(p) {

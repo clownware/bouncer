@@ -161,6 +161,19 @@ describe("loadPolicy", () => {
     expect(warnings(source).some((d) => d.path === "gate.tools")).toBe(true);
   });
 
+  // Exactly that failure mode: observe never emits, so the setting loads and does nothing.
+  // A warning rather than an error, because an error unloads the policy and turns bouncer off.
+  it("warns that on_error: deny does nothing in observe, and still loads the policy", () => {
+    const source = "version: 1\nmode: observe\non_error: deny\ngate:\n  tools: [Bash]\n  questions:\n    a:\n      instructions: x\n  rules:\n    - default: allow\n";
+    expect(warnings(source).map((d) => d.path)).toContain("on_error");
+    expect(loadPolicy(source).policy?.onError).toBe("deny");
+  });
+
+  it("does not warn about on_error: deny in a mode that can emit it", () => {
+    const source = "version: 1\nmode: guard\non_error: deny\ngate:\n  tools: [Bash]\n  questions:\n    a:\n      instructions: x\n  rules:\n    - default: allow\n";
+    expect(warnings(source).map((d) => d.path)).not.toContain("on_error");
+  });
+
   it("reads criteria, including YAML's boolean-looking true and false keys", () => {
     const source = `
 version: 1
