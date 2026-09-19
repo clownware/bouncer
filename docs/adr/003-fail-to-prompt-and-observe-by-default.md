@@ -1,7 +1,7 @@
 # ADR-003: Fail to the prompt, observe by default, and ship no deny rules
 
 - **Status:** accepted; the steady-state latency figures and the list of failure paths
-  corrected on 2026-09-18, in place
+  corrected on 2026-09-18 and 2026-09-19, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -30,6 +30,27 @@ would without Bouncer installed":
    > nothing emitted, counted by the breaker, logged with an error and no answers — and in
    > `bouncer judge` it is a failed item, outside the denominator. The check lives in the
    > engine rather than in each caller so the next consumer cannot forget it.
+
+   > **Corrected on 2026-09-19.** Two more, from the same review and from checking it.
+   >
+   > *A state the classifier only saw the head of.* The gate cuts a command to its first
+   > 512 characters once the state passes 4 KB, and nothing read the `truncated` flag, so
+   > seven confident low answers about `echo ok` could approve whatever followed the
+   > padding. The review found this in `bouncer judge`; the gate had it too. One installed
+   > log held 10 truncated states in 410 judged calls, all Bash, two of them allowed.
+   > `evaluate()` now takes the flag and refuses an `allow` on a truncated state, as it does
+   > on a partial response. It is not an error, though: every answer arrived and is a real
+   > judgment of what was shown, so the line keeps its answers and gains `truncated: true`.
+   > An `ask` stands, having found its reason in the part that was read.
+   >
+   > *`on_error: deny`, which this ADR never mentioned.* The sentence above says every
+   > failure emits no decision. The policy has always offered one opt-in exception —
+   > `on_error: deny`, documented in `policy/default.yaml` as a footgun and honoured because
+   > a user who set it meant it. That stays, and is now written down here. What does not
+   > stay is that the error path ignored the mode: `mode: observe` with `on_error: deny`
+   > denied a tool call on a timeout, which breaks decision 2 below outright. The error path
+   > now goes through the same mode table as every verdict, so observe emits nothing there
+   > too, and the loader warns that the combination has no effect.
 
 2. **Observe mode is the shipped default, and it emits nothing at all.**
 

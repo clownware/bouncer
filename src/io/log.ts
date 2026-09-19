@@ -96,6 +96,8 @@ export interface DecisionRecord {
   readonly escalation?: EscalationItem;
   readonly state?: string;
   readonly redacted_kinds?: readonly string[];
+  /** True when `state` was over its cap, so the answers are about the head of it. */
+  readonly truncated?: boolean;
   readonly latency_ms: { readonly total: number; readonly adapter?: number };
   readonly error?: { readonly kind: string; readonly message: string };
   /** True for the first gated call of a session — excluded from the latency breaker. */

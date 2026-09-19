@@ -210,6 +210,42 @@ gate:
     });
   });
 
+  // Every answer arrived, and every one of them is about a prefix. The gate cuts a command
+  // to 512 characters once the state passes 4 KB, so `echo ok`, five kilobytes of padding
+  // and then the part that mattered scores seven confident lows — on `echo ok`.
+  describe("an allow reached on a truncated state", () => {
+    const low = { destructive: 0.01, secrets: 0.02, prod: 0.03 };
+
+    it("is refused, as a judgment that does not get to approve", () => {
+      const decision = evaluate(GUARD.gate, "full", low, { truncated: true });
+      expect(decision.verdict).toBe("ask");
+      expect(decision.reason).toEqual({ kind: "truncated" });
+    });
+
+    it.each(["observe", "guard", "full", "seatbelt"] as const)("emits nothing in %s mode", (mode) => {
+      expect(evaluate(GUARD.gate, mode, low, { truncated: true }).emit).toBeUndefined();
+    });
+
+    // An ask found its reason in the part that was read.
+    it("leaves an ask on a truncated state alone", () => {
+      const decision = evaluate(GUARD.gate, "full", { ...low, destructive: 0.95 }, { truncated: true });
+      expect(decision.reason).toMatchObject({ kind: "rule", question: "destructive" });
+      expect(decision.emit).toBe("ask");
+    });
+
+    it("allows a whole state, whether the caller says so or says nothing", () => {
+      expect(evaluate(GUARD.gate, "full", low, { truncated: false }).emit).toBe("allow");
+      expect(evaluate(GUARD.gate, "full", low).emit).toBe("allow");
+    });
+
+    // Missing answers are the adapter failing; a cut state is not. When both are true the
+    // call takes the error path, so that is the reason that has to win.
+    it("reports unanswered ahead of truncated", () => {
+      const decision = evaluate(GUARD.gate, "full", { destructive: 0.01 }, { truncated: true });
+      expect(decision.reason).toMatchObject({ kind: "unanswered" });
+    });
+  });
+
   it("emits nothing when no rule matched and there is no default", () => {
     const noDefault = policyFrom(`
 version: 1
