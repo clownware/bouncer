@@ -1,6 +1,7 @@
 # ADR-008: Bouncer is a judgment engine; the gate is its first consumer
 
-- **Status:** accepted; what a manifest and a record carry corrected on 2026-09-19, in place
+- **Status:** accepted; what a manifest and a record carry corrected on 2026-09-19, and
+  the priority among consumers corrected the same day — both in place
 - **Date:** 2026-09-18
 - **Context for:** v0.2 (naming), v0.3 (`bouncer judge`), v0.4 (package extraction)
 - **Numbering:** proposed as ADR-006, written as ADR-008. ADR-006 is the skill router and
@@ -37,6 +38,52 @@ substitution bought.
 Not when the interface looks ready, not when v0.3 starts — when `bouncer judge` has shipped
 and its needs have already changed the engine's shape. Monorepo churn is a poor use of a
 three-week window.
+
+> **Corrected on 2026-09-19.** The three decisions stand. What this ADR got wrong by
+> omission is *which consumer matters*, and the correction is the owner's, in his words:
+> "safety hasn't been much of an issue, my goal is replace expensive LLM calls with Jev
+> calls in cases where we're figuring out if an agent should take an action, any if/then
+> type prompt, commit to github, validation of outputs, etc."
+>
+> This ADR reads as though the gate were the point and the engine a way of keeping it
+> honest. It is the other way round, and two facts settled it:
+>
+> - **The gate ships where it alters nothing.** The owner runs it in `seatbelt`, which
+>   emits nothing unless a hard rule fires or a `deny` threshold the user enabled is
+>   crossed, and no `deny` threshold ships enabled (ADR-003). In that configuration the
+>   classifier changes zero outcomes. It is an instrument, and a good one — the friction
+>   numbers, the fixture corpus, the frozen holdout and the escalation ratio all come out
+>   of it — but an instrument is not the product.
+> - **Every question it asks is a safety question.** `destructive`, `secrets`,
+>   `outside_repo`, `egress`, `prod`, `sensitive_target`, `unreviewed_execution`. None asks
+>   whether an action is *right*, so no amount of calibration on that set can make the gate
+>   reduce bugs, rework or debugging. What it saves is recovery from a rare disaster, which
+>   is real, and is a different ledger from the one this project is trying to move.
+>
+> So: **the substituted decision is the product.** Wherever a pipeline or an agent pays a
+> reasoning model to answer a bounded question — should this step be taken, does this output
+> meet the criteria, is this ready to commit, which branch of an if/then — that call is a
+> candidate for a policy set. The gate becomes a maintained consumer and the demo, not the
+> focus. PRD §12 carries the ordered list and an issue per candidate.
+>
+> Nothing below `src/cli.ts` changes because of this, and decisions 1 and 3 are why: a new
+> consumer is a `StateBuilder` and a policy set, and the package extraction still waits for
+> the consumer that bends the interface. What does change is **what counts as evidence.**
+> The gate's bar was calibration accuracy and friction. A substitution consumer's bar is the
+> three numbers `bouncer measure` already prints — agreement with labels, escalation rate
+> with its denominator, tokens per item — over a real batch, plus the price of the reasoning
+> call it replaces. A consumer with no labelled batch has no claim, only a plausible story;
+> #75 is that gap for the batch judge and it is the same gap one level down for every
+> candidate in the list.
+>
+> One caution belongs here rather than in the list. The most attractive candidate — a set
+> that asks whether a change is *correct*, so that less rework follows — is also the
+> furthest from what `jev-1.13` is documented to do well: it reads negations and scoping
+> words literally and is unreliable at counting, arithmetic and date ordering, and "is this
+> edit correct" is a categorically harder question than "does this command touch `.env`".
+> It gets its own fixtures, its own calibration gate and an observe-only run over real
+> sessions before it influences anything, and the outcome it claims — less debugging — is
+> measurable only by the A/B designed in #88, never by a fixture score.
 
 ## Why this is a naming pass and not a refactor
 
