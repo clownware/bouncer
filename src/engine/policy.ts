@@ -87,6 +87,15 @@ export function loadPolicy(source: string): LoadResult {
   const mode = readEnum(raw["mode"], MODES, "observe", "mode", error);
   const onError = readEnum(raw["on_error"], ON_ERROR, "passthrough", "on_error", error);
 
+  // A warning and not an error: an error unloads the policy, which turns bouncer off, and
+  // that is a heavier consequence than a setting that simply has no effect yet.
+  if (mode === "observe" && onError === "deny") {
+    warn(
+      "on_error",
+      "`on_error: deny` does nothing while `mode` is `observe`, which never emits a decision. It takes effect in guard, full and seatbelt — see docs/adr/003",
+    );
+  }
+
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   const rawTimeout = raw["timeout_ms"];
   if (rawTimeout !== undefined) {
