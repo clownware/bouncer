@@ -62,10 +62,10 @@ gate:
 
   # Commands matched here are allowed without calling the classifier, which saves the whole
   # network round trip — for a command run bare. It does nothing for a chained one: anything
-  # containing a shell operator or a redirect is refused outright, and an agent chains almost
-  # everything (`npm test 2>&1 | tail -5`). On the first real traffic measured, this list
-  # matched 0 of 88 calls. It earns its place in sessions where you, or an agent told to,
-  # run one command at a time.
+  # containing a shell operator, a redirect or a `$` is refused outright, and an agent chains
+  # almost everything (`npm test 2>&1 | tail -5`). On the first real traffic measured, this
+  # list matched 0 of 88 calls. It earns its place in sessions where you, or an agent told
+  # to, run one command at a time.
   #
   # An entry is a whole command unless it ends in a space:
   #

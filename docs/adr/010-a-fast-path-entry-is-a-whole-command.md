@@ -43,6 +43,16 @@ accepts — `unreviewed_execution` says so in its own `criteria.false`. The argu
 makes the command stop being that. All five took the fast path, and in `full` mode bouncer
 would have emitted `allow` for them.
 
+## The same audit found one thing that is not about entries
+
+`"ls "`, `"which "` and `"git status "` take arguments because nothing they can be given
+writes or runs anything. One thing they can be given is a variable, and the shell expands
+it before the verb sees it. Tried with a fake variable: `ls $VAR` prints
+`ls: <value>: No such file or directory` in bash and zsh, and zsh's `which $VAR` prints
+`<value> not found`. That is `echo $OPENAI_API_KEY` — the `secrets` question's own example —
+by a verb that is never judged. The matcher refused `$(` and let a bare `$` through; it now
+refuses any `$`, alongside the operators and redirects it already refused.
+
 ## Why not a denylist of flags
 
 Refusing `--script-shell`, `--prefix`, `-exec`, `--config` and `-p` would close these five

@@ -174,7 +174,12 @@ function matchFastPath(prefixes: readonly string[], command: string): string | u
   // is on the list because of what the verb does, and `ls > ~/.ssh/authorized_keys` does
   // what the redirect does. Without `<` and `>` here it took the fast path, and in `full`
   // mode that is bouncer approving the overwrite.
-  if (/[;&|<>]|\$\(|`|\n/.test(trimmed)) return undefined;
+  //
+  // Any `$`, not only `$(`. The shell expands a variable before the verb sees it, and a
+  // harmless verb's error message prints what it was given: `ls $OPENAI_API_KEY` answers
+  // "ls: sk-...: No such file or directory". That is `echo $OPENAI_API_KEY`, the `secrets`
+  // question's own example, arriving by a verb that was never going to be judged.
+  if (/[;&|<>$]|`|\n/.test(trimmed)) return undefined;
 
   for (const prefix of prefixes) {
     if (trimmed === prefix.trim()) return prefix;

