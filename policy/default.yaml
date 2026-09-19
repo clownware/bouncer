@@ -64,7 +64,7 @@ gate:
   # biggest thing you can do for perceived latency: the highest-volume commands in a
   # session are also the most obviously safe ones. Matched as a literal prefix against the
   # command string, after trimming, and refused outright if the command contains a shell
-  # operator.
+  # operator or a redirect.
   #
   # The rule for what belongs here: a fast-path entry must be safe for EVERY argument it
   # could be given, because the arguments are never judged. That rules out anything that
@@ -74,10 +74,14 @@ gate:
   # would mean the gate's headline question can never fire.
   #
   # What is left produces metadata about the working tree, or runs a named project script.
+  #
+  # `git branch` and `git remote -v` were here and failed that rule. An entry matches
+  # whatever follows it, so `git branch` also allowed `git branch -f main HEAD~20`, and
+  # `git remote -v` allowed `git remote -v remove origin` — which git accepts, and which
+  # removes the remote. There is no way to spell "only the bare form" in a prefix list, so
+  # they are judged like anything else. `git status` stays: it has no argument that writes.
   fast_path:
     - "git status"
-    - "git branch"
-    - "git remote -v"
     - "pwd"
     - "ls"
     - "ls "

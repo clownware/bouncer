@@ -8795,7 +8795,7 @@ function emitFor(mode, verdict, fromHardRule = false) {
 function matchFastPath(prefixes, command) {
   const trimmed = command.trim();
   if (trimmed.length === 0) return void 0;
-  if (/[;&|]|\$\(|`|\n/.test(trimmed)) return void 0;
+  if (/[;&|<>]|\$\(|`|\n/.test(trimmed)) return void 0;
   for (const prefix of prefixes) {
     if (trimmed === prefix.trim()) return prefix;
     if (prefix.endsWith(" ") && trimmed.startsWith(prefix)) return prefix;

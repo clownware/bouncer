@@ -169,7 +169,12 @@ function matchFastPath(prefixes: readonly string[], command: string): string | u
 
   // A shell operator means more than one command is running, and the fast path only
   // reasons about the first token sequence. Refuse rather than allow half a pipeline.
-  if (/[;&|]|\$\(|`|\n/.test(trimmed)) return undefined;
+  //
+  // A redirect is refused for the same reason, though it starts no second command: an entry
+  // is on the list because of what the verb does, and `ls > ~/.ssh/authorized_keys` does
+  // what the redirect does. Without `<` and `>` here it took the fast path, and in `full`
+  // mode that is bouncer approving the overwrite.
+  if (/[;&|<>]|\$\(|`|\n/.test(trimmed)) return undefined;
 
   for (const prefix of prefixes) {
     if (trimmed === prefix.trim()) return prefix;

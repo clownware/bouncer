@@ -55,6 +55,11 @@ but "is every form of it harmless". That excludes anything printing file content
 `cat`, `head`, `tail`, `wc`, `git diff`, `git show`, `git log` — because `cat .env` and
 `echo $OPENAI_API_KEY` are the literal examples in the `secrets` question's own criteria.
 Fast-pathing the verb means the gate's headline question can never fire.
+"Every argument" includes the ones that are not the verb's: a redirect (`ls > ~/.ssh/authorized_keys`
+took the fast path until the matcher refused `<` and `>`) and a subcommand behind a flag
+(`git remote -v remove origin` works, which is why `git branch` and `git remote -v` are no
+longer entries). Check a candidate by driving the built hook with its worst argument, not
+by reading the list.
 
 **The engine has two consumers now, and neither is privileged.** `bouncer judge` runs a
 policy set over a batch of items and `bouncer measure` compares it against a reasoning
