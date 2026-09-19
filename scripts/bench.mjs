@@ -24,6 +24,7 @@
 //   node scripts/bench.mjs --budget 80 [--runs 30]      fails when a p95 exceeds it
 //   node scripts/bench.mjs --against <other-bundle.cjs> [--runs 40]
 //   node scripts/bench.mjs --against <other-bundle.cjs> --max-regression-pct 15
+//   node scripts/bench.mjs --against <other-bundle.cjs> --against-policy <its-policy.yaml>
 //
 // A p95 is only as good as the sample behind it: at 20 runs it rests on one observation.
 // Keep --runs high enough that the tail means something.
@@ -189,6 +190,16 @@ function cacheVersionOf(bin) {
 // policy and mode this machine's owner happens to run, under a label that does not say so.
 const POLICY = process.env.BOUNCER_POLICY ?? join(ROOT, "policy", "default.yaml");
 
+// The before arm's own policy, when the change being measured touched the policy too.
+//
+// A bundle and the policy it shipped with are one thing. The first change measured after
+// this gate existed added a hard-rule predicate, so the base bundle could not load this
+// checkout's policy: it said "not enforcing", skipped the state build and the decision,
+// and came back 2.9 ms quicker. That read as the change costing +8.8% against a 10% limit,
+// when what it measured was an arm doing no work. Handing each arm its own policy is also
+// what lets the compare see a policy that got slower, which one shared file cannot.
+const AGAINST_POLICY = flag("against-policy") ?? POLICY;
+
 function once(command, bin = BIN) {
   const start = process.hrtime.bigint();
   const r = spawnSync(process.execPath, [bin, "pretooluse"], {
@@ -196,7 +207,7 @@ function once(command, bin = BIN) {
     env: {
       ...process.env,
       BOUNCER_BACKEND: "mock",
-      BOUNCER_POLICY: POLICY,
+      BOUNCER_POLICY: bin === BIN ? POLICY : AGAINST_POLICY,
       CLAUDE_PLUGIN_ROOT: ROOT,
       CLAUDE_PLUGIN_DATA: dataFor(bin),
     },
@@ -204,6 +215,13 @@ function once(command, bin = BIN) {
   const end = process.hrtime.bigint();
   if (r.status !== 0) {
     throw new Error(`${bin} exited ${r.status}: ${r.stderr?.toString() ?? ""}`);
+  }
+  // Exit 0 is not evidence of work: a hook that cannot load its policy exits 0 by design
+  // (it must never block a session) and says so on stdout. A sample from it is a sample of
+  // the error path, so it is an error here rather than a fast number.
+  const out = r.stdout?.toString() ?? "";
+  if (out.includes("not enforcing")) {
+    throw new Error(`${bin} did not load its policy, so there is nothing to time: ${out.trim()}`);
   }
   return Number(end - start) / 1e6;
 }

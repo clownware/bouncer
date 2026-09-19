@@ -34,6 +34,10 @@ unchanged `main` read p95 36 ms on the M4, 102 on an agent container before the 
 ~45 ms rather than ~87 ms (ADR-002). After anything that touches imports, run
 `git show origin/main:bin/bouncer.cjs > "$TMPDIR/base.cjs"` and
 `node scripts/bench.mjs --against "$TMPDIR/base.cjs"`; two unpaired runs cannot answer it.
+If the change touched `policy/default.yaml` too, give the base arm the base's policy with
+`--against-policy`: a bundle that cannot load the policy it is handed stops enforcing, does
+no work, and reads as the faster arm (+8.8% for a change that cost nothing, #84). The bench
+now refuses to time an arm in that state.
 Two things measured since: YAML parse cost tracks node count rather than file size, so a
 structured block costs about 5x what the same bytes cost as comments (ADR-004), and the
 compiled policy is cached on disk, so the bench measures the cached path unless you set

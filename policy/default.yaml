@@ -150,6 +150,8 @@ gate:
   #                  `env`, a `NAME=value`, a leading backslash or a directory (`/bin/cat`)
   #   tokens         every one of these appears as an exact, whitespace-delimited token
   #                  (`-fd` also counts as `-f` and `-d`)
+  #   token_prefix   some token starts with one of these: a sigil that is part of an
+  #                  argument, like the `+` in `git push origin +main`
   #   not_tokens     none of these appears as a token (narrows; never used alone)
   #   text           one of these appears case-insensitively anywhere in the command —
   #                  how to reach SQL and anything else inside a quoted argument
@@ -253,12 +255,14 @@ gate:
         tokens: [git, push, -f]
 
     # `git push origin +main`: a plus in front of the refspec forces that ref with no flag
-    # at all. `text` because the plus is part of a token, not one by itself.
+    # at all. `token_prefix` because the plus is part of a token, not one by itself. It was
+    # `text: [" +"]` until 0.2.4, and `text` reads the whole line, so a commit message that
+    # said "+3%" chained in front of an ordinary push was stopped as a forced one.
     - name: git-push-force-refspec
       because: "A + in front of a refspec forces the push, overwriting remote history."
       when:
         tokens: [git, push]
-        text: [" +"]
+        token_prefix: ["+"]
 
     - name: git-branch-force-delete
       because: "Deletes a branch whose commits are not merged anywhere else."

@@ -8,6 +8,33 @@ Earlier releases have no entries: 0.2.0 is described in
 [docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
 convention does.
 
+## 0.2.4
+
+**A plus sign somewhere else on the line no longer reads as a forced push** (#84). The
+`git-push-force-refspec` hard rule looked for `git push` and then for a space followed by a
+plus anywhere in the whole command, because `text` reads the whole line. So
+`git commit -m "p95 is +3% worse" && git push origin feature/x` was a hard-rule hit, and so
+was any push chained with a PR body or a heredoc that quoted a signed number. **What you
+will notice: in `guard` and `full`, fewer prompts on a commit-and-push; in `seatbelt`, the
+commit is no longer denied along with the push.** In `observe`, only the log changes: those
+calls are now judged and logged with `source: judge`. `git push origin +main` is stopped
+exactly as before, at the end of a chain too.
+
+The rule now uses a new predicate, `token_prefix`: some token **of that one command** starts
+with one of the listed strings. `text` is unchanged and still reads the whole line, which is
+what the SQL rules need it for.
+
+This is the bundled `policy/default.yaml`. **If you copied it to `~/.bouncer/bouncer.yaml`
+or a repo's `.bouncer.yaml`, your copy still has the old rule.** Under
+`git-push-force-refspec`, replace `text: [" +"]` with `token_prefix: ["+"]`. A policy that
+uses `token_prefix` needs 0.2.4: an older install reports it as an unknown predicate, says it
+is not enforcing, and emits no decisions until the policy loads again. So update the plugin
+before editing a copied policy, and mind a repo's `.bouncer.yaml` that teammates on an older
+version also read.
+
+The first call after updating re-parses your policy once (the compiled-policy cache version
+moved, so that a policy an older version had rejected is not still rejected from the cache).
+
 ## 0.2.3
 
 **The bundled policy asks on `destructive` and `unreviewed_execution` from 0.60, down from

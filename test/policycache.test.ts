@@ -162,6 +162,7 @@ describe("the compiled-policy cache", () => {
       "      when:",
       "        first_token: [git]",
       "        tokens: [stash, clear]",
+      '        token_prefix: ["+"]',
       "        not_tokens: [--help]",
       '        text: ["drop table"]',
       "        path_labelled: [credential]",
@@ -197,7 +198,7 @@ describe("the compiled-policy cache", () => {
         "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
-        "redactsAs:[string],text:[string],tokens:[string]}}],probeQuestions:{}," +
+        "redactsAs:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
@@ -205,13 +206,13 @@ describe("the compiled-policy cache", () => {
         "mode:string,onError:string," +
         "sets:{gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
-        "redactsAs:[string],text:[string],tokens:[string]}}],probeQuestions:{}," +
+        "redactsAs:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(4);
+    expect(CACHE_VERSION).toBe(5);
   });
 });

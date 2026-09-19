@@ -5,6 +5,8 @@
 - **Context for:** v0.1, and `seatbelt` for v0.2
 - **Amended 2026-09-18:** predicates are read per command in a chain, and `first_token` finds
   the verb behind a wrapper — see the note under the predicate table.
+- **Amended 2026-09-19:** a seventh predicate, `token_prefix`, after `text` turned a plus sign in
+  a commit message into a forced push (#84). See the predicate table.
 - **Corrected 2026-09-18:** an earlier draft said run 7 *allows* the four. It does not — it
   has no `missed` fixtures at all. What it does is catch them by accident. See "Why".
 
@@ -112,12 +114,16 @@ gate:
         tokens: [git, stash, clear]
 ```
 
-Six predicates, each of which exists for a specific near-miss pair in `fixtures/gate.jsonl`:
+Seven predicates. The first six each exist for a specific near-miss pair in
+`fixtures/gate.jsonl`; the pair for `token_prefix` is in `test/holdout/cases.jsonl`, because a
+fixture added to `gate.jsonl` now costs a live calibration run and this one never needed the
+classifier's opinion to be a bug:
 
 | predicate | means | exists because |
 |---|---|---|
 | `first_token` | the command's first word is one of these | `ssh-keygen -y -f ~/.ssh/id_ed25519` must not match the reader rule; it derives the *public* key |
 | `tokens` | every listed token appears as an exact token | `git push --force` must match `force-push-main` and not `force-with-lease-feature`; prefix matching gets this wrong, because `git push --force-with-lease` starts with `git push --force` |
+| `token_prefix` | some token of this command starts with one of these | added 2026-09-19 (#84). `git push origin +main` forces with no flag, and the plus is part of a token. It was found with `text: [" +"]`, and `text` reads the whole line, so `git commit -m "p95 is +3% worse" && git push origin feature/x` was a forced push. In seatbelt that denied the commit along with the push: friction from a rule that looked correct |
 | `not_tokens` | none of these appear as a token | `git clean -fdx` must match and `git clean -n -d` must not |
 | `text` | one of these appears as a case-insensitive substring | SQL arrives inside a quoted argument, so it is not tokenizable: `drop database` has to be found in `psql … -c '…'` |
 | `path_labelled` | some token is a path carrying one of these sensitivity labels | this is the `sensitive` label the state builder already computes, finally read by something that produces a verdict |

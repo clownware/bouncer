@@ -39,6 +39,7 @@ const MODES: readonly Mode[] = ["observe", "guard", "full", "seatbelt"];
 const HARD_RULE_PREDICATES = [
   "first_token",
   "tokens",
+  "token_prefix",
   "not_tokens",
   "text",
   "path_labelled",
@@ -462,6 +463,7 @@ function readHardRules(
     const when: {
       firstToken?: readonly string[];
       tokens?: readonly string[];
+      tokenPrefix?: readonly string[];
       notTokens?: readonly string[];
       text?: readonly string[];
       pathLabelled?: readonly string[];
@@ -481,6 +483,7 @@ function readHardRules(
 
     const firstToken = list("first_token");
     const tokens = list("tokens");
+    const tokenPrefix = list("token_prefix");
     const notTokens = list("not_tokens");
     const text = list("text");
     const pathLabelled = list("path_labelled");
@@ -489,6 +492,7 @@ function readHardRules(
 
     if (firstToken !== undefined) when.firstToken = firstToken;
     if (tokens !== undefined) when.tokens = tokens;
+    if (tokenPrefix !== undefined) when.tokenPrefix = tokenPrefix;
     if (notTokens !== undefined) when.notTokens = notTokens;
     if (text !== undefined) when.text = text;
     if (pathLabelled !== undefined) when.pathLabelled = pathLabelled;

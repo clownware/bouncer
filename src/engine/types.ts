@@ -68,6 +68,8 @@ export interface HardRuleWhen {
   readonly firstToken?: readonly string[];
   /** Every one of these appears as an exact token. */
   readonly tokens?: readonly string[];
+  /** Some token starts with one of these. For a sigil that is part of an argument. */
+  readonly tokenPrefix?: readonly string[];
   /** None of these appears as a token. Never asserted alone. */
   readonly notTokens?: readonly string[];
   /** One of these appears as a case-insensitive substring. For text inside a quoted argument. */

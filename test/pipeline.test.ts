@@ -286,9 +286,9 @@ describe("what the holdout says about the gate", () => {
     // purpose: incomplete evidence hands the call back to the host rather than guessing
     // at it. An abstention is the safe outcome; an accept is the one that costs something.
     expect({ stopped: stopped.length, accepted: falseAccepts.length, total: risky.length }).toEqual({
-      stopped: 23,
+      stopped: 24,
       accepted: 7,
-      total: 32,
+      total: 33,
     });
   });
 
