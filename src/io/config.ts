@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { type LoadResult } from "../engine/policy.js";
 import { loadPolicyCached } from "./policycache.js";
 import type { Diagnostic } from "../engine/types.js";
@@ -77,12 +77,44 @@ function findRepoRoot(from: string): string | undefined {
  * Where decisions.jsonl and the breaker state live.
  *
  * ${CLAUDE_PLUGIN_DATA} is the directory Claude Code gives a plugin for persistent data.
- * Falling back to ~/.bouncer keeps the CLI usable when run outside a hook.
+ * Claude Code exports it to hook processes but *not* to commands it runs through the Bash
+ * tool — which is what a slash command is. So `/bouncer:status` and `/bouncer:explain`
+ * resolved ~/.bouncer while the hook beside them wrote to the plugin's data directory, and
+ * status reported "No decisions logged yet" over a log with a thousand decisions in it.
+ * Deriving the directory closes that split; the environment still wins when it is set.
+ *
+ * Falling back to ~/.bouncer keeps the CLI usable from a checkout, where there is no
+ * plugin directory to derive anything from.
  */
 export function dataDir(): string {
   const fromPlugin = process.env["CLAUDE_PLUGIN_DATA"];
   if (fromPlugin !== undefined && fromPlugin.length > 0) return fromPlugin;
-  return join(homedir(), ".bouncer");
+  return derivedPluginData(pluginRoot()) ?? join(homedir(), ".bouncer");
+}
+
+/**
+ * ${CLAUDE_PLUGIN_DATA} reconstructed from an installed plugin's own location.
+ *
+ * Claude Code caches a plugin at `<plugins>/cache/<marketplace>/<plugin>/<version>` and
+ * gives it `<plugins>/data/<plugin>-<marketplace>`, the plugin identifier `<plugin>@<marketplace>`
+ * with every character outside `a-zA-Z0-9_-` replaced by `-`. Both names are documented.
+ *
+ * The directory has to already exist for this to return it. That is the guard on a
+ * derivation: if the layout ever changes, the check fails and the caller falls back to
+ * ~/.bouncer, which is where it was reading before. Nothing is created here, and nothing
+ * is written to a path that was guessed rather than found.
+ */
+function derivedPluginData(root: string | undefined): string | undefined {
+  if (root === undefined) return undefined;
+
+  const version = resolve(root);
+  const plugin = dirname(version);
+  const marketplace = dirname(plugin);
+  const cache = dirname(marketplace);
+  if (basename(cache) !== "cache") return undefined;
+
+  const candidate = join(dirname(cache), "data", `${basename(plugin)}-${basename(marketplace)}`);
+  return existsSync(candidate) ? candidate : undefined;
 }
 
 /**
