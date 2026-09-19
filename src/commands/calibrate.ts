@@ -45,6 +45,7 @@ import {
   type Fixture,
   type Scored,
 } from "../calibrate.js";
+import { parseFlags } from "./args.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
@@ -60,14 +61,18 @@ export interface CalibrateArgs {
   readonly compare?: string;
   /** Where to write the run's raw answers, for `--from` to read back. */
   readonly out?: string;
+  /** A policy file for this run, ahead of every other place one is looked for. */
+  readonly policy?: string;
   readonly json?: boolean;
+  /** What was wrong with the argv. The command prints it and exits 1 without running. */
+  readonly error?: string;
 }
 
+const FLAGS = { values: ["fixtures", "set", "from", "backend", "compare", "out", "policy"], switches: ["json"] } as const;
+
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
-  const value = (name: string): string | undefined => {
-    const i = argv.indexOf(`--${name}`);
-    return i === -1 ? undefined : argv[i + 1];
-  };
+  const { values, switches, error } = parseFlags(argv, FLAGS);
+  const value = (name: string): string | undefined => values.get(name);
   return {
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
     ...(value("set") !== undefined ? { set: value("set") as string } : {}),
@@ -75,13 +80,20 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
     ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
     ...(value("out") !== undefined ? { out: value("out") as string } : {}),
-    json: argv.includes("--json"),
+    ...(value("policy") !== undefined ? { policy: value("policy") as string } : {}),
+    json: switches.has("json"),
+    ...(error !== undefined ? { error } : {}),
   };
 }
 
 export async function calibrate(args: CalibrateArgs, write: (s: string) => void): Promise<number> {
+  if (args.error !== undefined) {
+    write(args.error);
+    return 1;
+  }
+
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
 
   if (resolved.policy === undefined) {
     write(`Cannot calibrate: ${resolved.source} did not load.\n`);
@@ -166,9 +178,10 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   if (args.json === true) {
     const payload =
       second === undefined
-        ? { backend: first.backend, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) }
+        ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) }
         : {
             backends: [first.backend, second.backend],
+            policy: resolved.source,
             fixtures: fixtures.length,
             reports: {
               [first.backend]: report(first.scored, resolved.policy.calibration),
@@ -180,6 +193,9 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     return 0;
   }
 
+  // Which file, because the answer to "did that run use the policy I meant" was otherwise
+  // to go and work out the precedence by hand.
+  write(`Policy: ${resolved.source}\n`);
   for (const r of runs) {
     write(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
     write("\n");
@@ -236,6 +252,9 @@ function writeAnswers(path: string, answered: readonly Answered[], policy: Polic
       reason,
       source: reason.kind === "hard-rule" ? "hard_rule" : "judge",
       answers: a.answers,
+      // `--from` reads this back, and without it re-scoring the file would approve what the
+      // run itself refused.
+      ...(a.truncated === true ? { truncated: true } : {}),
       ...(Object.keys(a.probes).length > 0 ? { probes: a.probes } : {}),
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs },
     };

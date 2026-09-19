@@ -28,8 +28,23 @@ export interface ResolvedPolicy extends LoadResult {
  * aware of: cloning a repository means adopting its policy. Since the strictest thing any
  * policy can do is add prompts, and since it can never widen what Claude Code's own
  * settings allow, the worst a hostile policy achieves is noise.
+ *
+ * `explicit` is a command's `--policy`, and is not a fifth rung. A candidate that cannot be
+ * read is skipped in favour of the next one, which is right for places a policy might be
+ * and wrong for a file somebody named: a mistyped path would run the command against a
+ * different policy and say nothing. So a named file is the only candidate, and failing to
+ * read it is the error.
  */
-export function resolvePolicy(cwd: string, pluginRoot?: string): ResolvedPolicy {
+export function resolvePolicy(cwd: string, pluginRoot?: string, explicit?: string): ResolvedPolicy {
+  if (explicit !== undefined) {
+    const path = resolve(explicit);
+    const source = tryRead(path);
+    if (source === undefined) {
+      return { diagnostics: [{ severity: "error", path: "", message: "the file could not be read" }], source: path };
+    }
+    return { ...loadPolicyCached(dataDir(), path, source), source: path };
+  }
+
   for (const candidate of policyCandidates(cwd, pluginRoot)) {
     const source = tryRead(candidate);
     if (source === undefined) continue;

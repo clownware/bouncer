@@ -17,6 +17,7 @@ import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, type Adapter } from "../adapters/types.js";
 import { loadFixtures } from "../calibrate.js";
+import { parseFlags, positiveInteger } from "./args.js";
 import { GATE_SET } from "../engine/types.js";
 import { formatMeasurement, measure as runMeasure } from "../measure.js";
 import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
@@ -28,45 +29,45 @@ export interface MeasureArgs {
   readonly backend?: string;
   readonly reasoning?: string;
   readonly concurrency?: number;
+  /** A policy file for this run, ahead of every other place one is looked for. */
+  readonly policy?: string;
   readonly json?: boolean;
+  /** What was wrong with the argv. The command prints it and exits 1 without running. */
+  readonly error?: string;
 }
 
-const VALUE_FLAGS = ["set", "backend", "reasoning", "concurrency", "fixtures"] as const;
+const FLAGS = { values: ["set", "backend", "reasoning", "concurrency", "fixtures", "policy"], switches: ["json"], positionals: 1 } as const;
 
 export function parseArgs(argv: readonly string[]): MeasureArgs {
-  const values = new Map<string, string>();
-  let positional: string | undefined;
-
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i] as string;
-    if (token.startsWith("--")) {
-      const name = token.slice(2);
-      if ((VALUE_FLAGS as readonly string[]).includes(name)) {
-        const value = argv[i + 1];
-        if (value !== undefined) values.set(name, value);
-        i += 1;
-      }
-      continue;
-    }
-    positional ??= token;
-  }
-
+  const parsed = parseFlags(argv, FLAGS);
+  const { values } = parsed;
+  const positional = parsed.positionals[0];
+  const concurrency = positiveInteger("concurrency", values.get("concurrency"));
+  // Both spellings of the one input is two files, and only one of them would be measured.
+  const both = values.has("fixtures") && positional !== undefined ? `Fixtures were named twice: --fixtures ${values.get("fixtures")} and "${positional}".\n` : undefined;
+  const error = parsed.error ?? concurrency.error ?? both;
   const fixtures = values.get("fixtures") ?? positional;
-  const concurrency = Number(values.get("concurrency"));
 
   return {
     ...(fixtures !== undefined ? { fixtures } : {}),
     ...(values.has("set") ? { set: values.get("set") as string } : {}),
     ...(values.has("backend") ? { backend: values.get("backend") as string } : {}),
     ...(values.has("reasoning") ? { reasoning: values.get("reasoning") as string } : {}),
-    ...(Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}),
-    json: argv.includes("--json"),
+    ...(values.has("policy") ? { policy: values.get("policy") as string } : {}),
+    ...(concurrency.value !== undefined ? { concurrency: concurrency.value } : {}),
+    json: parsed.switches.has("json"),
+    ...(error !== undefined ? { error } : {}),
   };
 }
 
 export async function measure(args: MeasureArgs, write: (s: string) => void): Promise<number> {
+  if (args.error !== undefined) {
+    write(args.error);
+    return 1;
+  }
+
   if (args.fixtures === undefined) {
-    write('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"]\n');
+    write('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"] [--policy file]\n');
     return 1;
   }
 
@@ -84,7 +85,7 @@ export async function measure(args: MeasureArgs, write: (s: string) => void): Pr
   }
 
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
 
   if (resolved.policy === undefined) {
     write(`Cannot measure: ${resolved.source} did not load.\n`);

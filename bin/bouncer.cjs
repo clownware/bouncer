@@ -9066,7 +9066,15 @@ function isRecord3(value) {
 }
 
 // src/io/config.ts
-function resolvePolicy(cwd, pluginRoot2) {
+function resolvePolicy(cwd, pluginRoot2, explicit) {
+  if (explicit !== void 0) {
+    const path = (0, import_node_path5.resolve)(explicit);
+    const source = tryRead(path);
+    if (source === void 0) {
+      return { diagnostics: [{ severity: "error", path: "", message: "the file could not be read" }], source: path };
+    }
+    return { ...loadPolicyCached(dataDir(), path, source), source: path };
+  }
   for (const candidate of policyCandidates(cwd, pluginRoot2)) {
     const source = tryRead(candidate);
     if (source === void 0) continue;
@@ -9848,7 +9856,8 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
       answers,
       probes,
       latencyMs: response.latencyMs,
-      ...response.model !== void 0 ? { model: response.model } : {}
+      ...response.model !== void 0 ? { model: response.model } : {},
+      ...state.truncated ? { truncated: true } : {}
     };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
     onProgress?.(i + 1, fixtures.length, answered);
@@ -9858,10 +9867,10 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
 function scoreAnswered(answered, policy, set, setName) {
   const { fixture, answers, probes } = answered;
   const hard = setName === GATE_SET && fixture.kind === "tool_call" ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
-  const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
+  const decision = hard === void 0 ? evaluate(set, policy.mode, answers, { truncated: answered.truncated === true }) : void 0;
   const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
   const reason = hard !== void 0 ? { kind: "hard-rule", name: hard.name, because: hard.because } : decision?.reason ?? { kind: "no-rule-matched" };
-  const verdictReason = reason.kind === "hard-rule" ? { question: reason.name, p: Number.NaN, source: "hard_rule" } : reason.kind === "unanswered" ? { question: reason.missing.join(", "), p: Number.NaN, source: "unanswered" } : {
+  const verdictReason = reason.kind === "hard-rule" ? { question: reason.name, p: Number.NaN, source: "hard_rule" } : reason.kind === "unanswered" ? { question: reason.missing.join(", "), p: Number.NaN, source: "unanswered" } : reason.kind === "truncated" ? { question: "", p: Number.NaN, source: "truncated" } : {
     question: reason.kind === "rule" ? reason.question : "default",
     p: reason.kind === "rule" ? reason.p : Number.NaN,
     source: "rule"
@@ -9954,7 +9963,8 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
     matched += 1;
     if (record2.policy !== void 0 && record2.policy.questions !== set.questionsFingerprint) reworded += 1;
     if (record2.model !== void 0) models.add(record2.model);
-    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
+    const truncated = record2.truncated === true ? { truncated: true } : {};
+    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated }, policy, set, setName).rows);
   }
   return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
 }
@@ -9996,7 +10006,7 @@ function disagreements(scored) {
   for (const items of byFixture.values()) {
     const first = items[0];
     if (first === void 0) continue;
-    if (first.verdictReason.source === "unanswered") continue;
+    if (first.verdictReason.source === "unanswered" || first.verdictReason.source === "truncated") continue;
     const anyTrue = items.some((i) => i.expected);
     const asks = first.verdict !== "allow";
     if (anyTrue && !asks) {
@@ -10242,12 +10252,59 @@ function meanOf(values) {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
+// src/commands/args.ts
+function parseFlags(argv, spec) {
+  const values = /* @__PURE__ */ new Map();
+  const switches = /* @__PURE__ */ new Set();
+  const positionals = [];
+  const fail = (message2) => ({ values, switches, positionals, error: `${message2}
+${accepted(spec)}
+` });
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (!token.startsWith("-") || token === "-") {
+      if (positionals.length >= (spec.positionals ?? 0)) return fail(`Unexpected argument "${token}".`);
+      positionals.push(token);
+      continue;
+    }
+    const eq = token.indexOf("=");
+    const name = token.slice(2, eq === -1 ? void 0 : eq);
+    const long = token.startsWith("--");
+    if (long && spec.switches.includes(name)) {
+      if (eq !== -1) return fail(`--${name} does not take a value.`);
+      switches.add(name);
+      continue;
+    }
+    if (long && spec.values.includes(name)) {
+      const value = eq !== -1 ? token.slice(eq + 1) : argv[i + 1];
+      if (value === void 0 || value.length === 0 || eq === -1 && value.startsWith("--")) {
+        return fail(`--${name} needs a value.`);
+      }
+      values.set(name, value);
+      if (eq === -1) i += 1;
+      continue;
+    }
+    return fail(`Unknown flag "${token}".`);
+  }
+  return { values, switches, positionals };
+}
+function positiveInteger(name, raw) {
+  if (raw === void 0) return {};
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) return { error: `--${name} needs a whole number of at least 1, not "${raw}".
+` };
+  return { value };
+}
+function accepted(spec) {
+  const flags = [...spec.values.map((v) => `--${v} <value>`), ...spec.switches.map((s) => `--${s}`)];
+  return `Flags: ${flags.join(", ")}.`;
+}
+
 // src/commands/calibrate.ts
+var FLAGS = { values: ["fixtures", "set", "from", "backend", "compare", "out", "policy"], switches: ["json"] };
 function parseArgs(argv) {
-  const value = (name) => {
-    const i = argv.indexOf(`--${name}`);
-    return i === -1 ? void 0 : argv[i + 1];
-  };
+  const { values, switches, error } = parseFlags(argv, FLAGS);
+  const value = (name) => values.get(name);
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
     ...value("set") !== void 0 ? { set: value("set") } : {},
@@ -10255,12 +10312,18 @@ function parseArgs(argv) {
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     ...value("out") !== void 0 ? { out: value("out") } : {},
-    json: argv.includes("--json")
+    ...value("policy") !== void 0 ? { policy: value("policy") } : {},
+    json: switches.has("json"),
+    ...error !== void 0 ? { error } : {}
   };
 }
 async function calibrate(args, write3) {
+  if (args.error !== void 0) {
+    write3(args.error);
+    return 1;
+  }
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
   if (resolved.policy === void 0) {
     write3(`Cannot calibrate: ${resolved.source} did not load.
 `);
@@ -10333,8 +10396,9 @@ async function calibrate(args, write3) {
     }
   }
   if (args.json === true) {
-    const payload = second === void 0 ? { backend: first.backend, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) } : {
+    const payload = second === void 0 ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) } : {
       backends: [first.backend, second.backend],
+      policy: resolved.source,
       fixtures: fixtures.length,
       reports: {
         [first.backend]: report(first.scored, resolved.policy.calibration),
@@ -10346,6 +10410,8 @@ async function calibrate(args, write3) {
 `);
     return 0;
   }
+  write3(`Policy: ${resolved.source}
+`);
   for (const r of runs) {
     write3(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
     write3("\n");
@@ -10383,6 +10449,9 @@ function writeAnswers(path, answered, policy, setName, backend) {
       reason,
       source: reason.kind === "hard-rule" ? "hard_rule" : "judge",
       answers: a.answers,
+      // `--from` reads this back, and without it re-scoring the file would approve what the
+      // run itself refused.
+      ...a.truncated === true ? { truncated: true } : {},
       ...Object.keys(a.probes).length > 0 ? { probes: a.probes } : {},
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
     };
@@ -10772,41 +10841,36 @@ function message(err) {
 }
 
 // src/commands/judge.ts
-var VALUE_FLAGS = ["set", "backend", "out", "manifest", "concurrency"];
+var FLAGS2 = { values: ["set", "backend", "out", "manifest", "concurrency", "policy"], switches: ["json"], positionals: 1 };
 function parseArgs2(argv) {
-  const values = /* @__PURE__ */ new Map();
-  let path;
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i];
-    if (token.startsWith("--")) {
-      const name = token.slice(2);
-      if (VALUE_FLAGS.includes(name)) {
-        const value = argv[i + 1];
-        if (value !== void 0) values.set(name, value);
-        i += 1;
-      }
-      continue;
-    }
-    path ??= token;
-  }
-  const concurrency = Number(values.get("concurrency"));
+  const parsed = parseFlags(argv, FLAGS2);
+  const { values } = parsed;
+  const path = parsed.positionals[0];
+  const concurrency = positiveInteger("concurrency", values.get("concurrency"));
+  const error = parsed.error ?? concurrency.error;
   return {
     ...path !== void 0 ? { path } : {},
     ...values.has("set") ? { set: values.get("set") } : {},
     ...values.has("backend") ? { backend: values.get("backend") } : {},
     ...values.has("out") ? { out: values.get("out") } : {},
     ...values.has("manifest") ? { manifest: values.get("manifest") } : {},
-    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
-    json: argv.includes("--json")
+    ...values.has("policy") ? { policy: values.get("policy") } : {},
+    ...concurrency.value !== void 0 ? { concurrency: concurrency.value } : {},
+    json: parsed.switches.has("json"),
+    ...error !== void 0 ? { error } : {}
   };
 }
 async function judge2(args, write3) {
+  if (args.error !== void 0) {
+    write3(args.error);
+    return 1;
+  }
   if (args.path === void 0) {
-    write3("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock]\n");
+    write3("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock] [--policy file]\n");
     return 1;
   }
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
   if (resolved.policy === void 0) {
     write3(`Cannot judge: ${resolved.source} did not load.
 `);
@@ -11350,37 +11414,34 @@ function lastJsonObject(stdout) {
 }
 
 // src/commands/measure.ts
-var VALUE_FLAGS2 = ["set", "backend", "reasoning", "concurrency", "fixtures"];
+var FLAGS3 = { values: ["set", "backend", "reasoning", "concurrency", "fixtures", "policy"], switches: ["json"], positionals: 1 };
 function parseArgs3(argv) {
-  const values = /* @__PURE__ */ new Map();
-  let positional;
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i];
-    if (token.startsWith("--")) {
-      const name = token.slice(2);
-      if (VALUE_FLAGS2.includes(name)) {
-        const value = argv[i + 1];
-        if (value !== void 0) values.set(name, value);
-        i += 1;
-      }
-      continue;
-    }
-    positional ??= token;
-  }
+  const parsed = parseFlags(argv, FLAGS3);
+  const { values } = parsed;
+  const positional = parsed.positionals[0];
+  const concurrency = positiveInteger("concurrency", values.get("concurrency"));
+  const both = values.has("fixtures") && positional !== void 0 ? `Fixtures were named twice: --fixtures ${values.get("fixtures")} and "${positional}".
+` : void 0;
+  const error = parsed.error ?? concurrency.error ?? both;
   const fixtures = values.get("fixtures") ?? positional;
-  const concurrency = Number(values.get("concurrency"));
   return {
     ...fixtures !== void 0 ? { fixtures } : {},
     ...values.has("set") ? { set: values.get("set") } : {},
     ...values.has("backend") ? { backend: values.get("backend") } : {},
     ...values.has("reasoning") ? { reasoning: values.get("reasoning") } : {},
-    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
-    json: argv.includes("--json")
+    ...values.has("policy") ? { policy: values.get("policy") } : {},
+    ...concurrency.value !== void 0 ? { concurrency: concurrency.value } : {},
+    json: parsed.switches.has("json"),
+    ...error !== void 0 ? { error } : {}
   };
 }
 async function measure2(args, write3) {
+  if (args.error !== void 0) {
+    write3(args.error);
+    return 1;
+  }
   if (args.fixtures === void 0) {
-    write3('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"]\n');
+    write3('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"] [--policy file]\n');
     return 1;
   }
   const command = args.reasoning ?? process.env[REASONING_CMD_ENV];
@@ -11395,7 +11456,7 @@ async function measure2(args, write3) {
     return 1;
   }
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
   if (resolved.policy === void 0) {
     write3(`Cannot measure: ${resolved.source} did not load.
 `);
@@ -11919,7 +11980,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.1\n");
+      process.stdout.write("0.2.2\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
