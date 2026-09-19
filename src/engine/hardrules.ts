@@ -170,8 +170,18 @@ function commandsIn(command: string): string[][] {
 
       for (const piece of (match[3] ?? "").split(OPERATOR)) {
         if (piece.length === 0) continue;
-        if (OPERATOR.test(piece) || piece === "&") end();
-        else current.push(piece);
+        if (OPERATOR.test(piece) || piece === "&") {
+          end();
+          continue;
+        }
+        current.push(piece);
+        // `-df` is `-d -f`, so it counts as both as well as itself. Otherwise an entry has
+        // to list every order of every bundle, and `git clean -fdn` — a dry run — prompts.
+        // A long option written with one dash (`find -delete`) gets letters it does not
+        // mean; an entry also names its command, which is what keeps that harmless.
+        if (/^-[A-Za-z]{2,}$/.test(piece)) {
+          for (const letter of piece.slice(1)) current.push(`-${letter}`);
+        }
       }
     }
     end();

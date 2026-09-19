@@ -128,6 +128,7 @@ gate:
   #   first_token    the command's verb is one of these, found behind `sudo`, `command`,
   #                  `env`, a `NAME=value`, a leading backslash or a directory (`/bin/cat`)
   #   tokens         every one of these appears as an exact, whitespace-delimited token
+  #                  (`-fd` also counts as `-f` and `-d`)
   #   not_tokens     none of these appears as a token (narrows; never used alone)
   #   text           one of these appears case-insensitively anywhere in the command —
   #                  how to reach SQL and anything else inside a quoted argument
@@ -243,7 +244,8 @@ gate:
       when:
         tokens: [git, branch, -D]
 
-    # `-D` is shorthand for these two, and git accepts them spelled out or split.
+    # `-D` is shorthand for these two, and git accepts them spelled out or split. Bundled
+    # (`-df`, `-fd`) needs no entry: a run of short flags also counts as each of its letters.
     - name: git-branch-force-delete-long
       because: "Deletes a branch whose commits are not merged anywhere else."
       when:

@@ -137,6 +137,33 @@ describe("the shipped hard rules", () => {
     expect(fires("git clean -n -d; echo done")).toBeUndefined();
   });
 
+  // `tokens` matches exact tokens, and git lets short flags share a dash. Spelling out every
+  // order of every combination in the policy file is not a plan, so a run of short flags
+  // also counts as each of its letters.
+  const bundled: ReadonlyArray<readonly [string, string]> = [
+    ["git branch -df feature/parser", "git-branch-force-delete-split"],
+    ["git branch -fd feature/parser", "git-branch-force-delete-split"],
+    ["git push -fu origin main", "git-push-force-short"],
+    ["git push -uf origin main", "git-push-force-short"],
+    ["git log -np -- .env", "git-log-patch-of-a-credential-file"],
+  ];
+
+  it.each(bundled)("reads bundled short flags: `%s`", (command, name) => {
+    expect(fires(command)).toBe(name);
+  });
+
+  it("lets a bundled -n excuse a git clean, since that is a dry run", () => {
+    // Without this the change above would only ever add prompts. `-fdn` is `-n`.
+    expect(fires("git clean -fdn")).toBeUndefined();
+    expect(fires("git clean -fdx")).toBe("git-clean-force");
+  });
+
+  it("does not take a long option written with one dash for a bundle of flags it matches", () => {
+    // `-delete` is find's, not `-d -e -l -e -t -e`; what keeps it harmless is that an entry
+    // also names `git` and a subcommand, and those are not in this command.
+    expect(fires("find . -name '*.tmp' -delete")).toBeUndefined();
+  });
+
   it("still does not split inside a quoted argument", () => {
     expect(fires("git commit -m 'tidy; cat .env'")).toBeUndefined();
     expect(fires("psql $DATABASE_URL -c 'select 1; DROP DATABASE analytics'")).toBe("drop-a-database");

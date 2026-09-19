@@ -131,7 +131,9 @@ Six predicates, each of which exists for a specific near-miss pair in `fixtures/
 > `FOO=1 cat .env` all got past an entry written for `cat`, and reached a classifier that
 > answers 0.15 on it — while in the other direction `cat README.md && ls .env` added up to
 > a credential read, and `git clean -fdx; echo -n done` was excused by echo's `-n`. `text`
-> and `redacts_as` still read the whole line. This is still not a shell parser:
+> and `redacts_as` still read the whole line. A bundle of short flags (`-df`) also counts as
+> each of its letters, so `git branch -df x` matches and `git clean -fdn` — a dry run — is
+> excused. This is still not a shell parser:
 > `sudo -u root cat .env`, `xargs` and `$(…)` get past it and fall to the classifier.
 
 `path_labelled` never fires on its own. `find ~ -name 'id_rsa'` has a token that labels as

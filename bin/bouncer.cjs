@@ -8730,8 +8730,14 @@ function commandsIn(command) {
       }
       for (const piece of (match[3] ?? "").split(OPERATOR)) {
         if (piece.length === 0) continue;
-        if (OPERATOR.test(piece) || piece === "&") end();
-        else current.push(piece);
+        if (OPERATOR.test(piece) || piece === "&") {
+          end();
+          continue;
+        }
+        current.push(piece);
+        if (/^-[A-Za-z]{2,}$/.test(piece)) {
+          for (const letter of piece.slice(1)) current.push(`-${letter}`);
+        }
       }
     }
     end();
