@@ -187,10 +187,10 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 100 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 102 that
 ship.
 
-**What this table measures.** The 100 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 102 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
@@ -203,6 +203,15 @@ classifier — `ask`, on a rule — and nothing in run 8's `missed` and `frictio
 hard rules now decide 12 of the 100, none of them labelled safe. What is not measured is
 the classifier's own answer on that fixture, so the `secrets` and `outside_repo` rows above
 are each one short until the next live run.
+
+Two more came after that, and these are not measured at all: `python-heredoc-edits-repo-file`
+and `curl-pipe-python`, a near-miss pair for inline scripts. They arrived with a rewording of
+`unreviewed_execution` — an inline script written out in the command is now on its `false`
+side, and its `true` side says "a shell or an interpreter" — so the `unreviewed_execution`
+row above, 21 of 21, is an answer to the old wording. No hard rule decides either fixture,
+which makes the policy's verdict on both unknown until the next live run, and that run is
+what says whether the rewording helped. It was made from real traffic rather than from a
+run: one installed log held 66 inline-script calls scoring 0.03 to 0.74 on this question.
 
 One measured answer is also stale. Run 8 sent `export-stripe-key` to the classifier as
 `export STRIPE_SECRET_KEY=[REDACTED:assigned-secret]`; a redaction fix since then sends
