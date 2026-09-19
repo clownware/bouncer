@@ -12,8 +12,8 @@ on:
 # change the hash and the comment together.
 #
 # The runner image is pinned for the same reason. `ubuntu-latest` is a name that moves (to
-# Ubuntu 26 from 2026-10-19), and the latency budget below is a number measured on one
-# image: a change of image should arrive as a commit that can be read beside the bench
+# Ubuntu 26 from 2026-10-19), and the hook overhead printed below is a number measured on
+# one image: a change of image should arrive as a commit that can be read beside the bench
 # line, not as a morning when the budget fails on unchanged code.
 
 jobs:
@@ -98,10 +98,47 @@ jobs:
         env:
           CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}
 
-      # Hook overhead is in the latency path of every gated tool call. CI machines are
-      # noisy, so the budget here is deliberately looser than the 80 ms target we hold
-      # ourselves to locally; this catches a dependency blowing up the bundle, not drift.
-      # 50 runs rather than 20: p95 over 20 samples rests on a single observation, so a
-      # one-off scheduling hiccup on a shared runner reads as a latency regression.
-      - name: Latency budget
-        run: node scripts/bench.mjs --budget 150 --runs 50
+      # Hook overhead is in the latency path of every gated tool call. This step prints it
+      # and never fails. It used to be `--budget 150`, and on 2026-09-19 that failed `main`
+      # at p95 151.3 ms on unchanged code and passed on a rerun of the same commit (#73): an
+      # absolute number measures the runner as much as the hook. The line stays in the log
+      # because a slow creep is only visible as a series of these.
+      - name: Hook overhead
+        run: node scripts/bench.mjs --runs 50
+
+      # The gate. The bundle this change produces against the one it started from, run
+      # interleaved so whatever the runner is doing lands in both arms and cancels, failing
+      # when the paired median is worse by more than MAX_REGRESSION_PCT of the base's median.
+      #
+      # The base arm costs no build: bin/bouncer.cjs is committed, and the step above has
+      # just proved this checkout's copy equals a fresh build, so the same held for the base
+      # when it passed here. For a pull request the checkout is the merge into the base
+      # branch, so against `base.sha` the difference is this pull request's and nothing
+      # else's; for a push it is the commit the branch was at before.
+      #
+      # Skipped when the bundle and the bench are both byte-identical to the base, which is
+      # every docs-only and test-only change: about 15 s of runner time when it does run,
+      # and Actions minutes are a budget. It cannot see a change to policy/default.yaml,
+      # because both arms read this checkout's policy; the line above is what shows that.
+      #
+      # 10, because a byte-identical bundle reads within 1% of itself over 50 pairs and a
+      # stray `require("node:crypto")` reads +4.5% on a laptop and more on slower hardware,
+      # while the regressions this exists for (unbundling was +93%, ADR-002) are far past
+      # it. It is a threshold, so it lives here and not in scripts/.
+      - name: Hook overhead against the base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          MAX_REGRESSION_PCT: "10"
+        run: |
+          if ! git fetch --quiet --depth=1 origin "$BASE_SHA"; then
+            echo "::notice::Base commit '$BASE_SHA' could not be fetched; nothing to compare against."
+            exit 0
+          fi
+          git show "$BASE_SHA:bin/bouncer.cjs" > "$RUNNER_TEMP/base.cjs"
+          if cmp -s "$RUNNER_TEMP/base.cjs" bin/bouncer.cjs \
+            && git diff --quiet "$BASE_SHA" -- scripts/bench.mjs; then
+            echo "The bundle and the bench are unchanged from $BASE_SHA; nothing to compare."
+            exit 0
+          fi
+          node scripts/bench.mjs --against "$RUNNER_TEMP/base.cjs" --runs 50 \
+            --max-regression-pct "$MAX_REGRESSION_PCT"

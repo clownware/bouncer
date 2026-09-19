@@ -111,6 +111,13 @@ have to bump a cache version to do it.
   code; cached, the same path runs at 53 ms median. Whether the local default becomes a
   tighter number against the cached path, or stops being a gate, is its own decision. CI's
   gate is 150 ms and is unaffected.
+  **Decided 2026-09-19 (#73): it stops being a gate, and so does CI's.** The same day, CI's
+  150 ms failed `main` at p95 151.3 ms on unchanged code and passed on a rerun, so neither
+  absolute number was measuring the code. `npm run bench` prints 80 ms as the target and
+  exits 0 unless `--budget` is passed; CI runs `--against` the base commit's committed
+  bundle with `--max-regression-pct 10` and fails on the paired median. A byte-identical
+  bundle reads within 1% of itself over 50 pairs, which is the noise that margin has to
+  clear.
 
 ## What this costs a paired bench (added 2026-09-19)
 

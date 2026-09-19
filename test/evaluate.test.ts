@@ -375,7 +375,7 @@ describe("the shipped default policy, end to end", () => {
     expect(decision.emit).toBeUndefined();
   });
 
-  // `npm run bench` is the gate CLAUDE.md's "latency is a feature" rule is enforced by, and
+  // `scripts/bench.mjs` is what CLAUDE.md's "latency is a feature" rule is enforced by, and
   // it measures whatever path its payload happens to take. Its one payload used to be
   // `git push --force origin main`, which `gate.hard_rules` turned into a hard-rule hit —
   // so the budget silently stopped measuring the classifier path it was written for, and

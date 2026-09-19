@@ -68,5 +68,7 @@ problems, for a saving that is small next to the adapter call. Not for v0.1.
 - `bin/bouncer.cjs` is a build artifact **in git**. It must be rebuilt and committed
   whenever `src/` changes; CI verifies the committed bundle matches a fresh build.
 - Adding a dependency has a direct, measurable latency cost. `npm run bench` is the gate.
+  (Since 2026-09-19 the gate is the paired compare against the base commit in CI, and
+  80 ms is a printed target rather than an exit status; see ADR-007 and #73.)
 - The bundle is not minified. Users are being asked to let this run in their tool path;
   it should be readable.

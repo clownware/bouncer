@@ -9,9 +9,15 @@ const BIN = "bin/bouncer.cjs";
 // A hook process inherits CLAUDE_PLUGIN_ROOT from Claude Code, which is how it finds the
 // bundled default policy. Without it bouncer is correctly silent, which would make these
 // tests pass for the wrong reason.
+//
+// The policy is named for the opposite reason. Left to resolve, the hook finds the
+// developer's own ~/.bouncer/bouncer.yaml before the bundled default, so on a machine whose
+// owner had moved to seatbelt mode "emits no decision in observe mode" got a deny back and
+// failed, on a checkout CI passed.
 const HOOK_ENV = {
   ...process.env,
   BOUNCER_BACKEND: "mock",
+  BOUNCER_POLICY: resolve("policy/default.yaml"),
   CLAUDE_PLUGIN_ROOT: resolve("."),
   CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), "bouncer-cli-")),
 };
