@@ -280,6 +280,24 @@ describe("the circuit breaker", () => {
     const output = await runPreToolUse(payload({ session_id: "a-new-session" }), { adapter: dangerous });
     expect(output?.hookSpecificOutput?.permissionDecision).toBe("ask");
   });
+
+  // Two windows open at once, which is ordinary. Each used to find the other's record, start
+  // fresh, and take the uncounted warm-up again — so neither could ever stand down, and a
+  // dead classifier cost every call its full timeout for as long as both stayed open.
+  it("stands down in each of two sessions whose calls interleave", async () => {
+    const messages: string[] = [];
+    for (let i = 0; i <= breaker.FAILURE_LIMIT; i++) {
+      for (const session_id of ["window-one", "window-two"]) {
+        const output = await runPreToolUse(payload({ session_id }), { adapter: failing });
+        if (output?.systemMessage !== undefined) messages.push(session_id);
+      }
+    }
+    expect(messages).toEqual(["window-one", "window-two"]);
+
+    const adapter = { name: "explode", decide: async () => { throw new Error("should not be called"); } };
+    await expect(runPreToolUse(payload({ session_id: "window-one" }), { adapter })).resolves.toBeUndefined();
+    await expect(runPreToolUse(payload({ session_id: "window-two" }), { adapter })).resolves.toBeUndefined();
+  });
 });
 
 describe("the state handed to the classifier", () => {

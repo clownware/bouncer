@@ -19,11 +19,31 @@
 // It stays because it cannot cost anything. Both limits count consecutive calls, five and
 // twenty of them, so one uncounted call neither trips the breaker nor saves it — and a
 // safety component is not where to delete a margin on the strength of two samples.
+//
+// The file holds several sessions, because the data directory is one per machine and not
+// one per project: two Claude Code windows share it whatever repositories they are in.
+// Until 2026-09-19 it held one record, which each session overwrote with its own. A session
+// that found somebody else's record started fresh, and a fresh session's first call is the
+// uncounted warm-up — so with two windows open every call was a warm-up, the count was
+// written back as zero each time, and the breaker could not trip however long the
+// classifier stayed down. The once-per-session notices were lost the same way.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeAtomic } from "./atomic.js";
 
 export const BREAKER_FILE = "breaker.json";
+
+/**
+ * How many sessions the file remembers, most recent last.
+ *
+ * One file with a cap rather than a file per session: nothing sweeps the data directory,
+ * so per-session files would be the first thing in it to grow without bound, and
+ * `session_id` arrives on stdin, which is not something to build a filename from. Eight is
+ * more windows than anyone has open; a session evicted by a ninth re-learns that the
+ * classifier is down in five calls.
+ */
+export const MAX_SESSIONS = 8;
 
 /** Consecutive adapter failures before giving up for the session. */
 export const FAILURE_LIMIT = 5;
@@ -57,24 +77,40 @@ const FRESH = (sessionId: string): BreakerState => ({
   consecutive_slow: 0,
 });
 
-export function read(dir: string, sessionId: string): BreakerState {
+/** Every session the file remembers, oldest first. Empty when there is no usable file. */
+export function readAll(dir: string): BreakerState[] {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(readFileSync(join(dir, BREAKER_FILE), "utf8")) as BreakerState;
-    // A new session starts clean: a bad key yesterday says nothing about today.
-    if (parsed.session_id !== sessionId) return FRESH(sessionId);
-    return parsed;
+    parsed = JSON.parse(readFileSync(join(dir, BREAKER_FILE), "utf8"));
   } catch {
-    return FRESH(sessionId);
+    return [];
   }
+
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const sessions = (parsed as Record<string, unknown>)["sessions"];
+  if (Array.isArray(sessions)) return sessions.filter(isState);
+  // The single record an older build wrote. It is one session's state and reads as that.
+  return isState(parsed) ? [parsed] : [];
+}
+
+export function read(dir: string, sessionId: string): BreakerState {
+  // A session the file has not seen starts clean: a bad key yesterday says nothing about today.
+  return readAll(dir).find((s) => s.session_id === sessionId) ?? FRESH(sessionId);
 }
 
 export function write(dir: string, state: BreakerState): void {
-  try {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, BREAKER_FILE), JSON.stringify(state), "utf8");
-  } catch {
-    // Losing breaker state means at worst re-learning that the adapter is down.
-  }
+  // Read, replace this session's record, write back. Two hooks finishing together can each
+  // read the file before the other writes, and one update is then lost — which delays a trip
+  // by a call and resets nobody, so it is not worth a lock in a process that lives 40 ms.
+  const others = readAll(dir).filter((s) => s.session_id !== state.session_id);
+  const sessions = [...others, state].slice(-MAX_SESSIONS);
+  // A failed write is ignored: losing breaker state means at worst re-learning that the
+  // adapter is down.
+  writeAtomic(join(dir, BREAKER_FILE), JSON.stringify({ sessions }));
+}
+
+function isState(value: unknown): value is BreakerState {
+  return typeof value === "object" && value !== null && typeof (value as Record<string, unknown>)["session_id"] === "string";
 }
 
 /**
