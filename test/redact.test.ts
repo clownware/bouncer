@@ -54,7 +54,8 @@ describe("redact", () => {
   // just written. A variable named like a secret erased what kind of secret it held.
   it("keeps the specific label when the variable is also named like a secret", () => {
     // Synthetic, and it has to be key-shaped: the point is that the shape-keyed pattern wins.
-    const stripe = "export STRIPE_SECRET_KEY=sk_live_abcdefghijklmnopqrstuvwx"; // gitleaks:allow
+    // Built on the alphabet run, which is what .gitleaks.toml recognises as fake.
+    const stripe = "export STRIPE_SECRET_KEY=sk_live_abcdefghijklmnopqrstuvwx";
     expect(redact(stripe).text).toBe("export STRIPE_SECRET_KEY=[REDACTED:stripe-key]");
     expect(redact("docker run -e API_KEY=sk-proj-abcdefghijklmnopqrstuvwx ubuntu:24.04").text).toBe(
       "docker run -e API_KEY=[REDACTED:openai-key] ubuntu:24.04",
