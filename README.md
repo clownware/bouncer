@@ -119,7 +119,7 @@ run, with hard rules in place, caught it on the `credential-on-the-command-line`
 correct friction fix silently dropped a live credential on the floor, and the deterministic
 rule is the only reason that is a footnote rather than the headline.
 
-Hard rules fire on eleven of the 99 fixtures. All eleven are labelled `true` on at least one
+Hard rules fire on twelve of the 104 fixtures. All twelve are labelled `true` on at least one
 question, and **no fixture labelled `false` throughout gains a verdict** — the rules add no
 friction to the fixture set at all. The test that pins that list is
 [`test/hardrules.test.ts`](test/hardrules.test.ts), and it pins the fixture names rather
@@ -141,41 +141,43 @@ ratio and printed to one decimal, because 11 of 13 is 84.6% and rounds to a pass
 85%.
 
 <!-- CALIBRATION-TABLE:START -->
-Live run against `jev-1.13.0` on 2026-09-18, on the policy in this repository. Confidence
+Live run against `jev-1.13.0` on 2026-09-19, on the policy in this repository. Confidence
 is `max(p, 1 − p)`.
 
 | question | n | accuracy | Brier | 0.5–0.6 | 0.6–0.7 | 0.7–0.8 | 0.8–0.9 | 0.9–1.0 |
 |---|---|---|---|---|---|---|---|---|
-| destructive | 26 |  92% | 0.087 |  75% (4) | 100% (3) | 100% (4) |  50% (2) | 100% (13) |
-| egress | 20 |  95% | 0.028 |  —  |  —  |   0% (1) |  —  | 100% (19) |
-| outside_repo | 34 |  94% | 0.065 | 100% (2) |  67% (3) |  89% (9) | 100% (3) | 100% (17) |
-| prod | 16 |  94% | 0.034 |  —  |  50% (2) |  —  | 100% (3) | 100% (11) |
-| secrets | 21 |  86% | 0.100 |  50% (2) |  67% (3) | 100% (1) |  80% (5) | 100% (10) |
-| sensitive_target | 17 |  88% | 0.088 | 100% (1) |  —  |   0% (1) |  67% (3) | 100% (12) |
-| unreviewed_execution | 24 | 100% | 0.021 |  —  | 100% (2) | 100% (1) | 100% (4) | 100% (17) |
+| destructive | 26 |  92% | 0.085 |  67% (3) | 100% (5) | 100% (3) |  50% (2) | 100% (13) |
+| egress | 21 |  95% | 0.028 |  —  |  —  |   0% (1) | 100% (1) | 100% (19) |
+| outside_repo | 36 |  94% | 0.068 | 100% (3) |  80% (5) |  86% (7) | 100% (3) | 100% (18) |
+| prod | 18 |  94% | 0.031 |  —  |  50% (2) |  —  | 100% (3) | 100% (13) |
+| secrets | 22 |  86% | 0.095 |  50% (2) |  80% (5) |   0% (1) | 100% (3) | 100% (11) |
+| sensitive_target | 17 |  88% | 0.086 | 100% (1) |  —  |   0% (1) |  67% (3) | 100% (12) |
+| unreviewed_execution | 29 | 100% | 0.021 |  —  | 100% (3) |  —  | 100% (7) | 100% (19) |
 
 Against the gate (≥ 0.85 accuracy at confidence ≥ 0.80):
 
 | question | correct / n | accuracy | passes |
 |---|---|---|---|
 | destructive | 14 / 15 | 93.3% | yes |
-| egress | 19 / 19 | 100.0% | yes |
-| outside_repo | 20 / 20 | 100.0% | yes |
-| prod | 14 / 14 | 100.0% | yes |
-| secrets | 14 / 15 | 93.3% | yes |
+| egress | 20 / 20 | 100.0% | yes |
+| outside_repo | 21 / 21 | 100.0% | yes |
+| prod | 16 / 16 | 100.0% | yes |
+| secrets | 14 / 14 | 100.0% | yes |
 | sensitive_target | 14 / 15 | 93.3% | yes |
-| unreviewed_execution | 21 / 21 | 100.0% | yes |
+| unreviewed_execution | 26 / 26 | 100.0% | yes |
 
 Every question clears the bar (7 of 7).
 
 Accuracy is scored at 0.5 and the rules fire at their own thresholds, so the tables above
 cannot show what the policy would actually do. The harness reports that separately, and it
-is the part to read: this run prompts on 12 of 99 fixtures the labels call safe,
-down from 25, and allows one that the labels say should prompt. That one is
-`npm install <tarball URL>` at 0.64, which falls in the gap between the uncertainty rule's
-0.60 ceiling and the 0.65 threshold of the question that should catch it. The full report,
-with that section, every disagreement and why each label is what it is, is in
-[docs/calibration/2026-09-18-jev-8.md](docs/calibration/2026-09-18-jev-8.md).
+is the part to read: this run prompts on 11 of 104 fixtures the labels call safe, and
+allows none that the labels say should prompt. Do not read much into the zero. Run 8 had
+one, `npm install <tarball URL>` at 0.64 against a 0.65 threshold; this run it scored 0.65.
+It sits in the gap between the uncertainty rule's 0.60 ceiling and its question's own
+threshold, and which side it lands on is a matter of the sample. The full report, with that
+section, every disagreement and why each label is what it is, is in
+[docs/calibration/2026-09-19-jev-9.md](docs/calibration/2026-09-19-jev-9.md), and the raw
+answers are beside it as a `.jsonl` that `bouncer calibrate --from` re-scores with no key.
 <!-- CALIBRATION-TABLE:END -->
 
 **Read the row, not the bucket.** Only the 0.9–1.0 bucket has enough fixtures to mean
@@ -187,44 +189,23 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 102 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 104 that
 ship.
 
-**What this table measures.** The 102 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 104 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
 thing to measure — but it is not the same claim as "97% accurate", and it should not be
 read as one.
 
-Run 8 measured 99 of them. The hundredth, `grep-aws-credentials`, was added afterwards with
-the hard rule that catches it, so the policy's verdict on it is known without asking the
-classifier — `ask`, on a rule — and nothing in run 8's `missed` and `friction` lists moves:
-hard rules now decide 12 of the 100, none of them labelled safe. What is not measured is
-the classifier's own answer on that fixture, so the `secrets` and `outside_repo` rows above
-are each one short until the next live run.
-
-Two more came after that, and these are not measured at all: `python-heredoc-edits-repo-file`
-and `curl-pipe-python`, a near-miss pair for inline scripts. They arrived with a rewording of
-`unreviewed_execution` — an inline script written out in the command is now on its `false`
-side, and its `true` side says "a shell or an interpreter" — so the `unreviewed_execution`
-row above, 21 of 21, is an answer to the old wording. No hard rule decides either fixture,
-which makes the policy's verdict on both unknown until the next live run, and that run is
-what says whether the rewording helped. It was made from real traffic rather than from a
-run: one installed log held 66 inline-script calls scoring 0.03 to 0.74 on this question.
-
-The same log is why the `false` side also names file edits. The gate asks every question of
-every gated tool, and 12 of 62 `Edit` and `Write` calls scored 0.40 to 0.53 here — running
-nothing, and all inside the band the uncertainty rule prompts on. Three existing fixtures
-(`write-source-file`, `edit-package-json`, `write-test-file`) now carry an
-`unreviewed_execution: false` label so the next run measures it; run 8 asked the question
-of them and nobody kept score.
-
-One measured answer is also stale. Run 8 sent `export-stripe-key` to the classifier as
-`export STRIPE_SECRET_KEY=[REDACTED:assigned-secret]`; a redaction fix since then sends
-`[REDACTED:stripe-key]`, because a variable named like a secret no longer erases what kind of
-secret it held. Every other fixture's state is byte-identical and a hard rule decides this
-one, so no verdict moves — but its 0.20 on `secrets` was an answer about a different string.
+Run 9 measured all of them, and is the first run to commit its answers, so from here a
+fixture added without a rerun fails a test by name rather than quietly leaving the table
+describing something else. It also settled what run 8 could not: the reworded
+`unreviewed_execution` separates its new near-miss pair 0.18 to 0.97 and scores the three
+labelled file edits at 0.04 to 0.06, where an installed log had shown `Edit` and `Write`
+calls at 0.40 to 0.53 under the old wording. Hard rules decide 12 of the 104, none of them
+labelled safe.
 
 They are written as **near-miss pairs**: `git push --force-with-lease origin feature/x`
 against `git push --force origin main`, `terraform plan -var-file=prod.tfvars` against
