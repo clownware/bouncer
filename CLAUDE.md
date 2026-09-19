@@ -173,3 +173,11 @@ recorded reality; the docs are a description of it.
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
 - **No real API key in any thread.** Jev calls are stubbed in tests; live calibration runs
   are done by Chris locally.
+- A synthetic credential in a test or fixture is the real prefix followed by the alphabet
+  (`abcdefghijkl…`), or is a plain word where the pattern keys on the variable's name.
+  `.gitleaks.toml` allows a finding only when it is under `test/` or `fixtures/` AND looks
+  like that, so a commit hook that scans staged changes passes the fakes and still catches
+  a real key seeded into a fixture from someone's history. It also catches a key-shaped
+  example written anywhere else, this file included — which is why none is spelled out
+  here. Do not widen it to the whole directory, and do not reach for `--no-verify` or an
+  inline allow.

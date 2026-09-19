@@ -1,0 +1,37 @@
+# Secret-scanner configuration for this repository.
+#
+# Bouncer tests a secret redactor, so its tests and fixtures are full of strings shaped like
+# credentials — a pattern that only matches the word "SECRET" would be useless to test
+# against. A scanner run over staged changes flags them, and a commit that touches one of
+# those lines is refused.
+#
+# The allowance below is deliberately NOT "anything under test/ or fixtures/". Fixtures are
+# meant to be seeded from real history (see docs/dogfooding.md), which makes fixtures/ the
+# one directory where a real key is most likely to arrive by accident. So a finding is
+# allowed only when BOTH hold: it is in a test or fixture file, AND its value is visibly
+# synthetic. A real key pasted into fixtures/gate.jsonl is still caught.
+#
+# Writing a new synthetic credential: build it on the alphabet run `abcdefghijkl…`, as the
+# existing ones are (`sk_live_abcdefghijklmnopqrstuvwx`). No real credential contains that
+# run, it reads as fake to a person at a glance, and it passes here without a new entry.
+# Where a pattern keys on the variable's NAME rather than the value's shape, use a plain
+# word (`hunter22`, `swordfish`) and nothing needs allowing at all.
+
+title = "bouncer"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic credentials in the redactor's tests and the gate's fixtures"
+condition = "AND"
+paths = ['''(^|/)(test|fixtures)/''']
+regexTarget = "secret"
+regexes = [
+  # The alphabet run every shape-keyed synthetic value is built on.
+  '''abcdefghijkl''',
+  # The three that predate that convention, matched exactly rather than loosely.
+  '''^abcd1234wxyz$''',
+  '''^eyJhbGciOiJIUzI1\.eyJzdWIiOiIxMjM0\.SflKxwRJSMeKKF2QT4$''',
+  '''^-----BEGIN RSA PRIVATE KEY-----\\nMIIEpAIBAAKCAQEA\\n-----END RSA PRIVATE KEY-----''',
+]
