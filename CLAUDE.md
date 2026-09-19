@@ -191,6 +191,15 @@ recorded reality; the docs are a description of it.
   is not.
 - `bin/bouncer.cjs` is a committed build artifact. Rebuild and commit it whenever `src/`
   changes; CI verifies it matches a fresh build.
+- **A change to what an installed bouncer does bumps `version` in the same PR.** Claude Code
+  pins an installed plugin to the string in `.claude-plugin/plugin.json` and only offers an
+  update when it moves, so a fix merged without a bump reaches nobody who already installed —
+  it sits on `main` looking shipped. PR #69 fixed the log path every install reads and landed
+  without one. The string lives in four places (`plugin.json`, `package.json`,
+  `package-lock.json`, and the literal `--version` prints in `src/cli.ts`) and
+  `test/plugin.test.ts` pins them to each other, `--version` by running the built bundle. The
+  marketplace entry deliberately carries no version: `plugin.json` wins over it, so a copy
+  there would be a fifth place to forget. Docs and tests alone do not need a bump.
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
 - **No real API key in any thread.** Jev calls are stubbed in tests; live calibration runs
