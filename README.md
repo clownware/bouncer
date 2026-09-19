@@ -500,8 +500,8 @@ at all — and with an empty table every row scores the same, which is the plumb
 rather than a result:
 
 ```
-BOUNCER_POLICY=policy/judge-example.yaml \
 bouncer measure fixtures/judge-example.jsonl \
+  --policy policy/judge-example.yaml \
   --set content --backend mock \
   --reasoning "node test/fixtures/reasoning/oracle.mjs"
 ```

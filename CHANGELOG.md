@@ -8,6 +8,30 @@ Earlier releases have no entries: 0.2.0 is described in
 [docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
 convention does.
 
+## 0.2.2
+
+**`calibrate`, `judge` and `measure` refuse a flag they do not know** (#60). All three used
+to drop one silently, so `--backned mock` ran against whatever backend the policy names —
+with a key in the environment, a live and billed run you did not ask for — and
+`--concurrency abc` was ignored the same way. Each now prints the token, lists the flags it
+accepts, and exits 1 without running. A second bare argument and a value flag with no value
+are refused too. **If a script of yours passes one of these commands a flag it never had,
+that script now fails where it used to run**; the flag was doing nothing, so deleting it
+restores exactly the old behaviour.
+
+**`--policy <file>` on all three.** The only way to choose a policy for one run was the
+`BOUNCER_POLICY` environment variable. The flag wins over it, and unlike it a file that
+cannot be read is an error rather than a quiet fall-through to the next policy in
+precedence. `calibrate` now prints the policy file it scored against, and carries it as
+`policy` in `--json`.
+
+**`calibrate` refuses an allow on a truncated state, as the hook does** (#61). The gate will
+not approve a call whose state was over the 4 KB cap, since every answer is about the part
+that fit. `calibrate` was not told, so for such a call it reported `allow` where the
+installed gate stands aside, and could list it under `missed` by a verdict the gate never
+gave. `--out` lines now carry `truncated` and `--from` reads it, from gate logs too. No
+fixture that ships is near the cap, so no published number moves.
+
 ## 0.2.1
 
 **`full` mode no longer emits `allow` for a call bouncer did not look at** (#72). A tool

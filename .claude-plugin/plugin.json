@@ -1,7 +1,7 @@
 {
   "name": "bouncer",
   "description": "A decision layer for Claude Code hooks. Classifies proposed tool calls against a policy you own and returns allow / ask / deny, using a fast System One model instead of a frontier LLM. Observe-only until you have looked at your own calibration table.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": { "name": "Clownware" },
   "homepage": "https://github.com/clownware/bouncer",
   "repository": "https://github.com/clownware/bouncer",
