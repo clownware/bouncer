@@ -1,6 +1,6 @@
 # ADR-010: A fast-path entry is a whole command unless it ends in a space
 
-- **Status:** accepted
+- **Status:** accepted; the shipped list's `git status` entry corrected on 2026-09-19
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 - **Changes:** the matching rule `policy/default.yaml` documented as "a literal prefix"
@@ -18,6 +18,32 @@ Until now both spellings took arguments; the trailing space only decided whether
 needed a word boundary. The shipped list is respelled to keep what it meant to keep:
 `git status `, `ls `, `which ` take arguments; `pwd` and every entry that runs project code
 are whole commands; `go test ./...` is added as the exact form most people type.
+
+> **Corrected on 2026-09-19.** `git status ` should not have kept its arguments, and this
+> ADR is where that should have been caught. A flag is an argument: `git status -v` prints
+> the diff of what is staged and `-vv` adds the unstaged one, which is `git diff` under
+> another name — and `git diff` is on this document's own list of verbs excluded for
+> printing file contents. A staged `.env` was therefore printed with the classifier never
+> asked, so the `secrets` question could not fire on the case its criteria name.
+>
+> The hole predates this ADR rather than arriving with it: the previous spelling,
+> `"git status"` with no space, matched on a word boundary, which admitted the same
+> commands. What this ADR did was re-type the entry with the space that asserts every
+> argument is safe, and the Consequences section below reaches for `git status --short` as
+> the example of what that space preserves — the one form worth keeping, beside three that
+> were not. Deciding the rule and auditing the list against it were the same change, and
+> only the first half was done.
+>
+> The entry is now five whole commands: `git status`, `-s`, `-sb`, `--short`,
+> `--porcelain`. `ls ` and `which ` stay as they are. They disclose names — `ls ~/.ssh`
+> lists key files, unjudged — and that is accepted rather than overlooked: the rule this
+> document states is about contents, and the `secrets` question keys on a value.
+>
+> `test/fastpath.test.ts` now drives the built binary for each case and asserts which layer
+> decided it, including a generative half over whatever the policy currently lists: every
+> whole-command entry must judge an extra token, and every argument-taking entry must
+> refuse a redirect, a `$`, a separator, a pipe and a `&&`. Reading the list was what
+> failed here; the check is no longer a reading.
 
 ## Why
 
