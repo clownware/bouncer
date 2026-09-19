@@ -117,11 +117,17 @@ export async function judge(
   await Promise.all(Array.from({ length: width }, () => worker()));
 
   const escalations = results.flatMap((r) => (r.escalation === undefined ? [] : [r.escalation]));
-  const judgedCount = results.filter((r) => r.error === undefined).length;
-  const tokens = results.reduce<number | undefined>(
-    (sum, r) => (r.inputTokens === undefined ? sum : (sum ?? 0) + r.inputTokens),
-    undefined,
-  );
+  // Unknown if any judged item went uncounted: a total over the items that happened to
+  // report is not a smaller total, it is a wrong one. A failed item was never billed.
+  const judged = results.filter((r) => r.error === undefined);
+  const judgedCount = judged.length;
+  const tokens =
+    judged.length === 0
+      ? undefined
+      : judged.reduce<number | undefined>(
+          (sum, r) => (sum === undefined || r.inputTokens === undefined ? undefined : sum + r.inputTokens),
+          0,
+        );
 
   return {
     set: options.setName,

@@ -10399,10 +10399,11 @@ async function judge(items, options) {
   const width = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY2, items.length));
   await Promise.all(Array.from({ length: width }, () => worker()));
   const escalations = results.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
-  const judgedCount = results.filter((r) => r.error === void 0).length;
-  const tokens = results.reduce(
-    (sum, r) => r.inputTokens === void 0 ? sum : (sum ?? 0) + r.inputTokens,
-    void 0
+  const judged = results.filter((r) => r.error === void 0);
+  const judgedCount = judged.length;
+  const tokens = judged.length === 0 ? void 0 : judged.reduce(
+    (sum, r) => sum === void 0 || r.inputTokens === void 0 ? void 0 : sum + r.inputTokens,
+    0
   );
   return {
     set: options.setName,
@@ -10855,37 +10856,41 @@ async function measure(fixtures, options) {
     const r = reasoning.get(id);
     return r === void 0 ? [] : [r];
   }));
+  const scored = commonRows(byId, [judgeAnswers, reasoningAnswers, cascadeAnswers]);
   const passes = [
     {
       name: "judge",
       by: options.adapter.name,
-      ...accuracyOf(byId, judgeAnswers),
+      ...accuracyOf(byId, judgeAnswers, scored),
       ...judgeRun.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens } : {},
       items: judgeRun.judged
     },
     {
       name: "reasoning",
       by: options.reasoning.name,
-      ...accuracyOf(byId, reasoningAnswers),
+      ...accuracyOf(byId, reasoningAnswers, scored),
       ...reasoningTokens,
       items: reasoning.size
     },
     {
       name: "cascade",
       by: `${options.adapter.name} + ${options.reasoning.name}`,
-      ...accuracyOf(byId, cascadeAnswers),
+      ...accuracyOf(byId, cascadeAnswers, scored),
       // Every item pays the judge; only the escalated ones pay the reasoning model. That
-      // sum is the whole cost argument, so it is added rather than estimated.
-      ...addTokens(
-        judgeRun.inputTokens === void 0 ? {} : { inputTokens: judgeRun.inputTokens },
-        cascadeTokens
-      ),
+      // sum is the whole cost argument, so it is added rather than estimated — and it is
+      // unknown if either half is. "Undefined plus 400 is 400" prints a cascade cost that
+      // leaves out whichever model did not count, and prints it as a fact.
+      ...judgeRun.inputTokens !== void 0 && cascadeTokens.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens + cascadeTokens.inputTokens } : {},
+      // Output is the reasoning model's alone. A judgment is a probability rather than
+      // generated text, and no judge backend reports output tokens to add.
+      ...cascadeTokens.outputTokens !== void 0 ? { outputTokens: cascadeTokens.outputTokens } : {},
       items: judgeRun.judged
     }
   ];
   return {
     set: options.setName,
     fixtures: fixtures.length,
+    rows: fixtures.reduce((sum, f) => sum + Object.keys(f.expect).length, 0),
     passes,
     escalated: judgeRun.manifest.items.length,
     judged: judgeRun.judged,
@@ -10893,7 +10898,17 @@ async function measure(fixtures, options) {
     ...failures[0] !== void 0 ? { firstReasoningError: failures[0] } : {}
   };
 }
-function accuracyOf(fixtures, answers) {
+var rowKey = (id, question) => `${id}\0${question}`;
+function commonRows(fixtures, passes) {
+  const rows = /* @__PURE__ */ new Set();
+  for (const [id, fixture] of fixtures) {
+    for (const question of Object.keys(fixture.expect)) {
+      if (passes.every((answers) => answers.get(id)?.[question] !== void 0)) rows.add(rowKey(id, question));
+    }
+  }
+  return rows;
+}
+function accuracyOf(fixtures, answers, scored) {
   let n = 0;
   let correct = 0;
   let unanswered = 0;
@@ -10905,6 +10920,7 @@ function accuracyOf(fixtures, answers) {
         unanswered += 1;
         continue;
       }
+      if (!scored.has(rowKey(id, question))) continue;
       n += 1;
       if (p >= 0.5 === expected) correct += 1;
     }
@@ -10914,19 +10930,10 @@ function accuracyOf(fixtures, answers) {
 function sumTokens(responses) {
   const add = (pick) => responses.reduce((sum, r) => {
     const value = pick(r);
-    return value === void 0 ? sum : (sum ?? 0) + value;
-  }, void 0);
+    return sum === void 0 || value === void 0 ? void 0 : sum + value;
+  }, 0);
   const inputTokens = add((r) => r.inputTokens);
   const outputTokens = add((r) => r.outputTokens);
-  return {
-    ...inputTokens !== void 0 ? { inputTokens } : {},
-    ...outputTokens !== void 0 ? { outputTokens } : {}
-  };
-}
-function addTokens(left, right) {
-  const both = (a, b) => a === void 0 && b === void 0 ? void 0 : (a ?? 0) + (b ?? 0);
-  const inputTokens = both(left.inputTokens, right.inputTokens);
-  const outputTokens = both(left.outputTokens, right.outputTokens);
   return {
     ...inputTokens !== void 0 ? { inputTokens } : {},
     ...outputTokens !== void 0 ? { outputTokens } : {}
@@ -10973,7 +10980,7 @@ function formatMeasurement(m) {
     } else {
       lines.push(
         `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
-        `At ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation it is not worth running: either the thresholds are too wide or the questions are not separating the batch.`
+        `That is what ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation does: either the thresholds are too wide or the questions are not separating the batch.`
       );
     }
     if (judgePass !== void 0 && !Number.isNaN(judgePass.accuracy)) {
@@ -10982,6 +10989,19 @@ function formatMeasurement(m) {
         worth === 0 ? `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations changed no verdict.` : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`
       );
     }
+    lines.push(
+      "Tokens are not cost. The two models are priced differently, so price each row's input",
+      "and output at your own rates before deciding anything from this."
+    );
+  }
+  if (m.escalated > 0) {
+    lines.push(
+      "",
+      `The reasoning pass was shown the judge's signals on the ${m.escalated} escalated item${m.escalated === 1 ? "" : "s"},`,
+      "because the cascade reuses those answers rather than asking twice. Its row is a",
+      "signal-assisted baseline paired with the cascade, not what the same model scores",
+      "knowing nothing of the judge."
+    );
   }
   if (m.reasoningFailures > 0) {
     lines.push(
@@ -10989,9 +11009,13 @@ function formatMeasurement(m) {
       `${m.reasoningFailures} reasoning call${m.reasoningFailures === 1 ? "" : "s"} failed and are excluded from the rows above. First error: ${m.firstReasoningError ?? "(none recorded)"}`
     );
   }
-  const unanswered = m.passes.reduce((sum, p) => sum + p.unanswered, 0);
-  if (unanswered > 0) {
-    lines.push(`${unanswered} labelled rows went unanswered and are excluded rather than counted wrong.`);
+  const scoredRows = m.passes[0]?.n ?? 0;
+  if (scoredRows < m.rows) {
+    const each = m.passes.map((p) => `${p.name} ${p.unanswered}`).join(", ");
+    lines.push(
+      `Scored ${scoredRows} of ${m.rows} labelled rows: the ones every pass answered, so the three accuracies share a denominator.`,
+      `Unanswered, by pass: ${each}. They are set aside rather than counted wrong.`
+    );
   }
   lines.push(
     "",
