@@ -1,6 +1,6 @@
 # ADR-010: A fast-path entry is a whole command unless it ends in a space
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 - **Changes:** the matching rule `policy/default.yaml` documented as "a literal prefix"
