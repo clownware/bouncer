@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -46,3 +47,32 @@ function frontmatterField(path: string, field: string): string {
   const match = new RegExp(`^${field}:\\s*(.+)$`, "m").exec(text.split("---")[1] ?? "");
   return match?.[1] ?? "";
 }
+
+// The version is written in four places and a stale one is not cosmetic.
+//
+// Claude Code pins an installed plugin to the version string in plugin.json, so a fix
+// merged without bumping it reaches nobody who has already installed. That makes the
+// string load-bearing, and `--version` lying about it is how someone spends an afternoon
+// debugging a fix they do not have.
+describe("the version", () => {
+  const manifest = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")) as { version: string };
+
+  it("matches between the plugin manifest and the package", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+    expect(manifest.version).toBe(pkg.version);
+  });
+
+  it("is what the built bundle reports", () => {
+    const printed = spawnSync(process.execPath, ["bin/bouncer.cjs", "--version"], { encoding: "utf8" });
+    expect(printed.stdout.trim()).toBe(manifest.version);
+  });
+
+  it("is not the one the marketplace entry carries, because it carries none", () => {
+    // plugin.json wins over a marketplace entry's version, so a second copy of the string
+    // there would be a fifth place to forget. Keep the entry versionless.
+    const market = JSON.parse(readFileSync(".claude-plugin/marketplace.json", "utf8")) as {
+      plugins: readonly Record<string, unknown>[];
+    };
+    for (const entry of market.plugins) expect(entry["version"]).toBeUndefined();
+  });
+});
