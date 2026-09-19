@@ -9098,7 +9098,17 @@ function findRepoRoot(from) {
 function dataDir() {
   const fromPlugin = process.env["CLAUDE_PLUGIN_DATA"];
   if (fromPlugin !== void 0 && fromPlugin.length > 0) return fromPlugin;
-  return (0, import_node_path5.join)((0, import_node_os.homedir)(), ".bouncer");
+  return derivedPluginData(pluginRoot()) ?? (0, import_node_path5.join)((0, import_node_os.homedir)(), ".bouncer");
+}
+function derivedPluginData(root) {
+  if (root === void 0) return void 0;
+  const version = (0, import_node_path5.resolve)(root);
+  const plugin = (0, import_node_path5.dirname)(version);
+  const marketplace = (0, import_node_path5.dirname)(plugin);
+  const cache = (0, import_node_path5.dirname)(marketplace);
+  if ((0, import_node_path5.basename)(cache) !== "cache") return void 0;
+  const candidate = (0, import_node_path5.join)((0, import_node_path5.dirname)(cache), "data", `${(0, import_node_path5.basename)(plugin)}-${(0, import_node_path5.basename)(marketplace)}`);
+  return (0, import_node_fs4.existsSync)(candidate) ? candidate : void 0;
 }
 function pluginRoot() {
   const fromEnv = process.env["CLAUDE_PLUGIN_ROOT"];
