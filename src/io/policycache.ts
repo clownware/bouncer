@@ -37,8 +37,13 @@ import { writeAtomic } from "./atomic.js";
  * into a policy with no `sets` at all, so `bouncer judge --set x` would report that the
  * set does not exist while the file plainly defines it — and would do so only on machines
  * with a warm cache, which is the worst kind of bug to be told about.
+ *
+ * 3 → 4: `Policy.fingerprint` and `PolicySet.questionsFingerprint`. A v3 entry deserialises
+ * with neither, and every record written from it would carry no policy identity — silently,
+ * and only on the machines that have been running longest, which are the ones whose logs
+ * are worth re-scoring.
  */
-export const CACHE_VERSION = 3;
+export const CACHE_VERSION = 4;
 
 const DIR = "policy-cache";
 

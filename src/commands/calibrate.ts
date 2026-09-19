@@ -227,6 +227,10 @@ function writeAnswers(path: string, answered: readonly Answered[], policy: Polic
       state_kind: a.fixture.kind,
       mode: policy.mode,
       backend,
+      // A published run is re-scored for as long as the repository exists. Which model gave
+      // these answers, and to which wording of the questions, is what makes that legitimate.
+      ...(a.model !== undefined ? { model: a.model } : {}),
+      policy: { file: policy.fingerprint, questions: set.questionsFingerprint },
       verdict,
       emitted: null,
       reason,
@@ -275,6 +279,9 @@ function fromLog(
     write(
       `No line in ${args.from} matched a fixture id.\n` +
         `  ${result.unmatched} lines named an item with no fixture, and ${result.unscorable} carried no answers.\n` +
+        (result.otherSet > 0
+          ? `  ${result.otherSet} were judged against a different set than "${args.set ?? "gate"}" — pass --set to score those.\n`
+          : "") +
         `  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.\n`,
     );
     return 1;
@@ -288,6 +295,9 @@ function fromLog(
           matched: result.matched,
           unmatched: result.unmatched,
           unscorable: result.unscorable,
+          otherSet: result.otherSet,
+          reworded: result.reworded,
+          models: result.models,
           reports: report(result.scored, policy.calibration),
         },
         null,
@@ -303,6 +313,24 @@ function fromLog(
       ` ${result.unmatched} had no fixture; ${result.unscorable} carried no classifier answer` +
       ` (a hard rule, the fast path, or an error).\n`,
   );
+  if (result.otherSet > 0) {
+    write(`${result.otherSet} were judged against a different set and are left out.\n`);
+  }
+  if (result.models.length > 0) {
+    write(
+      result.models.length === 1
+        ? `Answered by ${result.models[0]}.\n`
+        : `Answered by ${result.models.length} models (${result.models.join(", ")}), so this is not one sample.\n`,
+    );
+  }
+  // Last, and worded to be read: every number above it is about the old wording.
+  if (result.reworded > 0) {
+    write(
+      `\n${result.reworded} of those ${result.matched} were answered under a different wording of this set's questions than\n` +
+        `the policy has now. The probabilities above are about the old wording. Moving a threshold\n` +
+        `leaves them valid; rewording a question does not, and only a live run re-asks it.\n`,
+    );
+  }
   return 0;
 }
 

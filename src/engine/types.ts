@@ -3,6 +3,8 @@
 // These mirror the policy file's shape rather than an idealised internal model, so that a
 // validation error can always point at the line the user wrote.
 
+import { fingerprintQuestions } from "./fingerprint.js";
+
 /**
  * What bouncer is allowed to emit. See docs/adr/003, and docs/adr/004 for `seatbelt`.
  *
@@ -160,6 +162,16 @@ export interface PolicySet {
    */
   readonly probeQuestions: Readonly<Record<string, Question>>;
   readonly rules: readonly Rule[];
+  /**
+   * A fingerprint of what this set asks: every question and probe, by name, with its
+   * instructions and criteria. Rules are deliberately not in it.
+   *
+   * A record of answers is only meaningful against the questions that produced them, and
+   * `calibrate --from` exists to re-score old answers under *moved thresholds* — so a
+   * changed rule must leave this alone, and a reworded question must not. Computed once
+   * when the policy compiles and carried in the policy cache, so the hook pays nothing.
+   */
+  readonly questionsFingerprint: string;
 }
 
 /**
@@ -220,6 +232,14 @@ export interface Policy {
    */
   readonly gate: GatePolicy;
   readonly calibration: CalibrationPolicy;
+  /**
+   * A fingerprint of the policy file's exact text, comments and all.
+   *
+   * What a record carries so that "which policy was installed when this was decided" has an
+   * answer. Any edit changes it, thresholds included — `questionsFingerprint` on a set is
+   * the narrower one that says whether old answers can still be re-scored.
+   */
+  readonly fingerprint: string;
 }
 
 /** The gate a policy gets when the file names no gate set: gated on nothing. */
@@ -230,6 +250,7 @@ export const EMPTY_GATE: GatePolicy = {
   questions: {},
   probeQuestions: {},
   rules: [],
+  questionsFingerprint: fingerprintQuestions({}, {}),
 };
 
 /** A problem with the policy file. `warnings` do not prevent loading; `errors` do. */

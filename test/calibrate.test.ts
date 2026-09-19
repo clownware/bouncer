@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -74,6 +74,34 @@ describe("the shipped fixture set", () => {
       `README.md states ${stated.join(" and ")} fixtures and fixtures/gate.jsonl holds ${FIXTURES.length}. ` +
         "A changed fixture set invalidates the published table: rerun live, or say in the README what was and was not re-measured.",
     ).toEqual([FIXTURES.length, FIXTURES.length]);
+  });
+
+  // The precise version of the check above. That one can only tell that somebody opened the
+  // README; this one can tell whether the published table was measured over the fixtures
+  // that ship. It reads whichever run the README's table links to, and looks for the answers
+  // file CLAUDE.md says a published run commits beside its write-up.
+  //
+  // Run 8 committed none, so until a run does this has nothing to hold and says so by
+  // passing. From run 9 on, adding a fixture without a rerun fails here by name.
+  it("has a published answers file covering exactly the fixtures that ship, once there is one", () => {
+    const readme = readFileSync("README.md", "utf8");
+    const table = readme.slice(readme.indexOf("CALIBRATION-TABLE:START"), readme.indexOf("CALIBRATION-TABLE:END"));
+    const run = table.match(/docs\/calibration\/([\w.-]+)\.md/)?.[1];
+    expect(run, "the README's calibration table links to no run").toBeDefined();
+
+    const answers = `docs/calibration/${run}.jsonl`;
+    if (!existsSync(answers)) return;
+
+    const ids = readFileSync(answers, "utf8").trim().split("\n").map((l) => JSON.parse(l).item as string);
+    const shipped = FIXTURES.map((f) => f.id);
+    const missing = shipped.filter((id) => !ids.includes(id));
+    const extra = ids.filter((id) => !shipped.includes(id));
+
+    expect(
+      { missing, extra },
+      `${answers} is the run the README publishes, and it does not cover fixtures/gate.jsonl. ` +
+        "Rerun live with --out, or say in the README which fixtures the table does not measure.",
+    ).toEqual({ missing: [], extra: [] });
   });
 
   it("only expects questions the default policy actually asks", () => {
@@ -674,6 +702,55 @@ describe("scoring from a log", () => {
     expect(() => scoreFromLog("", [], POLICY, "nope")).toThrow(/no set named "nope"/);
   });
 
+  // The join is on an id, and two fixture files can share one. Answers to a content set's
+  // questions are not answers to the gate's, whatever the item is called.
+  it("leaves out a line judged against a different set", () => {
+    const log = [
+      line({ item: "a", set: "content", answers: { destructive: 0.91 } }),
+      line({ item: "b", answers: { destructive: 0.04 } }),
+    ].join("\n");
+
+    const result = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.otherSet).toBe(1);
+    expect(result.matched).toBe(1);
+    expect(result.scored.map((s) => s.fixture.id)).toEqual(["b"]);
+  });
+
+  it("reads a gate line, which names no set, as the gate's", () => {
+    const { set: _set, ...gateLine } = JSON.parse(line({ tool_use_id: "a", answers: { destructive: 0.91 } }));
+    const result = scoreFromLog(JSON.stringify(gateLine), parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.otherSet).toBe(0);
+    expect(result.matched).toBe(1);
+  });
+
+  // Scored, and said. Re-scoring under a moved threshold is the feature, so a reworded
+  // question must not put the run out of reach — but a number about the old wording looks
+  // like any other, and only the count tells the reader which they are holding.
+  it("counts lines answered under a different wording of the questions, and still scores them", () => {
+    const now = POLICY.gate.questionsFingerprint;
+    const log = [
+      line({ item: "a", answers: { destructive: 0.91 }, policy: { file: "1-00000000", questions: "1-00000000" } }),
+      line({ item: "b", answers: { destructive: 0.04 }, policy: { file: "1-00000000", questions: now } }),
+    ].join("\n");
+
+    const result = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(result.reworded).toBe(1);
+    expect(result.matched).toBe(2);
+  });
+
+  it("says nothing about wording for a line written before records carried it", () => {
+    const log = line({ item: "a", answers: { destructive: 0.91 } });
+    expect(scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY).reworded).toBe(0);
+  });
+
+  it("names every model the answers came from", () => {
+    const log = [
+      line({ item: "a", answers: { destructive: 0.91 }, model: "jev-1.14.0" }),
+      line({ item: "b", answers: { destructive: 0.04 }, model: "jev-1.13.0" }),
+    ].join("\n");
+    expect(scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY).models).toEqual(["jev-1.13.0", "jev-1.14.0"]);
+  });
+
   // The live path applies hard rules before it reads an answer, so the recorded path has to
   // as well or the same answers print two different tables. `export-stripe-key` is the
   // fixture that showed it: run 8's first pass had it `missed` at secrets 0.20, and a hard
@@ -756,6 +833,28 @@ describe("calibrate --out", () => {
     await run({ backend: "mock", out });
     await run({ backend: "mock", out });
     expect(readFileSync(out, "utf8").trim().split("\n")).toHaveLength(FIXTURES.length);
+  });
+
+  // A published run is re-scored for as long as the repository exists. What makes that
+  // legitimate is knowing which model gave these answers and to which wording.
+  it("says on every line which model answered and which questions it was asked", async () => {
+    const out = join(dir, "run.jsonl");
+    await run({ backend: "mock", out });
+
+    const lines = readFileSync(out, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.every((l) => l.model === "mock")).toBe(true);
+    expect(lines.every((l) => l.policy.questions === POLICY.gate.questionsFingerprint)).toBe(true);
+    expect(lines.every((l) => l.policy.file === POLICY.fingerprint)).toBe(true);
+  });
+
+  it("re-scores its own file with nothing reworded and one model named", async () => {
+    const out = join(dir, "run.jsonl");
+    await run({ backend: "mock", out });
+
+    const recorded = JSON.parse((await run({ from: out })).out);
+    expect(recorded.reworded).toBe(0);
+    expect(recorded.otherSet).toBe(0);
+    expect(recorded.models).toEqual(["mock"]);
   });
 
   it("refuses --compare, since one file cannot hold two classifiers' answers", async () => {

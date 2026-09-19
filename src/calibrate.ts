@@ -289,7 +289,13 @@ export async function score(
       else answers[name] = value;
     }
 
-    const answered: Answered = { fixture, answers, probes, latencyMs: response.latencyMs };
+    const answered: Answered = {
+      fixture,
+      answers,
+      probes,
+      latencyMs: response.latencyMs,
+      ...(response.model !== undefined ? { model: response.model } : {}),
+    };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
 
     onProgress?.(i + 1, fixtures.length, answered);
@@ -312,6 +318,8 @@ export interface Answered {
   /** Answers to `probe_questions`. Scored where labelled; never read by a rule. */
   readonly probes: Readonly<Record<string, number>>;
   readonly latencyMs: number;
+  /** The model that answered, as the backend reported it. */
+  readonly model?: string;
 }
 
 /**
@@ -458,7 +466,7 @@ export function scoreFromLog(
   fixtures: readonly Fixture[],
   policy: Policy,
   setName: string = GATE_SET,
-): { scored: Scored[]; matched: number; unmatched: number; unscorable: number } {
+): FromLog {
   const set = policy.sets[setName];
   if (set === undefined) {
     throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
@@ -467,11 +475,21 @@ export function scoreFromLog(
   const byId = new Map(fixtures.map((f) => [f.id, f]));
 
   const scored: Scored[] = [];
+  const models = new Set<string>();
   let matched = 0;
   let unmatched = 0;
   let unscorable = 0;
+  let otherSet = 0;
+  let reworded = 0;
 
   for (const record of parseLog(source)) {
+    // Answers to another set's questions, which an id shared between two fixture files
+    // would otherwise join to these labels. A gate line names no set, and is the gate's.
+    if ((record.set ?? GATE_SET) !== setName) {
+      otherSet += 1;
+      continue;
+    }
+
     // A judge line is keyed on the item; a gate line has only its tool_use_id, so a user
     // labelling their own history labels by that.
     const key = record.item ?? record.tool_use_id;
@@ -495,10 +513,32 @@ export function scoreFromLog(
     }
 
     matched += 1;
+    // Counted and still scored. Re-scoring old answers under a moved threshold is what this
+    // is for, and one reworded question should not put a whole run out of reach — but the
+    // reader has to be told, because a number about the old wording looks like any other.
+    // A line from before records carried this says nothing either way.
+    if (record.policy !== undefined && record.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record.model !== undefined) models.add(record.model);
+
     scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
   }
 
-  return { scored, matched, unmatched, unscorable };
+  return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
+}
+
+export interface FromLog {
+  readonly scored: Scored[];
+  readonly matched: number;
+  /** Lines naming an item no fixture has. */
+  readonly unmatched: number;
+  /** Lines with no classifier answer: a hard rule, the fast path, or an error. */
+  readonly unscorable: number;
+  /** Lines judged against a different set, and so skipped. */
+  readonly otherSet: number;
+  /** Matched lines whose questions were worded differently from the policy's now. Scored. */
+  readonly reworded: number;
+  /** Every model the matched lines name. More than one means the answers are not one sample. */
+  readonly models: readonly string[];
 }
 
 export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {
