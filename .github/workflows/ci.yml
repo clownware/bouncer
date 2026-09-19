@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Actions are pinned to a commit, with the release it was in the comment beside it. A tag
+# like `@v4` is a name its owner can move to different code at any time; a commit is not.
+# Nothing updates these automatically, which is the price: to bump one, take the commit a
+# release tag points at — `gh api repos/actions/checkout/commits/v4.4.0 --jq .sha` — and
+# change the hash and the comment together.
+
 jobs:
   # The gate that counts. A local hook that scans staged changes only protects commits made
   # where that hook runs; a commit from a cloud session, or from anyone without it, was
@@ -19,12 +25,21 @@ jobs:
   # key for an organisation's repositories. Bumping it means changing both values together.
   # `--redact` because this log is public: a scanner that prints what it found has just
   # published it.
+  #
+  # What the digest below was checked against, on 2026-09-18, since the project publishes
+  # no signature and no build attestation to check it against instead: it is the value in
+  # the release's checksums file, and separately the sha256 GitHub's own API records for
+  # the asset; the asset was uploaded by the maintainer on 2026-03-21 and has not changed
+  # since. That is two records of one upload, not two sources. It means the pin protects
+  # against the file changing from here on, and says nothing about the day it was built.
+  # When bumping, read `digest` and `updated_at` from
+  # `gh api repos/gitleaks/gitleaks/releases/tags/v<version>` before trusting the new one.
   secrets:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -43,9 +58,11 @@ jobs:
 
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: npm
