@@ -213,6 +213,13 @@ which makes the policy's verdict on both unknown until the next live run, and th
 what says whether the rewording helped. It was made from real traffic rather than from a
 run: one installed log held 66 inline-script calls scoring 0.03 to 0.74 on this question.
 
+The same log is why the `false` side also names file edits. The gate asks every question of
+every gated tool, and 12 of 62 `Edit` and `Write` calls scored 0.40 to 0.53 here — running
+nothing, and all inside the band the uncertainty rule prompts on. Three existing fixtures
+(`write-source-file`, `edit-package-json`, `write-test-file`) now carry an
+`unreviewed_execution: false` label so the next run measures it; run 8 asked the question
+of them and nobody kept score.
+
 One measured answer is also stale. Run 8 sent `export-stripe-key` to the classifier as
 `export STRIPE_SECRET_KEY=[REDACTED:assigned-secret]`; a redaction fix since then sends
 `[REDACTED:stripe-key]`, because a variable named like a secret no longer erases what kind of
