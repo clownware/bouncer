@@ -115,6 +115,26 @@ So the generic builder puts the item's own fields in the state, and:
 This is not a reversal of §9. §9 is about a hook that runs on every tool call, on content
 the user never chose to send. `judge` is a command the user points at a directory.
 
+> **Corrected on 2026-09-19**, after `docs/adr-review-2026-09-18.md` findings 2 and 5. "Visibly
+> truncated rather than quietly half-judged" was half true. Truncation was recorded on the
+> item and then read by nothing: not the verdict, not the manifest, not the log, not the exit
+> status. A half-judged item was reported exactly like a whole one. It is now its own
+> outcome with no verdict — ADR-008 has the table — and `truncated` is on the log line.
+>
+> Two things this ADR never specified, and the code got wrong in the gap:
+>
+> - **The manifest is replaced on every run, including by an empty one.** It was written
+>   only when something escalated, so a clean batch left the previous run's file in place
+>   and the next reader re-adjudicated an item that was not in the batch. It is written
+>   atomically, and `--json` keeps `manifest` as the manifest — it used to overwrite it with
+>   the path, dropping the denominator from the one output a script parses. The path is
+>   `manifestPath`.
+> - **The exit status is 1 when any item went unjudged or incomplete**, not only when every
+>   one did, and it is decided once: `--json` returned 0 before the check was reached. A
+>   run left unattended is exactly where ninety-nine failures out of a hundred must not
+>   exit clean, and a batch tool exiting non-zero because some inputs failed is ordinary.
+>   Never 2.
+
 ## Decision 5 — measurement is three rows, not two
 
 `bouncer measure` runs one labelled batch three ways and prints them side by side:

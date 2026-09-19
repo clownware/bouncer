@@ -80,7 +80,13 @@ export function status(): string {
   if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
 
   if (policy.mode === "observe") {
-    const wouldPrompt = records.filter((r) => r.verdict === "ask" || r.verdict === "deny").length;
+    // What guard would have put in front of the user. An error line emits nothing in any
+    // mode, and neither does a call withheld for being truncated — that one carries `ask` so
+    // that a careless reader lands on the safe side, and this is the reader that must not be
+    // careless: it is the number someone looks at before turning enforcement on.
+    const wouldPrompt = records.filter(
+      (r) => r.error === undefined && r.reason.kind !== "truncated" && (r.verdict === "ask" || r.verdict === "deny"),
+    ).length;
     lines.push(
       "",
       `In observe mode nothing was emitted. Switching to guard would have added ${wouldPrompt} prompt${wouldPrompt === 1 ? "" : "s"} across these ${records.length} calls.`,
@@ -92,12 +98,23 @@ export function status(): string {
 }
 
 function summarize(records: readonly DecisionRecord[]): string[] {
+  // A line where the classifier could not answer concluded nothing. It used to be written
+  // `allow`, and counted here as one — under a heading someone reads to decide whether the
+  // allow side can be trusted. New lines carry no verdict; old ones are told by their error.
   const counts = new Map<string, number>();
-  for (const r of records) counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
+  for (const r of records) {
+    if (r.error !== undefined || r.verdict === undefined) continue;
+    counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
+  }
 
   const lines = [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
+
+  const undecided = records.filter((r) => r.error !== undefined || r.verdict === undefined).length;
+  if (undecided > 0) {
+    lines.push(`  (${undecided} more concluded nothing — the classifier could not answer — and are not counted above)`);
+  }
 
   const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
   if (fastPath > 0) {

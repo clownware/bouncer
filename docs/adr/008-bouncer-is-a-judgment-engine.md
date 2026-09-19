@@ -154,6 +154,36 @@ ambiguous middle, and code does not ask for help. This is also what keeps the ra
 An `allow` is not an escalation either. The judge settled it; that is the case the
 substitution is trying to produce.
 
+> **Corrected on 2026-09-19**, after `docs/adr-review-2026-09-18.md` finding 2. That list
+> has a gap, and the code filled it the wrong way. An item the classifier *could not answer*
+> is not an escalation and was not settled either — and `bouncer judge` reported it as
+> `verdict: "allow"` with an `error` beside it. Accepted, to anything that reads one field.
+> So was an item too long to show the classifier whole: the state is cut to the head of each
+> field, a violation at the end is simply gone, and `truncated` was read by nothing.
+>
+> A batch item now has one of three outcomes, and **only one has a verdict**:
+>
+> | outcome | what happened | where it goes |
+> |---|---|---|
+> | `judged` | every question answered, the rules reached a verdict | tallies; `items` if it did not settle |
+> | `unjudged` | the call failed, or answered part of the request | `unjudged`, for a person |
+> | `incomplete` | answered on a truncated state, and the answers would have allowed | `incomplete`, for a person |
+>
+> In the type it is a union, so reading `verdict` without narrowing on `outcome` does not
+> compile; in the log the line has no `verdict`. An `ask` on a truncated item is `judged`:
+> it found its reason in the part that was read.
+>
+> Neither of the last two goes to the reasoning pass, which is why they sit beside `items`
+> in the manifest and not in it. An unjudged item has nothing to re-adjudicate. An
+> incomplete one would be sent the same truncated state, so escalating it would launder
+> the gap into a confident second opinion. Both are out of the denominator too: neither is
+> an item the judge settled. Judging a long document properly means chunking it, which is a
+> feature and wants its own ADR; until then the honest answer is that a person looks.
+>
+> The gate's error lines lost their `allow` for the same reason, and `bouncer status`
+> leaves any line with an `error` out of its verdict tally, so lines written before this
+> are read correctly too.
+
 ### Where the state goes
 
 The gate's item carries no `state`. It is written onto a `decisions.jsonl` line whose

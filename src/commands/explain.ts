@@ -34,8 +34,15 @@ function render(record: DecisionRecord): string {
   // A judge line has no tool, because an item is not a tool call. It names its item and
   // the set it was judged against instead.
   lines.push(`${record.tool ?? `${record.set ?? "?"}: ${record.item ?? "(item)"}`} at ${record.ts}`);
-  lines.push(`Verdict: ${record.verdict}${record.emitted === null ? `  (nothing emitted — ${record.mode} mode)` : `  (emitted ${record.emitted})`}`);
-  lines.push(`Because: ${describe(record)}`);
+  // A line where the classifier could not answer has no verdict, or — written before
+  // 2026-09-19 — an `allow` nobody concluded. Either way nothing was decided, and saying
+  // "no rule matched" about it sent people to their thresholds to fix a network error.
+  const concluded = record.error === undefined && record.verdict !== undefined;
+  const emitted = record.emitted === null ? `  (nothing emitted${concluded ? ` — ${record.mode} mode` : ""})` : `  (emitted ${record.emitted})`;
+  lines.push(`Verdict: ${concluded ? record.verdict : "none"}${emitted}`);
+  lines.push(
+    `Because: ${record.error !== undefined ? `the classifier could not answer (${record.error.kind}: ${record.error.message})` : describe(record)}`,
+  );
 
   if (record.permission_mode !== undefined) {
     lines.push(`Permission mode: ${record.permission_mode}`);

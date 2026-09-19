@@ -226,6 +226,15 @@ describe("failure handling", () => {
     expect(logLines()[0].error.kind).toBe("timeout");
   });
 
+  // Nothing was concluded, so the line concludes nothing. It used to say `allow`, and
+  // `bouncer status` counted a timeout as an allow under the heading people read to decide
+  // whether the allow side can be trusted.
+  it("records no verdict for a call the classifier could not answer", async () => {
+    await runPreToolUse(payload(), { adapter: failing });
+    expect(logLines()[0]).not.toHaveProperty("verdict");
+    expect(logLines()[0].emitted).toBeNull();
+  });
+
   it("honours on_error: deny when the user explicitly asked for it", async () => {
     writeFileSync(policyPath, POLICY.replace(/^mode: observe$/m, "mode: guard").replace(/^on_error: passthrough$/m, "on_error: deny"), "utf8");
     const output = await runPreToolUse(payload(), { adapter: failing });
