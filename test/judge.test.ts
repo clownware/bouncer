@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
 import { AdapterError, type Adapter, type DecideRequest, type DecideResponse } from "../src/adapters/types.js";
-import { formatRun, judge, tally } from "../src/judge.js";
+import { formatRun, judge, tally, type JudgedItem } from "../src/judge.js";
 import { itemState } from "../src/engine/item.js";
 import { loadPolicy } from "../src/engine/policy.js";
 import type { PolicySet } from "../src/engine/types.js";
@@ -37,6 +37,11 @@ const POLICY = (() => {
 
 const SET = POLICY.sets["content"] as PolicySet;
 
+// Only a judged item has a verdict and only an unjudged one has an error, so a test has to
+// narrow to read either — which is the point of the type, and what these are for.
+const verdictOf = (item: JudgedItem | undefined) => (item?.outcome === "judged" ? item.verdict : undefined);
+const errorOf = (item: JudgedItem | undefined) => (item?.outcome === "unjudged" ? item.error : undefined);
+
 const stated = (id: string, item: Record<string, unknown>) => ({ id, state: itemState.build(item) });
 const items = (n: number) => Array.from({ length: n }, (_, i) => stated(`i${i}`, { text: `draft ${i}` }));
 
@@ -53,7 +58,7 @@ describe("the batch judge", () => {
   it("judges every item and reports the verdict", async () => {
     const result = await run({ unsupported_claim: 0.9, overclaims: 0.02, overclaims_v2: 0.02 }, 3);
     expect(result.items).toHaveLength(3);
-    expect(result.items.every((i) => i.verdict === "ask")).toBe(true);
+    expect(result.items.every((i) => verdictOf(i) === "ask")).toBe(true);
     expect(result.judged).toBe(3);
   });
 
@@ -73,7 +78,7 @@ describe("the batch judge", () => {
 
   it("does not escalate an item the judge settled", async () => {
     const result = await run({ unsupported_claim: 0.02, overclaims: 0.02, overclaims_v2: 0.02 }, 3);
-    expect(result.items.every((i) => i.verdict === "allow")).toBe(true);
+    expect(result.items.every((i) => verdictOf(i) === "allow")).toBe(true);
     expect(result.manifest.items).toEqual([]);
     expect(result.manifest.escalationRate).toBe(0);
   });
@@ -102,7 +107,7 @@ describe("the batch judge", () => {
     expect(result.items[0]?.answers).toEqual({ unsupported_claim: 0.02, overclaims: 0.02 });
     expect(result.items[0]?.probes).toEqual({ overclaims_v2: 0.99 });
     // 0.99 on the probe would have fired the overclaims rule had a rule been able to read it.
-    expect(result.items[0]?.verdict).toBe("allow");
+    expect(verdictOf(result.items[0])).toBe("allow");
   });
 
   // Mode is the gate's business: it decides what may be said to Claude Code, and there is
@@ -110,7 +115,7 @@ describe("the batch judge", () => {
   it("produces verdicts in observe mode, where the hook emits nothing", async () => {
     expect(POLICY.mode).toBe("observe");
     const result = await run({ unsupported_claim: 0.9 });
-    expect(result.items[0]?.verdict).toBe("ask");
+    expect(verdictOf(result.items[0])).toBe("ask");
   });
 
   it("redacts the state, so a credential in the batch does not leave with it", async () => {
@@ -137,7 +142,9 @@ describe("when the classifier cannot answer", () => {
   it("reports the item rather than dropping it", async () => {
     const result = await run({}, 2, failing);
     expect(result.items).toHaveLength(2);
-    expect(result.items[0]?.error?.kind).toBe("rate_limited");
+    expect(errorOf(result.items[0])?.kind).toBe("rate_limited");
+    // The line that mattered: a failed item came back `verdict: "allow"` beside its error.
+    expect(result.items[0]).not.toHaveProperty("verdict");
   });
 
   // An item nobody judged is not an item the judge settled. Counting it would flatter the
@@ -178,7 +185,7 @@ describe("when the classifier cannot answer", () => {
   // come back `allow` with no error: accepted, and absent from the escalation manifest.
   it("fails an item whose answers were partial and would otherwise have been accepted", async () => {
     const result = await run({}, 2, partial(0.02));
-    expect(result.items[0]?.error).toEqual({ kind: "malformed_response", message: "no answer for: overclaims" });
+    expect(errorOf(result.items[0])).toEqual({ kind: "malformed_response", message: "no answer for: overclaims" });
     expect(result.judged).toBe(0);
     expect(result.failed).toBe(2);
     expect(tally(result).allow).toBe(0);
@@ -186,8 +193,53 @@ describe("when the classifier cannot answer", () => {
 
   it("still escalates a partial item whose one answer crossed a threshold", async () => {
     const result = await run({}, 1, partial(0.9));
-    expect(result.items[0]?.error).toBeUndefined();
+    expect(errorOf(result.items[0])).toBeUndefined();
     expect(result.manifest.items.map((i) => i.verdict)).toEqual(["ask"]);
+  });
+});
+
+describe("an item too long to show the classifier whole", () => {
+  // Over the 16 KB cap, so the state is cut to the head of each field. Whatever the draft
+  // says after that, the classifier never read — and a violation there reads exactly like
+  // a clean draft.
+  const long = [stated("long", { text: `A clean opening. ${"Padding. ".repeat(4000)}Guaranteed to double your revenue.` })];
+  const over = (answers: Record<string, number>) =>
+    judge(long, { setName: "content", set: SET, mode: POLICY.mode, adapter: new MockAdapter({ answers }), timeoutMs: 1000 });
+
+  it("is not accepted on the strength of its head", async () => {
+    const result = await over({ unsupported_claim: 0.02, overclaims: 0.02, overclaims_v2: 0.02 });
+    expect(result.items[0]?.truncated).toBe(true);
+    expect(result.items[0]?.outcome).toBe("incomplete");
+    expect(result.items[0]).not.toHaveProperty("verdict");
+    expect(tally(result).allow).toBe(0);
+  });
+
+  // The answers are real — about what was read — so they are kept for calibration.
+  it("keeps the answers it did get", async () => {
+    const result = await over({ unsupported_claim: 0.02, overclaims: 0.02, overclaims_v2: 0.02 });
+    expect(result.items[0]?.answers).toEqual({ unsupported_claim: 0.02, overclaims: 0.02 });
+  });
+
+  // Not settled, and not something the reasoning pass can settle either: it would be sent
+  // the same truncated state. So it is in neither the numerator nor the denominator.
+  it("stays out of the escalation ratio on both sides", async () => {
+    const result = await over({ unsupported_claim: 0.02, overclaims: 0.02, overclaims_v2: 0.02 });
+    expect(result.incomplete).toBe(1);
+    expect(result.judged).toBe(0);
+    expect(result.manifest.items).toEqual([]);
+    expect(result.manifest.itemsJudged).toBe(0);
+  });
+
+  // An ask found its reason in the part that was read, so it is a verdict like any other.
+  it("is judged, and escalates, when its head alone crosses a threshold", async () => {
+    const result = await over({ unsupported_claim: 0.9, overclaims: 0.02, overclaims_v2: 0.02 });
+    expect(verdictOf(result.items[0])).toBe("ask");
+    expect(result.manifest.items).toHaveLength(1);
+  });
+
+  it("says so in the summary", async () => {
+    const out = formatRun(await over({ unsupported_claim: 0.02, overclaims: 0.02, overclaims_v2: 0.02 }));
+    expect(out).toMatch(/incomplete +1/);
   });
 });
 

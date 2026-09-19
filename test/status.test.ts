@@ -15,7 +15,7 @@ let policyPath: string;
 
 const POLICY = readFileSync("policy/default.yaml", "utf8");
 
-const record = (backend: string, verdict: DecisionRecord["verdict"]): DecisionRecord => ({
+const record = (backend: string, verdict: NonNullable<DecisionRecord["verdict"]>): DecisionRecord => ({
   ts: "2026-09-19T01:59:00.000Z",
   tool: "Bash",
   mode: "observe",
@@ -57,6 +57,39 @@ describe("classifier latency", () => {
     seed([timed(900, true), timed(400), timed(400)]);
 
     expect(status()).toContain("Classifier latency over 3 calls: p50 400ms, p95 900ms");
+  });
+});
+
+describe("lines that concluded nothing", () => {
+  const failed = (verdict?: "allow"): DecisionRecord => {
+    const { verdict: _verdict, source: _source, answers: _answers, ...rest } = record("jev", "allow");
+    return {
+      ...rest,
+      ...(verdict !== undefined ? { verdict } : {}),
+      reason: { kind: "no-rule-matched" },
+      error: { kind: "timeout", message: "no answer within 800ms" },
+    };
+  };
+
+  // Under a heading someone reads to decide whether the allow side can be trusted, a
+  // timeout was counted as an allow. Old lines say `allow` and new ones say nothing; both
+  // are told by their error.
+  it("does not count a classifier failure as an allow, old line or new", () => {
+    seed([record("jev", "allow"), failed("allow"), failed()]);
+
+    const out = status();
+    expect(out).toMatch(/allow +1\n/);
+    expect(out).toContain("2 more concluded nothing");
+    expect(out).toContain("2 errors; most recent: timeout");
+  });
+
+  // A truncated call carries `ask` so a careless reader lands on the safe side, and emits
+  // nothing in any mode. This is the reader that must not be careless.
+  it("does not project a prompt for a call guard would have emitted nothing on", () => {
+    const truncated: DecisionRecord = { ...record("jev", "ask"), reason: { kind: "truncated" }, truncated: true };
+    seed([record("jev", "ask"), truncated, failed()]);
+
+    expect(status()).toContain("would have added 1 prompt across");
   });
 });
 

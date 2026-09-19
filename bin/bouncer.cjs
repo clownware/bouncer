@@ -9257,7 +9257,6 @@ async function runPreToolUse(payload, options = {}) {
   if (status2.tripped) {
     append(dir, {
       ...base,
-      verdict: "allow",
       emitted: null,
       reason: { kind: "no-rule-matched" },
       latency_ms: { total: now() - started },
@@ -9334,7 +9333,6 @@ function standDown(dir, base, state, status2, err, totalMs, policy) {
   const denies = policy.onError === "deny" && emitFor(policy.mode, "deny") === "deny";
   append(dir, {
     ...base,
-    verdict: "allow",
     emitted: denies ? "deny" : null,
     reason: { kind: "no-rule-matched" },
     latency_ms: { total: totalMs },
@@ -9493,7 +9491,9 @@ function status() {
   lines.push(...summarize(records));
   if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
   if (policy.mode === "observe") {
-    const wouldPrompt = records.filter((r) => r.verdict === "ask" || r.verdict === "deny").length;
+    const wouldPrompt = records.filter(
+      (r) => r.error === void 0 && r.reason.kind !== "truncated" && (r.verdict === "ask" || r.verdict === "deny")
+    ).length;
     lines.push(
       "",
       `In observe mode nothing was emitted. Switching to guard would have added ${wouldPrompt} prompt${wouldPrompt === 1 ? "" : "s"} across these ${records.length} calls.`,
@@ -9505,8 +9505,15 @@ function status() {
 }
 function summarize(records) {
   const counts = /* @__PURE__ */ new Map();
-  for (const r of records) counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
+  for (const r of records) {
+    if (r.error !== void 0 || r.verdict === void 0) continue;
+    counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
+  }
   const lines = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
+  const undecided = records.filter((r) => r.error !== void 0 || r.verdict === void 0).length;
+  if (undecided > 0) {
+    lines.push(`  (${undecided} more concluded nothing \u2014 the classifier could not answer \u2014 and are not counted above)`);
+  }
   const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
   if (fastPath > 0) {
     lines.push(`  (${fastPath} of these never reached the classifier \u2014 fast path)`);
@@ -9575,8 +9582,12 @@ function explain2(toolUseId) {
 function render(record2) {
   const lines = [];
   lines.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
-  lines.push(`Verdict: ${record2.verdict}${record2.emitted === null ? `  (nothing emitted \u2014 ${record2.mode} mode)` : `  (emitted ${record2.emitted})`}`);
-  lines.push(`Because: ${describe(record2)}`);
+  const concluded = record2.error === void 0 && record2.verdict !== void 0;
+  const emitted = record2.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record2.mode} mode` : ""})` : `  (emitted ${record2.emitted})`;
+  lines.push(`Verdict: ${concluded ? record2.verdict : "none"}${emitted}`);
+  lines.push(
+    `Because: ${record2.error !== void 0 ? `the classifier could not answer (${record2.error.kind}: ${record2.error.message})` : describe(record2)}`
+  );
   if (record2.permission_mode !== void 0) {
     lines.push(`Permission mode: ${record2.permission_mode}`);
   }
@@ -10484,10 +10495,10 @@ async function judge(items, options) {
   };
   const width = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY2, items.length));
   await Promise.all(Array.from({ length: width }, () => worker()));
-  const escalations = results.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
-  const judged = results.filter((r) => r.error === void 0);
-  const judgedCount = judged.length;
-  const tokens = judged.length === 0 ? void 0 : judged.reduce(
+  const judged = results.filter((r) => r.outcome === "judged");
+  const escalations = judged.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
+  const billed = results.filter((r) => r.outcome !== "unjudged");
+  const tokens = billed.length === 0 ? void 0 : billed.reduce(
     (sum, r) => sum === void 0 || r.inputTokens === void 0 ? void 0 : sum + r.inputTokens,
     0
   );
@@ -10495,9 +10506,10 @@ async function judge(items, options) {
     set: options.setName,
     backend: options.adapter.name,
     items: results,
-    manifest: manifestOf(escalations, judgedCount),
-    judged: judgedCount,
-    failed: results.length - judgedCount,
+    manifest: manifestOf(escalations, judged.length),
+    judged: judged.length,
+    failed: results.filter((r) => r.outcome === "unjudged").length,
+    incomplete: results.filter((r) => r.outcome === "incomplete").length,
     ...tokens !== void 0 ? { inputTokens: tokens } : {},
     latencyMs: Date.now() - started
   };
@@ -10520,8 +10532,7 @@ async function judgeOne(id, state, questions, probeNames, options) {
     const kind = err instanceof AdapterError ? err.kind : "unavailable";
     return {
       ...base,
-      verdict: "allow",
-      reason: { kind: "no-rule-matched" },
+      outcome: "unjudged",
       answers: {},
       latencyMs: 0,
       error: { kind, message: err instanceof Error ? err.message : String(err) }
@@ -10535,20 +10546,35 @@ async function judgeOne(id, state, questions, probeNames, options) {
     if (probeNames.has(name)) probes[name] = p;
     else answers[name] = p;
   }
-  const decision = evaluate(options.set, options.mode, answers);
+  const decision = evaluate(options.set, options.mode, answers, { truncated: state.truncated });
   if (decision.reason.kind === "unanswered") {
     return {
       ...base,
-      verdict: "allow",
-      reason: { kind: "no-rule-matched" },
+      outcome: "unjudged",
       answers: {},
       latencyMs: response.latencyMs,
       error: { kind: "malformed_response", message: `no answer for: ${decision.reason.missing.join(", ")}` }
     };
   }
+  const counted = {
+    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {},
+    ...response.model !== void 0 ? { model: response.model } : {}
+  };
+  if (decision.reason.kind === "truncated") {
+    return {
+      ...base,
+      outcome: "incomplete",
+      reason: decision.reason,
+      answers,
+      ...Object.keys(probes).length > 0 ? { probes } : {},
+      latencyMs: response.latencyMs,
+      ...counted
+    };
+  }
   const escalation = escalationFor(options.set, decision, answers, id);
   return {
     ...base,
+    outcome: "judged",
     verdict: decision.verdict,
     reason: decision.reason,
     answers,
@@ -10557,15 +10583,13 @@ async function judgeOne(id, state, questions, probeNames, options) {
     // own — unlike the gate's, which sits on a log line that already carries the string.
     ...escalation !== void 0 ? { escalation: { ...escalation, state: state.text } } : {},
     latencyMs: response.latencyMs,
-    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {},
-    ...response.model !== void 0 ? { model: response.model } : {}
+    ...counted
   };
 }
 function tally(run2) {
   const counts = { allow: 0, ask: 0, deny: 0 };
   for (const item of run2.items) {
-    if (item.error !== void 0) continue;
-    counts[item.verdict] += 1;
+    if (item.outcome === "judged") counts[item.verdict] += 1;
   }
   return counts;
 }
@@ -10576,6 +10600,7 @@ function formatRun(run2) {
   lines.push(`Set: ${run2.set}   Backend: ${run2.backend}`, "");
   lines.push(`  judged     ${run2.judged}`);
   if (run2.failed > 0) lines.push(`  failed     ${run2.failed}`);
+  if (run2.incomplete > 0) lines.push(`  incomplete ${run2.incomplete}   (too long to show the classifier whole, and not accepted)`);
   lines.push(`  allow      ${counts.allow}`);
   lines.push(`  ask        ${counts.ask}`);
   if (counts.deny > 0) lines.push(`  deny       ${counts.deny}`);
@@ -10809,18 +10834,26 @@ async function judge2(args, write3) {
   const manifestPath = args.manifest ?? (0, import_node_path10.join)(dataDir(), "escalations.json");
   writeLog(logPath, run2, policy);
   const manifestWritten = writeManifest(manifestPath, run2, policy);
+  const status2 = run2.judged === 0 || run2.failed > 0 || run2.incomplete > 0 || !manifestWritten ? 1 : 0;
   if (args.json === true) {
-    write3(`${JSON.stringify({ ...run2, log: logPath, manifest: manifestPath }, null, 2)}
+    write3(`${JSON.stringify({ ...run2, log: logPath, manifestPath, manifestWritten }, null, 2)}
 `);
-    return 0;
+    return status2;
   }
   write3(formatRun(run2));
   write3(`
   judgments  ${logPath}
 `);
-  write3(`  manifest   ${manifestWritten ? manifestPath : "(not written: nothing escalated)"}
+  write3(`  manifest   ${manifestWritten ? manifestPath : `(could not be written to ${manifestPath})`}
 `);
-  return run2.judged === 0 ? 1 : 0;
+  if (run2.failed > 0 || run2.incomplete > 0) {
+    write3(
+      `
+${run2.failed + run2.incomplete} item${run2.failed + run2.incomplete === 1 ? "" : "s"} settled nothing and ${run2.failed + run2.incomplete === 1 ? "is" : "are"} listed in the manifest under \`unjudged\` and \`incomplete\`. Nothing here accepted them.
+`
+    );
+  }
+  return status2;
 }
 function writeLog(path, run2, policy) {
   (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
@@ -10840,20 +10873,25 @@ function recordFor(item, run2, policy, ts) {
     backend: run2.backend,
     ...item.model !== void 0 ? { model: item.model } : {},
     policy: identityOf(policy, run2.set),
-    verdict: item.verdict,
+    // Only a judged item has a verdict, and the line says so by not having one. It used to
+    // say `allow` beside an `error`, which is "accepted" to anything that reads one field.
+    ...item.outcome === "judged" ? { verdict: item.verdict } : {},
     // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
     // rather than left out so a reader never has to ask which kind of line it is holding.
     emitted: null,
-    reason: item.reason,
-    ...item.error === void 0 ? { source: "judge", answers: item.answers } : {},
+    reason: item.outcome === "unjudged" ? { kind: "no-rule-matched" } : item.reason,
+    // An incomplete item keeps its answers: they are real, about the head of the item, and
+    // `truncated` beside them is what tells a re-score which kind they are.
+    ...item.outcome !== "unjudged" ? { source: "judge", answers: item.answers } : {},
     ...item.probes !== void 0 ? { probes: item.probes } : {},
     // The log line carries the state, so the escalation on it does not repeat it — same
     // rule as the gate's. The standalone manifest is where the item stands on its own.
-    ...item.escalation !== void 0 ? { escalation: withoutState(item.escalation) } : {},
+    ...item.outcome === "judged" && item.escalation !== void 0 ? { escalation: withoutState(item.escalation) } : {},
     state: item.state,
     ...item.redactedKinds.length > 0 ? { redacted_kinds: item.redactedKinds } : {},
+    ...item.truncated ? { truncated: true } : {},
     latency_ms: { total: item.latencyMs, adapter: item.latencyMs },
-    ...item.error !== void 0 ? { error: item.error } : {}
+    ...item.outcome === "unjudged" ? { error: item.error } : {}
   };
 }
 function withoutState(escalation) {
@@ -10864,11 +10902,9 @@ function identityOf(policy, setName) {
   return { file: policy.fingerprint, questions: policy.sets[setName]?.questionsFingerprint ?? "" };
 }
 function writeManifest(path, run2, policy) {
-  if (run2.manifest.items.length === 0) return false;
   const set = policy.sets[run2.set];
   const models = [...new Set(run2.items.flatMap((i) => i.model === void 0 ? [] : [i.model]))];
-  (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
-  (0, import_node_fs10.writeFileSync)(
+  return writeAtomic(
     path,
     `${JSON.stringify(
       {
@@ -10877,15 +10913,20 @@ function writeManifest(path, run2, policy) {
         ...models.length > 0 ? { models } : {},
         policy: identityOf(policy, run2.set),
         ...set !== void 0 ? { questions: questionsOf(set) } : {},
-        ...run2.manifest
+        ...run2.manifest,
+        unjudged: needsAPerson(run2, "unjudged"),
+        incomplete: needsAPerson(run2, "incomplete")
       },
       null,
       2
     )}
-`,
-    "utf8"
+`
   );
-  return true;
+}
+function needsAPerson(run2, outcome) {
+  return run2.items.flatMap(
+    (i) => i.outcome !== outcome ? [] : [{ item: i.id, because: i.outcome === "unjudged" ? `${i.error.kind}: ${i.error.message}` : "truncated" }]
+  );
 }
 function basenameOf(path) {
   return path.split("/").pop() ?? JUDGMENTS_FILE;

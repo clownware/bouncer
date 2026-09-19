@@ -72,8 +72,13 @@ export interface DecisionRecord {
    * questions it is about to score them against. See `PolicySet.questionsFingerprint`.
    */
   readonly policy?: { readonly file: string; readonly questions: string };
-  /** What policy concluded. */
-  readonly verdict: Verdict;
+  /**
+   * What policy concluded — absent when it concluded nothing: the classifier could not
+   * answer, or a batch item was too long to show it whole. Those lines used to say `allow`,
+   * which is what a reader of this one field takes for "accepted". Lines written before
+   * 2026-09-19 still do, so a reader tallying verdicts leaves out any line with an `error`.
+   */
+  readonly verdict?: Verdict;
   /** What was actually put on stdout; null when nothing was emitted. */
   readonly emitted: Verdict | null;
   readonly reason: Reason;
