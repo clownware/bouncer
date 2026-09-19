@@ -58,7 +58,7 @@ describe("the compiled-policy cache", () => {
   it("misses on an edit that changes neither the file's size nor its shape", () => {
     loadPolicyCached(dir, PATH, SHIPPED);
 
-    const edited = SHIPPED.replace('destructive: { p: ">=0.70" }', 'destructive: { p: ">=0.20" }');
+    const edited = SHIPPED.replace('destructive: { p: ">=0.60" }', 'destructive: { p: ">=0.20" }');
     expect(edited).not.toBe(SHIPPED);
     expect(edited.length).toBe(SHIPPED.length);
 
@@ -66,7 +66,7 @@ describe("the compiled-policy cache", () => {
       result.policy?.gate.rules[0]?.condition?.comparison;
 
     expect(thresholdOf(loadPolicyCached(dir, PATH, edited))).toMatchObject({ value: 0.2 });
-    expect(thresholdOf(loadPolicyCached(dir, PATH, SHIPPED))).toMatchObject({ value: 0.7 });
+    expect(thresholdOf(loadPolicyCached(dir, PATH, SHIPPED))).toMatchObject({ value: 0.6 });
   });
 
   it("gives each policy path its own entry, so alternating between two does not thrash", () => {

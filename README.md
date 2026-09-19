@@ -90,7 +90,7 @@ sentence, and it came back at 0.15. That is not a threshold that needs moving.
 
 All four did prompt, and that was the problem rather than the reassurance. `git stash clear`
 was caught because 0.42 landed inside the `0.40..0.60` uncertainty band, not because
-`destructive` fired — its own rule needs 0.70. The other three were caught by some question
+`destructive` fired — its own rule needed 0.70 then. The other three were caught by some question
 other than the one asked about the actual risk. The verdict was right and the reason was an
 accident.
 

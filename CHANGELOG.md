@@ -8,6 +8,25 @@ Earlier releases have no entries: 0.2.0 is described in
 [docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
 convention does.
 
+## 0.2.3
+
+**The bundled policy asks on `destructive` and `unreviewed_execution` from 0.60, down from
+0.70 and 0.65** (#50). The uncertainty rule prompts on any answer from 0.40 to 0.60, and
+these two questions' own rules started above that, so an answer in between prompted on
+nothing: "more likely destructive than not" was an allow. In calibration run 9 `rm -rf .git`
+scored 0.68 and was only asked about because a different question happened to be unsure,
+and `npm install <tarball URL>` has read 0.63, 0.64 and 0.65 across runs, allowed or not by
+where the sample fell. **What you will notice: almost certainly nothing.** Re-scoring run 9
+at the new thresholds changes no fixture's verdict, and in an installed log of 1,045 judged
+calls not one answer fell in either gap. It matters on the day one does. `outside_repo` and
+`egress` keep their gap up to 0.65 on purpose — the only thing measured inside it is
+labelled safe.
+
+This is the bundled `policy/default.yaml`. **If you copied it to `~/.bouncer/bouncer.yaml`
+or a repo's `.bouncer.yaml`, your copy is what runs and it still has the old numbers**;
+change the two `p:` values there to pick this up. In the shipped `observe` mode nothing is
+emitted either way — it changes what `status` reports bouncer would have asked about.
+
 ## 0.2.2
 
 **`calibrate`, `judge` and `measure` refuse a flag they do not know** (#60). All three used
