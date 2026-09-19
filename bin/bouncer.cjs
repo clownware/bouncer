@@ -9056,13 +9056,30 @@ var MAX_LOG_BYTES = 8 * 1024 * 1024;
 function append(dir, record2, name = LOG_FILE) {
   try {
     (0, import_node_fs4.mkdirSync)(dir, { recursive: true });
-    const safe = record2.state !== void 0 ? { ...record2, state: redact(record2.state).text } : record2;
+    const safe = record2.state !== void 0 ? { ...record2, state: redactState(record2.state) } : record2;
     const file = (0, import_node_path5.join)(dir, name);
     rotateIfOversized(file);
     (0, import_node_fs4.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
   } catch {
   }
+}
+function redactState(state) {
+  let parsed;
+  try {
+    parsed = JSON.parse(state);
+  } catch {
+    return redact(state).text;
+  }
+  return JSON.stringify(redactStrings(parsed));
+}
+function redactStrings(value) {
+  if (typeof value === "string") return redact(value).text;
+  if (Array.isArray(value)) return value.map(redactStrings);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactStrings(v)]));
+  }
+  return value;
 }
 function rotateIfOversized(file) {
   let size;

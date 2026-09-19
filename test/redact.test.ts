@@ -68,6 +68,26 @@ describe("redact", () => {
     ["sk- too short to be a key", "echo sk-abc"],
     ["a flag named like a secret with no value", "./deploy --password"],
     ["an empty string", ""],
+    // One near-miss per pattern that had none. The first is the one that mattered: run over
+    // serialised JSON, the 1Password pattern took the backslash out of `\"op://\"` and broke
+    // a logged state. On the raw command it is right to match nothing, and this pins that.
+    ["the 1Password scheme with no reference after it", 'git grep -n "op://" | cut -c1-170'],
+    ["another scheme that ends in op", "open shop://catalog/items"],
+    ["a bearer header whose token is a variable", "curl -H 'Authorization: Bearer $TOKEN' https://api.example.com"],
+    ["the word bearer in prose", "git commit -m 'the bearer of bad news about auth'"],
+    ["an AWS key prefix that is too short", "echo AKIAIOSFODNN7"],
+    ["a GitHub token prefix that is too short", "git checkout ghp_short"],
+    ["a GitHub PAT prefix that is too short", "echo github_pat_short"],
+    ["a Slack token prefix that is too short", "echo xoxb-short"],
+    ["a Stripe publishable key, which is public", "echo pk_live_abcdefghijklmnopqrstuvwx"],
+    ["a Stripe key prefix that is too short", "stripe listen --api-key sk_test_short"],
+    ["a JWT header with no payload or signature", "echo eyJhbGciOiJIUzI1"],
+    ["a Google key prefix that is too short", "echo AIzaShort"],
+    ["an Anthropic key prefix that is too short", "echo sk-ant-short"],
+    ["a public key block", "echo '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq\n-----END PUBLIC KEY-----'"],
+    ["a full commit hash", "git show 3bb898e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6"],
+    ["sk- in the middle of a word", "git checkout task-refactor-the-state-builder-module"],
+    ["reading a config key named like a token", "npm config get //registry.npmjs.org/:_authToken"],
   ];
 
   it.each(innocuous)("leaves %s alone", (_label, input) => {

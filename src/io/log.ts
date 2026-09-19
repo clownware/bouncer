@@ -113,7 +113,7 @@ export function append(dir: string, record: DecisionRecord, name: string = LOG_F
     mkdirSync(dir, { recursive: true });
 
     const safe: DecisionRecord =
-      record.state !== undefined ? { ...record, state: redact(record.state).text } : record;
+      record.state !== undefined ? { ...record, state: redactState(record.state) } : record;
 
     const file = join(dir, name);
     rotateIfOversized(file);
@@ -125,6 +125,39 @@ export function append(dir: string, record: DecisionRecord, name: string = LOG_F
 }
 
 /** Checked before every append. A missing file is size zero, so this is a no-op on the first write. */
+/**
+ * The second redaction pass, over a state that is already serialised.
+ *
+ * The state builders redact each field as they build it; this is the belt to that pair of
+ * braces, and it used to run the patterns straight over the JSON text. They are written for
+ * raw text. `op://[^\s"']+` stops at a quote and not at the backslash escaping one, so on
+ * `\"op://\"` it took the backslash, left the quote bare, and the line's `state` stopped
+ * being JSON — found as one real line in 145 that `JSON.parse` refused. So the strings are
+ * redacted where they are strings, and the JSON is written again around them.
+ *
+ * A state with nothing to redact comes back byte for byte: `JSON.stringify` of a parsed
+ * `JSON.stringify` keeps key order and number spelling. One that is not JSON is redacted as
+ * the text it is.
+ */
+function redactState(state: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(state);
+  } catch {
+    return redact(state).text;
+  }
+  return JSON.stringify(redactStrings(parsed));
+}
+
+function redactStrings(value: unknown): unknown {
+  if (typeof value === "string") return redact(value).text;
+  if (Array.isArray(value)) return value.map(redactStrings);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactStrings(v)]));
+  }
+  return value;
+}
+
 function rotateIfOversized(file: string): void {
   let size: number;
   try {
