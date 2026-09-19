@@ -22,6 +22,7 @@ import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, type Adapter } from "../adapters/types.js";
+import { parseFlags, positiveInteger } from "./args.js";
 import { questionsOf } from "../calibrate.js";
 import { formatRun, judge as runJudge, type JudgeRun, type JudgedItem } from "../judge.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
@@ -37,35 +38,23 @@ export interface JudgeArgs {
   readonly out?: string;
   readonly manifest?: string;
   readonly concurrency?: number;
+  /** A policy file for this run, ahead of every other place one is looked for. */
+  readonly policy?: string;
   readonly json?: boolean;
+  /** What was wrong with the argv. The command prints it and exits 1 without running. */
+  readonly error?: string;
 }
 
-/** Flags that take a following value, so the value is never mistaken for the batch path. */
-const VALUE_FLAGS = ["set", "backend", "out", "manifest", "concurrency"] as const;
+const FLAGS = { values: ["set", "backend", "out", "manifest", "concurrency", "policy"], switches: ["json"], positionals: 1 } as const;
 
 export function parseArgs(argv: readonly string[]): JudgeArgs {
-  const values = new Map<string, string>();
-  let path: string | undefined;
-
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i] as string;
-
-    if (token.startsWith("--")) {
-      const name = token.slice(2);
-      if ((VALUE_FLAGS as readonly string[]).includes(name)) {
-        const value = argv[i + 1];
-        if (value !== undefined) values.set(name, value);
-        i += 1;
-      }
-      continue;
-    }
-
-    // The first bare word is the batch. A second one is a typo worth ignoring rather than
-    // silently judging whichever came last.
-    path ??= token;
-  }
-
-  const concurrency = Number(values.get("concurrency"));
+  const parsed = parseFlags(argv, FLAGS);
+  const { values } = parsed;
+  // The one bare word is the batch. A second is refused rather than ignored: whichever of
+  // the two was judged, the other was a file the user believed had been.
+  const path = parsed.positionals[0];
+  const concurrency = positiveInteger("concurrency", values.get("concurrency"));
+  const error = parsed.error ?? concurrency.error;
 
   return {
     ...(path !== undefined ? { path } : {}),
@@ -73,19 +62,26 @@ export function parseArgs(argv: readonly string[]): JudgeArgs {
     ...(values.has("backend") ? { backend: values.get("backend") as string } : {}),
     ...(values.has("out") ? { out: values.get("out") as string } : {}),
     ...(values.has("manifest") ? { manifest: values.get("manifest") as string } : {}),
-    ...(Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}),
-    json: argv.includes("--json"),
+    ...(values.has("policy") ? { policy: values.get("policy") as string } : {}),
+    ...(concurrency.value !== undefined ? { concurrency: concurrency.value } : {}),
+    json: parsed.switches.has("json"),
+    ...(error !== undefined ? { error } : {}),
   };
 }
 
 export async function judge(args: JudgeArgs, write: (s: string) => void): Promise<number> {
+  if (args.error !== undefined) {
+    write(args.error);
+    return 1;
+  }
+
   if (args.path === undefined) {
-    write("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock]\n");
+    write("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock] [--policy file]\n");
     return 1;
   }
 
   const root = pluginRoot() ?? process.cwd();
-  const resolved = resolvePolicy(process.cwd(), root);
+  const resolved = resolvePolicy(process.cwd(), root, args.policy);
 
   if (resolved.policy === undefined) {
     write(`Cannot judge: ${resolved.source} did not load.\n`);
