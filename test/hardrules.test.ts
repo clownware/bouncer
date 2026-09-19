@@ -80,6 +80,12 @@ describe("the shipped hard rules", () => {
     ["git-clean-force", "git clean -fdx", "git clean -n -d"],
     ["git-push-force", "git push --force origin main", "git push --force-with-lease origin feature/parser"],
     ["git-branch-force-delete", "git branch -D feature/parser", "git branch -d feature/parser"],
+    // The spellings people actually type. `--force` was the only one that fired, and `-f` is
+    // the common one. `--force-with-lease` stays the near-miss: it is the safe form.
+    ["git-push-force-short", "git push -f origin main", "git push --force-with-lease origin feature/parser"],
+    ["git-push-force-refspec", "git push origin +main", "git push origin main"],
+    ["git-branch-force-delete-long", "git branch --delete --force feature/parser", "git branch --delete feature/parser"],
+    ["git-branch-force-delete-split", "git branch -d -f feature/parser", "git branch -d feature/parser"],
     ["drop-a-database", "psql $DATABASE_URL -c 'DROP DATABASE analytics'", "psql $DATABASE_URL -c 'DROP TABLE users'"],
     ["truncate-a-table", "psql $DATABASE_URL -c 'TRUNCATE TABLE sessions'", "truncate -s 0 /var/log/app.log"],
   ];
@@ -93,6 +99,75 @@ describe("the shipped hard rules", () => {
       expect(fires(miss)).not.toBe(name);
     });
   }
+
+  // Found by driving the built hook: every one of these reached the classifier, which
+  // answered 0.15 on `cat .env` — the reason the entry exists. `first_token` read the first
+  // word of the whole string, so anything in front of the verb, or any command in front of
+  // the command, got past it. A predicate is now read per command in a chain, and the
+  // command word is found behind the things a shell lets you put before it.
+  const dressedUp: ReadonlyArray<readonly [string, string]> = [
+    ["a command chained after another", "git status; cat .env"],
+    ["a command chained with &&", "npm test && cat .env"],
+    ["a chain with no spaces round the operator", "ls&&cat .env"],
+    ["the end of a pipeline", "true | cat .env"],
+    ["a second line", "echo start\ncat .env"],
+    ["an absolute path to the verb", "/bin/cat .env"],
+    ["sudo", "sudo cat .env"],
+    ["sudo with a flag", "sudo -n cat .env"],
+    ["the command builtin", "command cat .env"],
+    ["an environment assignment in front", "FOO=1 BAR=2 cat .env"],
+    ["a backslash that skips an alias", "\\cat .env"],
+    ["a redirect written against the path", "cat <.env"],
+  ];
+
+  it.each(dressedUp)("reads-a-credential-file fires through %s", (_label, command) => {
+    expect(fires(command)).toBe("reads-a-credential-file");
+  });
+
+  // The other direction. Reading predicates across a whole chain let one command's tokens
+  // satisfy, or excuse, another's.
+  it("does not let a verb in one command and a path in another add up to a read", () => {
+    expect(fires("cat README.md && ls -la .env")).toBeUndefined();
+  });
+
+  it("does not let another command's -n excuse a git clean", () => {
+    // `not_tokens: [-n, --dry-run]` was read over the whole string, so echo's flag turned
+    // a real clean into a dry run.
+    expect(fires("git clean -fdx; echo -n done")).toBe("git-clean-force");
+    expect(fires("git clean -n -d; echo done")).toBeUndefined();
+  });
+
+  // `tokens` matches exact tokens, and git lets short flags share a dash. Spelling out every
+  // order of every combination in the policy file is not a plan, so a run of short flags
+  // also counts as each of its letters.
+  const bundled: ReadonlyArray<readonly [string, string]> = [
+    ["git branch -df feature/parser", "git-branch-force-delete-split"],
+    ["git branch -fd feature/parser", "git-branch-force-delete-split"],
+    ["git push -fu origin main", "git-push-force-short"],
+    ["git push -uf origin main", "git-push-force-short"],
+    ["git log -np -- .env", "git-log-patch-of-a-credential-file"],
+  ];
+
+  it.each(bundled)("reads bundled short flags: `%s`", (command, name) => {
+    expect(fires(command)).toBe(name);
+  });
+
+  it("lets a bundled -n excuse a git clean, since that is a dry run", () => {
+    // Without this the change above would only ever add prompts. `-fdn` is `-n`.
+    expect(fires("git clean -fdn")).toBeUndefined();
+    expect(fires("git clean -fdx")).toBe("git-clean-force");
+  });
+
+  it("does not take a long option written with one dash for a bundle of flags it matches", () => {
+    // `-delete` is find's, not `-d -e -l -e -t -e`; what keeps it harmless is that an entry
+    // also names `git` and a subcommand, and those are not in this command.
+    expect(fires("find . -name '*.tmp' -delete")).toBeUndefined();
+  });
+
+  it("still does not split inside a quoted argument", () => {
+    expect(fires("git commit -m 'tidy; cat .env'")).toBeUndefined();
+    expect(fires("psql $DATABASE_URL -c 'select 1; DROP DATABASE analytics'")).toBe("drop-a-database");
+  });
 
   it("matches nothing on an empty or whitespace command", () => {
     expect(fires("")).toBeUndefined();

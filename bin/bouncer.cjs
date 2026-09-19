@@ -8665,35 +8665,30 @@ function matchHardRule(rules, command) {
   if (trimmed.length === 0 || rules.length === 0) return void 0;
   const facts = factsFor(trimmed);
   for (const rule of rules) {
-    if (holds(rule, facts)) return rule;
+    if (facts.some((f) => holds(rule, f))) return rule;
   }
   return void 0;
 }
 function factsFor(command) {
-  const tokens = tokenize(command);
-  const pathLabels = /* @__PURE__ */ new Set();
-  for (const token of tokens) {
-    for (const candidate of pathsIn(token)) {
-      const label = describeSensitivity(candidate);
-      if (label !== void 0) pathLabels.add(label);
+  const lower = command.toLowerCase();
+  const redactionKinds = new Set(redact(command).kinds);
+  return commandsIn(command).map((tokens) => {
+    const pathLabels = /* @__PURE__ */ new Set();
+    for (const token of tokens) {
+      for (const candidate of pathsIn(token)) {
+        const label = describeSensitivity(candidate);
+        if (label !== void 0) pathLabels.add(label);
+      }
     }
-  }
-  return {
-    tokens,
-    lower: command.toLowerCase(),
-    pathLabels,
-    // The redactor is the project's one tested table of credential shapes. Reusing it
-    // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
-    // added there is a shape the hard rule catches on the same day.
-    redactionKinds: new Set(redact(command).kinds)
-  };
+    return { commandWord: commandWordOf(tokens), tokens, lower, pathLabels, redactionKinds };
+  });
 }
 function holds(rule, facts) {
   const { when } = rule;
   let asserted = false;
   if (when.firstToken !== void 0) {
     asserted = true;
-    if (!when.firstToken.includes(facts.tokens[0] ?? "")) return false;
+    if (!when.firstToken.includes(facts.commandWord)) return false;
   }
   if (when.tokens !== void 0) {
     asserted = true;
@@ -8716,18 +8711,59 @@ function holds(rule, facts) {
   }
   return asserted;
 }
-function tokenize(command) {
-  const out = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match;
-  while ((match = pattern.exec(command)) !== null) {
-    const token = match[1] ?? match[2] ?? match[3] ?? "";
-    if (token.length > 0) out.push(token);
+var OPERATOR = /(&&|\|\||;|\|)/;
+function commandsIn(command) {
+  const commands = [];
+  let current = [];
+  const end = () => {
+    if (current.length > 0) commands.push(current);
+    current = [];
+  };
+  for (const line of command.split("\n")) {
+    const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+    let match;
+    while ((match = pattern.exec(line)) !== null) {
+      const quoted = match[1] ?? match[2];
+      if (quoted !== void 0) {
+        if (quoted.length > 0) current.push(quoted);
+        continue;
+      }
+      for (const piece of (match[3] ?? "").split(OPERATOR)) {
+        if (piece.length === 0) continue;
+        if (OPERATOR.test(piece) || piece === "&") {
+          end();
+          continue;
+        }
+        current.push(piece);
+        if (/^-[A-Za-z]{2,}$/.test(piece)) {
+          for (const letter of piece.slice(1)) current.push(`-${letter}`);
+        }
+      }
+    }
+    end();
   }
-  return out;
+  return commands;
+}
+var WRAPPERS = /* @__PURE__ */ new Set(["sudo", "command", "builtin", "exec", "env", "time", "nohup", "nice"]);
+function commandWordOf(tokens) {
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      i += 1;
+    } else if (WRAPPERS.has(token)) {
+      i += 1;
+      while (i < tokens.length && tokens[i].startsWith("-")) i += 1;
+    } else {
+      break;
+    }
+  }
+  const word = (tokens[i] ?? "").replace(/^\\/, "");
+  return word.slice(word.lastIndexOf("/") + 1);
 }
 function pathsIn(token) {
-  const candidates = [token.startsWith("~/") ? token.slice(2) : token];
+  const bare = token.replace(/^[<>]+/, "");
+  const candidates = [bare.startsWith("~/") ? bare.slice(2) : bare];
   const colon = token.lastIndexOf(":");
   if (colon > 0 && colon < token.length - 1) {
     candidates.push(token.slice(colon + 1));
