@@ -329,9 +329,11 @@ takes only `PATH` and its own variables out of your profile, so the key has to g
 key every call takes the error path, which emits nothing — so a missing key is invisible
 unless you look at `/bouncer:status`, which says so on the backend line.
 
-The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed in the
-terminal is already there; its **Chat** tab is a different product and runs no hooks at
-all. [docs/dogfooding.md](docs/dogfooding.md) has the detail.
+The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed anywhere
+is already there; its **Chat** tab is a different product and runs no hooks at all. If you
+would rather not type a slash command at all, `extraKnownMarketplaces` and `enabledPlugins`
+in `~/.claude/settings.json` do the whole install on their own —
+[docs/dogfooding.md](docs/dogfooding.md) has both routes.
 
 It ships in `observe`, which emits nothing at all. To change that, copy the policy file
 `/bouncer:status` printed to `~/.bouncer/bouncer.yaml` and edit the `mode:` line; the

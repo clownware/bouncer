@@ -38,14 +38,36 @@ Node 20 or newer has to be on `PATH` — the hook shells out to `node`.
 
 The desktop app's **Code** tab is Claude Code, and it reads the same `~/.claude` that the
 terminal does: the same `settings.json`, the same installed plugins and marketplaces, and
-the same hooks. So install once in the terminal with the two commands above and Bouncer is
-there in the Code tab too — nothing to install twice.
+the same hooks. So if you have already installed it anywhere, it is there in the Code tab
+too — nothing to install twice.
 
 Slash commands are not the same thing there. `/plugin` opens a plugin browser rather than
-taking `marketplace add` as an argument, so adding the marketplace is a terminal step; once
-it is added, **Manage plugins** in that browser is where you enable and disable Bouncer.
+taking `marketplace add` as an argument, and that browser installs from marketplaces that
+are already configured rather than adding new ones. Neither of those means you need a
+terminal window, though — there are two ways to do it without leaving the app.
 
-The one thing that does differ is the key, and it differs silently. See the next section.
+**The settings file, with no `/plugin` command anywhere.** Registering the marketplace and
+enabling the plugin are both settings keys, so one edit to `~/.claude/settings.json` is the
+whole install:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
+  },
+  "enabledPlugins": { "bouncer@bouncer": true }
+}
+```
+
+Merge those keys into whatever the file already holds rather than replacing it. Restart
+Claude Code afterwards.
+
+**Or the Code tab's own terminal**, from the **Views** menu or `Ctrl` + `` ` ``, which opens
+in the session's working directory. Run `claude` there and the two commands above work
+exactly as they do anywhere else. It is only in local sessions, not cloud or WSL.
+
+The one thing that genuinely differs is the key, and it differs silently. See the next
+section.
 
 The **Chat** tab is a different product and cannot run any of this: it extends through MCP
 servers and connectors, not through Claude Code hooks. Bouncer gates tool calls in Claude
