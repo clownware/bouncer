@@ -100,6 +100,18 @@ The `jev` backend reads `BOUNCER_TYPESAFE_API_KEY`, falling back to `TYPESAFE_AP
 It reads the environment only: no `op://` resolution, deliberately, because `op read`
 can raise a Touch ID prompt in the middle of an agent run.
 
+There is no way to hand the hook a key from a secret manager at session start either,
+which older notes in this repo implied there would be. `CLAUDE_ENV_FILE` is the only
+documented channel for a hook to export anything, and it is scoped to the Bash tool: the
+docs describe it as a script Claude Code runs "before each Bash command in the same shell
+process". A `PreToolUse` hook is not a Bash command and never sources it
+([anthropics/claude-code#60697](https://github.com/anthropics/claude-code/issues/60697)
+asks for it to reach further), and a plugin's `SessionStart` hook is handed the variable
+empty in any case
+([#11649](https://github.com/anthropics/claude-code/issues/11649)). So the key has to be
+in the environment Claude Code itself started with, which is what the rest of this section
+is about.
+
 A hook is a child process of Claude Code, so it gets Claude Code's environment. Where to
 put the key depends on how you start Claude Code, and the two cases do not have the same
 answer.
@@ -127,6 +139,18 @@ sitting in a file in plaintext. The desktop app also has a local environment edi
 environment dropdown in the prompt box, hover **Local**, then the gear — which stores
 variables encrypted on your machine, and is the better of the two if you are only running
 there.
+
+The editor wants the value pasted, which is the one moment a secret-manager key has to
+pass through the clipboard. Copying it without printing it:
+
+```bash
+op read "op://<vault>/<item>/credential" | tr -d '\n' | pbcopy
+```
+
+Copy something else afterwards so it does not sit on the clipboard. The `tr` strips the
+newline `op read` ends with, which otherwise pastes into the field as a second line.
+Bouncer trims the value it reads either way, so this is about the paste landing cleanly,
+not about the key working.
 
 Then confirm the hook can see it, in a new session:
 
