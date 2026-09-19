@@ -15,10 +15,15 @@
 //   stdout  { "answers": { "<name>": true | false | 0.0-1.0 },
 //             "input_tokens": 1840, "output_tokens": 210 }
 //
-// `signals` is present only on a cascade pass and is the escalation manifest's entry for
-// that item: which thresholds the fast model crossed, at what probability, and the
-// questions' own words. That is what makes the second pass a re-adjudication rather than a
-// fresh classification — the expensive model is told what the cheap one was unsure about.
+// `signals` is present on an item the judge escalated and is the escalation manifest's entry
+// for it: which thresholds the fast model crossed, at what probability, and the questions'
+// own words. That is what makes a second pass a re-adjudication rather than a fresh
+// classification — the expensive model is told what the cheap one was unsure about.
+//
+// `bouncer measure` makes one reasoning pass over every item and reuses it for the cascade,
+// so its escalated items carry signals and the rest do not. This comment used to say signals
+// came "only on a cascade pass", as though there were a separate signal-free one. There is
+// not, and the report says what that makes the baseline.
 //
 // Token counts are optional, and a backend that does not report them is reported as not
 // reporting them rather than as zero. A measurement that quietly invents its denominator
@@ -32,7 +37,7 @@ export interface ReasoningRequest {
   readonly item: string;
   readonly state: string;
   readonly questions: Readonly<Record<string, Question>>;
-  /** The manifest's signals for this item, on a cascade pass. Absent on a full pass. */
+  /** The manifest's signals for this item, when the judge escalated it. Absent otherwise. */
   readonly signals?: readonly EscalationSignal[];
 }
 

@@ -8,8 +8,15 @@
 // Three passes over the same labelled fixtures, because two would measure the wrong thing:
 //
 //   judge      the policy set over every item. How good is the fast model alone.
-//   reasoning  the reasoning command over every item. The ceiling, and the bill.
+//   reasoning  the reasoning command over every item. The baseline, and the bill.
 //   cascade    judge everything; re-ask only the escalation manifest's items.
+//
+// The reasoning pass is one pass, shared: the cascade reuses its answers on the escalated
+// items rather than asking twice. So on exactly those items the reasoning model was shown
+// the judge's signals, and the `reasoning` row is a signal-assisted baseline paired with the
+// cascade — not what the same model would score knowing nothing of the judge. That is the
+// right comparison for "is the cascade as good as re-asking everything", and the report
+// says which one it is rather than letting the row's name imply the other.
 //
 // The third is the product. "The judgment model is 0.89 and the reasoning model is 0.94" is
 // not a claim anyone can act on; "judge everything, re-adjudicate the 12% it flagged, land
@@ -33,23 +40,31 @@ export interface PassResult {
   readonly name: "judge" | "reasoning" | "cascade";
   /** What produced the answers: a backend name, or both, for the cascade. */
   readonly by: string;
-  /** Labelled (item, question) rows this pass answered. */
+  /**
+   * Labelled (item, question) rows this pass was scored on: the ones every pass answered.
+   * The same number on all three rows, which is the point — see `scoredRows`.
+   */
   readonly n: number;
   readonly correct: number;
-  /** NaN when nothing was answered. */
+  /** NaN when no row was answered by every pass. */
   readonly accuracy: number;
-  /** Undefined when a backend in this pass reported no counts — never silently zero. */
+  /**
+   * Undefined when any call in this pass reported no count. A total that leaves out the
+   * calls that did not count is not a smaller total, it is a wrong one.
+   */
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   /** Items this pass ran a model over. The denominator for tokens per item. */
   readonly items: number;
-  /** Rows this pass could not answer, because a call failed or a question came back empty. */
+  /** Labelled rows this pass itself could not answer: a call failed, or a question came back empty. */
   readonly unanswered: number;
 }
 
 export interface Measurement {
   readonly set: string;
   readonly fixtures: number;
+  /** Every labelled (item, question) row in the fixtures. */
+  readonly rows: number;
   readonly passes: readonly PassResult[];
   /** Items the judge escalated, over items it judged. */
   readonly escalated: number;
@@ -133,31 +148,40 @@ export async function measure(
     return r === undefined ? [] : [r];
   }));
 
+  // Rows are paired, as ADR-005 requires of `calibrate --compare` and for its reason: a row
+  // one pass could not answer is dropped from all three. Scoring each pass on whatever it
+  // answered compares a 94-row mean with an 89-row one and calls the gap a model difference.
+  const scored = commonRows(byId, [judgeAnswers, reasoningAnswers, cascadeAnswers]);
+
   const passes: PassResult[] = [
     {
       name: "judge",
       by: options.adapter.name,
-      ...accuracyOf(byId, judgeAnswers),
+      ...accuracyOf(byId, judgeAnswers, scored),
       ...(judgeRun.inputTokens !== undefined ? { inputTokens: judgeRun.inputTokens } : {}),
       items: judgeRun.judged,
     },
     {
       name: "reasoning",
       by: options.reasoning.name,
-      ...accuracyOf(byId, reasoningAnswers),
+      ...accuracyOf(byId, reasoningAnswers, scored),
       ...reasoningTokens,
       items: reasoning.size,
     },
     {
       name: "cascade",
       by: `${options.adapter.name} + ${options.reasoning.name}`,
-      ...accuracyOf(byId, cascadeAnswers),
+      ...accuracyOf(byId, cascadeAnswers, scored),
       // Every item pays the judge; only the escalated ones pay the reasoning model. That
-      // sum is the whole cost argument, so it is added rather than estimated.
-      ...addTokens(
-        judgeRun.inputTokens === undefined ? {} : { inputTokens: judgeRun.inputTokens },
-        cascadeTokens,
-      ),
+      // sum is the whole cost argument, so it is added rather than estimated — and it is
+      // unknown if either half is. "Undefined plus 400 is 400" prints a cascade cost that
+      // leaves out whichever model did not count, and prints it as a fact.
+      ...(judgeRun.inputTokens !== undefined && cascadeTokens.inputTokens !== undefined
+        ? { inputTokens: judgeRun.inputTokens + cascadeTokens.inputTokens }
+        : {}),
+      // Output is the reasoning model's alone. A judgment is a probability rather than
+      // generated text, and no judge backend reports output tokens to add.
+      ...(cascadeTokens.outputTokens !== undefined ? { outputTokens: cascadeTokens.outputTokens } : {}),
       items: judgeRun.judged,
     },
   ];
@@ -165,6 +189,7 @@ export async function measure(
   return {
     set: options.setName,
     fixtures: fixtures.length,
+    rows: fixtures.reduce((sum, f) => sum + Object.keys(f.expect).length, 0),
     passes,
     escalated: judgeRun.manifest.items.length,
     judged: judgeRun.judged,
@@ -173,16 +198,32 @@ export async function measure(
   };
 }
 
+type Answers = ReadonlyMap<string, Readonly<Record<string, number>>>;
+
+const rowKey = (id: string, question: string): string => `${id} ${question}`;
+
+/** The labelled rows every one of `passes` answered. */
+function commonRows(fixtures: ReadonlyMap<string, Fixture>, passes: readonly Answers[]): ReadonlySet<string> {
+  const rows = new Set<string>();
+  for (const [id, fixture] of fixtures) {
+    for (const question of Object.keys(fixture.expect)) {
+      if (passes.every((answers) => answers.get(id)?.[question] !== undefined)) rows.add(rowKey(id, question));
+    }
+  }
+  return rows;
+}
+
 /**
- * Agreement with the labels, over the questions each fixture labels.
+ * Agreement with the labels, over the rows in `scored`.
  *
- * Identical in shape to what `calibrate` computes, deliberately: a measurement run and a
- * calibration run over the same fixtures should produce the same number for the judge, and
- * two different definitions of accuracy in one repository is how that stops being true.
+ * The same definition `calibrate` uses, deliberately — two definitions of accuracy in one
+ * repository is how two tables stop agreeing. When every pass answers everything, `scored`
+ * is every labelled row and the judge's number here is the one `calibrate` prints.
  */
 function accuracyOf(
   fixtures: ReadonlyMap<string, Fixture>,
-  answers: ReadonlyMap<string, Readonly<Record<string, number>>>,
+  answers: Answers,
+  scored: ReadonlySet<string>,
 ): { n: number; correct: number; accuracy: number; unanswered: number } {
   let n = 0;
   let correct = 0;
@@ -198,6 +239,8 @@ function accuracyOf(
         unanswered += 1;
         continue;
       }
+      // Answered here and not by some other pass: set aside, so the rows stay paired.
+      if (!scored.has(rowKey(id, question))) continue;
       n += 1;
       if (p >= 0.5 === expected) correct += 1;
     }
@@ -206,39 +249,22 @@ function accuracyOf(
   return { n, correct, accuracy: n === 0 ? Number.NaN : correct / n, unanswered };
 }
 
-/** Undefined rather than zero when nothing reported a count. */
+/**
+ * The total over `responses`, or undefined if any of them reported no count.
+ *
+ * Three of ten calls counting their tokens does not make a small total, it makes an unknown
+ * one. No calls at all is a known total, and it is zero: a cascade that escalated nothing
+ * spent nothing on the reasoning model.
+ */
 function sumTokens(responses: readonly ReasoningResponse[]): { inputTokens?: number; outputTokens?: number } {
   const add = (pick: (r: ReasoningResponse) => number | undefined): number | undefined =>
     responses.reduce<number | undefined>((sum, r) => {
       const value = pick(r);
-      return value === undefined ? sum : (sum ?? 0) + value;
-    }, undefined);
+      return sum === undefined || value === undefined ? undefined : sum + value;
+    }, 0);
 
   const inputTokens = add((r) => r.inputTokens);
   const outputTokens = add((r) => r.outputTokens);
-
-  return {
-    ...(inputTokens !== undefined ? { inputTokens } : {}),
-    ...(outputTokens !== undefined ? { outputTokens } : {}),
-  };
-}
-
-/**
- * Adds two token counts, and stays undefined if either side never reported one.
- *
- * "Undefined plus 400 is 400" would print a cascade cost that leaves out whichever half
- * did not count its tokens, and it would print it as a fact. A missing half means the total
- * is unknown, and the table says so.
- */
-function addTokens(
-  left: { inputTokens?: number; outputTokens?: number },
-  right: { inputTokens?: number; outputTokens?: number },
-): { inputTokens?: number; outputTokens?: number } {
-  const both = (a?: number, b?: number): number | undefined =>
-    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
-
-  const inputTokens = both(left.inputTokens, right.inputTokens);
-  const outputTokens = both(left.outputTokens, right.outputTokens);
 
   return {
     ...(inputTokens !== undefined ? { inputTokens } : {}),
@@ -316,11 +342,16 @@ export function formatMeasurement(m: Measurement): string {
       // The honest failure mode, and the reason the rate is printed next to the cost: past
       // some escalation rate, judging first and then re-asking costs more than just asking.
       // A harness that could only report savings would never say so.
+      //
+      // It reports the tokens and stops there. It used to conclude the cascade was "not
+      // worth running", which is a statement about money made from a ratio of tokens billed
+      // by two different models at two different prices — the step docs/adr/009 says this
+      // command does not take. What the ratio does show is the escalation rate doing it.
       lines.push(
         `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the` +
           ` reasoning pass on everything, at ${points}.`,
-        `At ${m.judged === 0 ? "this" : `${((m.escalated / m.judged) * 100).toFixed(0)}%`} escalation it is not` +
-          " worth running: either the thresholds are too wide or the questions are not separating the batch.",
+        `That is what ${m.judged === 0 ? "this" : `${((m.escalated / m.judged) * 100).toFixed(0)}%`} escalation` +
+          " does: either the thresholds are too wide or the questions are not separating the batch.",
       );
     }
 
@@ -332,6 +363,21 @@ export function formatMeasurement(m: Measurement): string {
           : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`,
       );
     }
+
+    lines.push(
+      "Tokens are not cost. The two models are priced differently, so price each row's input",
+      "and output at your own rates before deciding anything from this.",
+    );
+  }
+
+  if (m.escalated > 0) {
+    lines.push(
+      "",
+      `The reasoning pass was shown the judge's signals on the ${m.escalated} escalated item${m.escalated === 1 ? "" : "s"},`,
+      "because the cascade reuses those answers rather than asking twice. Its row is a",
+      "signal-assisted baseline paired with the cascade, not what the same model scores",
+      "knowing nothing of the judge.",
+    );
   }
 
   if (m.reasoningFailures > 0) {
@@ -342,9 +388,16 @@ export function formatMeasurement(m: Measurement): string {
     );
   }
 
-  const unanswered = m.passes.reduce((sum, p) => sum + p.unanswered, 0);
-  if (unanswered > 0) {
-    lines.push(`${unanswered} labelled rows went unanswered and are excluded rather than counted wrong.`);
+  // Per pass, because the three passes run over the same rows: one row the reasoning model
+  // could not answer is one row, and summing the passes would have called it up to three.
+  const scoredRows = m.passes[0]?.n ?? 0;
+  if (scoredRows < m.rows) {
+    const each = m.passes.map((p) => `${p.name} ${p.unanswered}`).join(", ");
+    lines.push(
+      `Scored ${scoredRows} of ${m.rows} labelled rows: the ones every pass answered, so the three` +
+        ` accuracies share a denominator.`,
+      `Unanswered, by pass: ${each}. They are set aside rather than counted wrong.`,
+    );
   }
 
   lines.push(

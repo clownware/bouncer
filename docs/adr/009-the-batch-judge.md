@@ -1,6 +1,7 @@
 # ADR-009: `bouncer judge`, the batch consumer — and the three format changes it forced
 
-- **Status:** accepted
+- **Status:** accepted; decision 5's account of what `measure` reports corrected on
+  2026-09-19, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.3 (`bouncer judge`, `bouncer measure`), v0.4 (package extraction)
 - **Numbering:** the next free number, per PRD §13. Nothing planned 009.
@@ -141,6 +142,34 @@ it is a reason to be suspicious of any later change that starts averaging.
 Tokens are reported; money is not. A price per million is a number that goes stale, and
 putting one in `src/` would be the same mistake as a threshold in `src/`. The README does
 the arithmetic against published rates and dates it.
+
+> **Corrected on 2026-09-19**, after `docs/adr-review-2026-09-18.md` finding 3. Four things
+> in `measure` said more than this decision lets it, and one row was misnamed.
+>
+> - *The `reasoning` row is not a ceiling, and not independent.* There is one reasoning
+>   pass, shared: the cascade reuses its answers on the escalated items rather than asking
+>   twice, which is deliberate — twice the bill, and two passes free to disagree about the
+>   same item. So on exactly those items the reasoning model was shown the judge's signals.
+>   The row is a signal-assisted baseline paired with the cascade. That is the right
+>   comparison for "is the cascade as good as re-asking everything", it is not what the same
+>   model scores knowing nothing of the judge, and the report now says which it is. "The
+>   quality ceiling" in the table above should read "the baseline": a measured number, not
+>   a bound. `src/io/reasoning.ts` documented signals as arriving "only on a cascade pass",
+>   as though a signal-free one existed.
+> - *Rows are paired.* Each pass was scored on whatever it answered, so three accuracies
+>   could sit on three denominators. ADR-005 already forbids that of `--compare`, in so many
+>   words. A row one pass could not answer is now set aside for all three, and the report
+>   says how many were scored and which pass left the rest.
+> - *An unknown count stays unknown.* A pass total skipped the calls that reported no
+>   tokens, and the cascade's sum treated a missing half as zero while its own comment said
+>   the opposite — so a judge that counted nothing gave a cascade that cost exactly what its
+>   escalations did. Any uncounted call now makes the total unknown. No calls at all is a
+>   known total and it is zero.
+> - *The report stops at tokens.* A cascade that used more input tokens than the reasoning
+>   pass was called "not worth running" — a conclusion about money, from a ratio of tokens
+>   two models bill at two prices. That is the step the paragraph above says this command
+>   does not take. It now states the ratio and the escalation rate behind it, and says to
+>   price both rows before deciding.
 
 ## Decision 6 — the reasoning pass is a command, not a client
 

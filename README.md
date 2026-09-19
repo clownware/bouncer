@@ -437,7 +437,7 @@ and asserting it instead would be the thing this project keeps telling you not t
 | pass | what runs |
 |---|---|
 | `judge` | the policy set over every item — how good the fast model is alone |
-| `reasoning` | your reasoning model over every item — the ceiling, and the bill |
+| `reasoning` | your reasoning model over every item — the baseline, and the bill |
 | `cascade` | judge everything, re-ask only the escalation manifest — **the actual claim** |
 
 The third row is the one that matters. "The judgment model is 0.89 and the reasoning model
@@ -463,6 +463,14 @@ stdout  { "answers": { "unsupported_claim": true },
 pass a re-adjudication rather than a fresh classification: the expensive model is told
 exactly what the cheap one was unsure about, in your own English, because the wording comes
 out of your policy file.
+
+There is one reasoning pass and the cascade reuses it, so those signals reach the
+`reasoning` row too, on the escalated items. It is a baseline paired with the cascade, and
+the report says so; it is not a ceiling, and it is not what your model would score knowing
+nothing of the judge. Three more things the table does to stay honest: all three rows are
+scored on the rows every pass answered, so the accuracies share a denominator; a token
+total is `—` if any call in it went uncounted, not the sum of the ones that counted; and it
+reports tokens without pricing them, because the two models do not cost the same.
 
 Keeping this a command rather than a client means zero runtime dependencies survives,
 Bouncer never sees a second credential, and the claim stays about a *class* of model rather
