@@ -43,8 +43,9 @@
 // on the same code path, which is the only way the difference means anything.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const arg = (name, fallback) => {
@@ -103,11 +104,28 @@ const payloadFor = (command) =>
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// A scratch data directory, thrown away when the run ends.
+//
+// Not a convenience: without it the hook falls back to ~/.bouncer, and every spawn below
+// appends a decision line to the user's real log. A bench run is a few hundred spawns of
+// one hardcoded payload answered by the mock adapter, so what it leaves behind is a log
+// that says bouncer judged `git push --force origin main` several hundred times and asked
+// every time. `bouncer status` then summarises that as the user's own traffic, and the
+// "switching to guard would have added N prompts" line — the one number someone reads
+// before turning enforcement on — is fed entirely by this script. The same file is what
+// `calibrate --from` re-scores and what ADR-006's offline replay is meant to read.
+//
+// Fresh per run rather than a fixed path, so two benches never share a breaker state, and
+// so the policy cache starts cold. The warm-up spawns populate that cache before any
+// sample is taken, which is what ADR-007 says the number should be measured against.
+const DATA = mkdtempSync(join(tmpdir(), "bouncer-bench-"));
+process.on("exit", () => rmSync(DATA, { recursive: true, force: true }));
+
 function once(command, bin = BIN) {
   const start = process.hrtime.bigint();
   const r = spawnSync(process.execPath, [bin, "pretooluse"], {
     input: payloadFor(command),
-    env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT },
+    env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PLUGIN_DATA: DATA },
   });
   const end = process.hrtime.bigint();
   if (r.status !== 0) {

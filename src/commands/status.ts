@@ -28,7 +28,23 @@ export function status(): string {
   }
 
   const policy = resolved.policy;
-  const records = tail(dir, SAMPLE);
+  const sampled = tail(dir, SAMPLE);
+
+  // Lines the mock adapter answered are set aside before anything is counted.
+  //
+  // The mock answers from fixed keyword heuristics and never reaches a network, so its
+  // verdicts say nothing about the configured backend and its latencies are sub-millisecond
+  // by construction. `npm run bench` used to write hundreds of them into the user's log,
+  // which is how this was found: a status reading `ask 70` and `p50 0ms` over seventy
+  // copies of one hardcoded benchmark payload, with "switching to guard would have added 70
+  // prompts" underneath it. That last line is the one number someone reads before turning
+  // enforcement on, so it is the one that must not be fed by a stand-in.
+  //
+  // Kept when the policy names `mock` as its backend: someone running the mock deliberately
+  // has no other history, and silently summarising nothing would be worse than summarising
+  // a stand-in they chose.
+  const setAside = policy.backend === "mock" ? [] : sampled.filter((r) => r.backend === "mock");
+  const records = setAside.length === 0 ? sampled : sampled.filter((r) => r.backend !== "mock");
 
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
   lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
@@ -50,11 +66,14 @@ export function status(): string {
 
   if (records.length === 0) {
     lines.push("No decisions logged yet.");
+    if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
     return `${lines.join("\n")}\n`;
   }
 
   lines.push(`Last ${records.length} decisions:`);
   lines.push(...summarize(records));
+
+  if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
 
   if (policy.mode === "observe") {
     const wouldPrompt = records.filter((r) => r.verdict === "ask" || r.verdict === "deny").length;
@@ -116,6 +135,15 @@ function summarize(records: readonly DecisionRecord[]): string[] {
   }
 
   return lines;
+}
+
+/** Why some of the log is missing from the numbers above it. */
+function mockNote(count: number, backend: string): string {
+  const s = count === 1 ? "" : "s";
+  return (
+    `Ignoring ${count} record${s} answered by the mock backend — the mock scores from fixed ` +
+    `keyword heuristics, so ${count === 1 ? "it is" : "they are"} test or benchmark traffic rather than evidence about ${backend}.`
+  );
 }
 
 function modeNote(mode: string): string {

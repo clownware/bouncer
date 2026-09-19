@@ -34,6 +34,17 @@ compiled policy is cached on disk, so the bench measures the cached path unless 
 `BOUNCER_NO_CACHE=1` (ADR-007). `node:crypto` is not free either — its first `require` in a
 CJS file costs 10 to 15 ms, which is why nothing in the hot path hashes anything.
 
+**The decision log is evidence, so only real judgments belong in it.** `bouncer status`
+summarises it, `calibrate --from` re-scores it and ADR-006's offline replay reads it, so a
+line that was not a real judgment is a wrong number in front of someone deciding whether to
+enable enforcement. Two consequences. A line names the adapter that answered —
+`$BOUNCER_BACKEND ?? policy.backend`, resolved by `backendName()` — never the one the
+policy asked for. And anything that drives the hook in bulk sets `CLAUDE_PLUGIN_DATA` to a
+scratch directory rather than inheriting the user's: `npm run bench` did not, and left
+hundreds of mock verdicts over one hardcoded payload in a real `~/.bouncer/decisions.jsonl`,
+which `status` then reported as a 100% ask rate. `status` sets mock-backend lines aside for
+the same reason, unless the policy names `mock` itself.
+
 **No thresholds in code.** Questions are plain English and thresholds are numbers, both
 living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the
 number belongs in `policy/default.yaml` instead.

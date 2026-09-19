@@ -9102,7 +9102,7 @@ async function runPreToolUse(payload, options = {}) {
     ...permissionMode !== void 0 ? { permission_mode: permissionMode } : {},
     ...agentType !== void 0 ? { agent_type: agentType } : {},
     mode: policy.mode,
-    backend: policy.backend
+    backend: options.adapter?.name ?? backendName(policy)
   };
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
   const early = shortCircuit(policy, {
@@ -9290,9 +9290,12 @@ function questionsFor(policy) {
   }
   return questions;
 }
-function adapterFor(policy) {
+function backendName(policy) {
   const override = process.env["BOUNCER_BACKEND"];
-  const backend = override !== void 0 && override.length > 0 ? override : policy.backend;
+  return override !== void 0 && override.length > 0 ? override : policy.backend;
+}
+function adapterFor(policy) {
+  const backend = backendName(policy);
   if (backend === "mock") return new MockAdapter();
   if (backend === "jev") return new JevAdapter({ apiKey: apiKey() ?? "" });
   if (backend === "local") return new LocalAdapter(localBackend());
@@ -9335,7 +9338,9 @@ function status() {
 `;
   }
   const policy = resolved.policy;
-  const records = tail(dir, SAMPLE);
+  const sampled = tail(dir, SAMPLE);
+  const setAside = policy.backend === "mock" ? [] : sampled.filter((r) => r.backend === "mock");
+  const records = setAside.length === 0 ? sampled : sampled.filter((r) => r.backend !== "mock");
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
   lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
@@ -9349,11 +9354,13 @@ function status() {
   lines.push("");
   if (records.length === 0) {
     lines.push("No decisions logged yet.");
+    if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
     return `${lines.join("\n")}
 `;
   }
   lines.push(`Last ${records.length} decisions:`);
   lines.push(...summarize(records));
+  if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
   if (policy.mode === "observe") {
     const wouldPrompt = records.filter((r) => r.verdict === "ask" || r.verdict === "deny").length;
     lines.push(
@@ -9394,6 +9401,10 @@ function summarize(records) {
     lines.push("", `${errors.length} error${errors.length === 1 ? "" : "s"}; most recent: ${last?.error?.kind} \u2014 ${last?.error?.message}`);
   }
   return lines;
+}
+function mockNote(count, backend) {
+  const s = count === 1 ? "" : "s";
+  return `Ignoring ${count} record${s} answered by the mock backend \u2014 the mock scores from fixed keyword heuristics, so ${count === 1 ? "it is" : "they are"} test or benchmark traffic rather than evidence about ${backend}.`;
 }
 function modeNote(mode) {
   switch (mode) {

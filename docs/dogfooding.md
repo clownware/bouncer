@@ -185,6 +185,24 @@ line with credentials masked — not a hash, because a hash cannot answer "why w
 prompted", cannot seed fixtures, and cannot be re-scored after a policy change. File
 contents never enter the state at all.
 
+### What answered it
+
+Every line names the backend that produced it in a `backend` field. That is the adapter
+that actually answered — `$BOUNCER_BACKEND` when it is set, the policy's otherwise — not
+the one the policy asked for. It matters because the mock adapter scores from fixed
+keyword heuristics and never touches a network, so a `mock` line is a keyword matcher's
+opinion rather than evidence about jev.
+
+`/bouncer:status` leaves those lines out of its counts and says how many it ignored, so a
+log that picked some up (from a benchmark run, or from driving the hook by hand with
+`BOUNCER_BACKEND=mock`) still reports honestly on the rest. There is nothing to clean up:
+
+```bash
+jq -r 'select(.backend == "mock") | .ts' "$LOG" | wc -l   # how many are being ignored
+```
+
+`npm run bench` writes to a scratch directory of its own and never to this file.
+
 ### How it rotates
 
 At 8 MB the file is renamed to `decisions.jsonl.1`, replacing the previous generation, and
