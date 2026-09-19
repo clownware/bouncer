@@ -3,7 +3,6 @@
 // this network for one fan-out of five noul questions over a realistic PreToolUse state?
 //
 //   TYPESAFE_API_KEY=... node scripts/jev-latency.mjs [--runs 5]
-//   op read "op://Personal/Jev Production Key/credential" | TYPESAFE_API_KEY="$(cat)" node scripts/jev-latency.mjs
 //
 // Reads the key from BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY. Never prints it.
 //
