@@ -1,6 +1,6 @@
 # ADR-003: Fail to the prompt, observe by default, and ship no deny rules
 
-- **Status:** accepted
+- **Status:** accepted; the steady-state latency figures corrected on 2026-09-18, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -75,6 +75,15 @@ to trust, and still the whole benefit for someone running in `bypassPermissions`
   counts the warm-up would trip on a healthy setup, so the first call of each session is
   observed and logged but not counted toward the consecutive-miss total.
 
+  > **Corrected on 2026-09-18, from the first real traffic.** The hook never reaches the
+  > steady state this describes. The five fast calls were made by `scripts/jev-latency.mjs`
+  > inside one process, where Node keeps the connection open between them. The hook is a
+  > new process per tool call, so every call opens its own connection and every call is the
+  > cold one. Over the first 66 judged calls from an installed plugin the two warm-up calls
+  > took 426 and 479 ms and the other 64 had a median of 437 ms — there is no difference for
+  > the exclusion to be protecting. It is harmless, one uncounted call per session, and it
+  > stays; the reasoning for it does not.
+
 ## Measured end-to-end budget
 
 | | | |
@@ -86,3 +95,18 @@ to trust, and still the whole benefit for someone running in `bypassPermissions`
 Steady state lands around 400 ms end to end against the 600 ms target. The first call of a
 session lands near 565 ms — inside budget, but with little margin, which is the other
 reason it is excluded from the breaker rather than merely tolerated.
+
+> **Corrected on 2026-09-18.** The steady-state row does not describe the hook, for the
+> reason given under Consequences: it was measured over a connection the hook never gets to
+> reuse. Measured from an installed plugin over 66 judged calls, seven questions, one
+> machine: the adapter call has a median of 437 ms (min 382, p95 549, max 653), and the hook
+> from payload to verdict 441 ms, p95 551 — before the ~35 ms of process start it cannot
+> see. One call of 66 went over 600 ms.
+>
+> Where it goes: eight cold connections to the API host from the same machine each took
+> ~95 ms to open a socket and ~193 ms to finish TLS, which is two round trips before the
+> request is sent. The remaining ~245 ms is the request, the model and the response. So the
+> figure is a property of the distance to the host and of the process model, not of Jev and
+> not of the question count, and it will be different from somewhere else. It is still the
+> number to plan against: about 480 ms end to end at the median, and the 600 ms target is
+> met at p95 with nothing to spare.

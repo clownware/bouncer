@@ -279,8 +279,9 @@ right shape for the idea.
   allowlist whose entries must be safe for every argument, and a deterministic backstop
   that runs after it could not backstop anything.
 - **A hard-rule hit is faster, not slower.** It short-circuits before the adapter, so the
-  commands most worth catching are also the ones that never pay the ~190 ms classifier
-  call. The predicates are string operations over one command line.
+  commands most worth catching are also the ones that never pay the classifier call: ~437 ms
+  from the hook, not the ~190 ms first written here (ADR-003, corrected 2026-09-18). The
+  predicates are string operations over one command line.
 - **Every entry costs about 0.37 ms of cold start, on every gated call.** Not the matching —
   fifteen entries match in 0.14 ms once warm — but the parsing. The hook is a fresh process
   per tool call, so the policy is parsed cold every time, and the YAML parser's cost tracks

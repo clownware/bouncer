@@ -552,18 +552,23 @@ against live Jev:
 |---|---|---|
 | bare `node -e ''` | 28 ms | 33 ms |
 | bouncer hook, full engine, mock adapter | 51 ms | 63 ms |
-| Jev call, steady state, 5 questions | ~190 ms | ~350 ms |
-| Jev call, first of a session | 513 ms | — |
+| Jev call from the hook, 7 questions, 66 calls | 437 ms median | 549 ms p95 |
+| of which opening the connection (TCP, then TLS) | ~193 ms | — |
 
-The Jev rows were measured when the policy asked five questions; it now asks seven, which
-are evaluated in one call and in parallel, and the rows have not been re-measured since.
-Steady state lands around 400 ms end to end. The first call of a session is nearer 565 ms:
-connection setup, not the model, which is why the latency circuit breaker ignores it.
+The Jev rows come from an installed plugin's own log — real tool calls, one machine, about
+95 ms from the API host — and they replace an earlier "~190 ms steady state". That figure was
+real, and it was measured by a script making call after call inside one process, over a
+connection Node kept open. The hook is a new process per tool call, so it opens a new
+connection every time: two round trips before the request is sent, which is the second row.
+Its first call of a session is no slower than its fiftieth, because none of them is warm.
+End to end that is about 480 ms at the median, and the 600 ms target is met at p95 with
+nothing to spare. How far you are from the host moves all of it, so read your own:
+`/bouncer:status` prints the p50 and p95 of the calls in your log.
 
 The hook row predates both `gate.hard_rules` and the policy cache, and the bench now
 measures two paths separately — a command the classifier judges, and one a hard rule stops
 before the adapter — because neither is obviously the cheaper one. A hard-rule hit skips the
-~190 ms classifier call but still builds the state and runs the matcher.
+classifier call entirely but still builds the state and runs the matcher.
 
 **Your policy's size does not cost you anything after the first call.** The hook is a fresh
 process per tool call, so an uncached policy is re-parsed every time, and parse cost tracks

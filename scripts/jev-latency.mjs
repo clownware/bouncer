@@ -6,6 +6,14 @@
 //   op read "op://Personal/Jev Production Key/credential" | TYPESAFE_API_KEY="$(cat)" node scripts/jev-latency.mjs
 //
 // Reads the key from BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY. Never prints it.
+//
+// Read the FIRST number, not the summary. Every call after the first reuses the connection
+// Node kept open, and the hook never can: it is a new process per tool call, so each one
+// opens a socket and finishes TLS before it sends anything. The runs below the first measure
+// the model and the network; the first measures what a user waits for. Quoting the p50 from
+// here as the hook's latency is how "~190 ms steady state" got into ADR-003 and the README
+// when an installed plugin's own log says 437 ms. `latency_ms.adapter` in a real
+// decisions.jsonl is the honest source; this script is for checking the API still answers.
 // This is a manual, local-only script. It is not run in CI and must never be.
 
 const key = process.env.BOUNCER_TYPESAFE_API_KEY ?? process.env.TYPESAFE_API_KEY;
@@ -81,7 +89,7 @@ if (warm.status !== 200) {
   console.error(`HTTP ${warm.status} on warm-up:\n${warm.text.slice(0, 1500)}`);
   process.exit(1);
 }
-console.log(`warm-up: ${warm.ms.toFixed(0)}ms`);
+console.log(`cold connection, which is every call the hook makes: ${warm.ms.toFixed(0)}ms`);
 
 const samples = [];
 for (let i = 0; i < RUNS; i++) {
@@ -96,4 +104,4 @@ for (let i = 0; i < RUNS; i++) {
 }
 
 const sorted = [...samples].sort((a, b) => a - b);
-console.log(`\nruns=${RUNS}  min=${sorted[0].toFixed(0)}ms  p50=${sorted[Math.floor(RUNS / 2)].toFixed(0)}ms  max=${sorted[RUNS - 1].toFixed(0)}ms  budget=500ms p95`);
+console.log(`\nruns=${RUNS}  min=${sorted[0].toFixed(0)}ms  p50=${sorted[Math.floor(RUNS / 2)].toFixed(0)}ms  max=${sorted[RUNS - 1].toFixed(0)}ms  (kept-alive connection — not the hook's latency)`);
