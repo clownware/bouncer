@@ -7892,8 +7892,16 @@ function fingerprintQuestions(questions, probeQuestions) {
 }
 function fingerprint(text) {
   let hash = 2166136261;
-  for (const char of text) {
-    hash ^= char.codePointAt(0) ?? 0;
+  for (let i = 0; i < text.length; i++) {
+    let code = text.charCodeAt(i);
+    if (code >= 55296 && code <= 56319 && i + 1 < text.length) {
+      const low = text.charCodeAt(i + 1);
+      if (low >= 56320 && low <= 57343) {
+        code = (code - 55296) * 1024 + (low - 56320) + 65536;
+        i += 1;
+      }
+    }
+    hash ^= code;
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return `${text.length}-${hash.toString(16).padStart(8, "0")}`;
@@ -8710,19 +8718,36 @@ function matchHardRule(rules, command) {
   }
   return void 0;
 }
+function once(compute) {
+  let value;
+  let done = false;
+  return () => {
+    if (!done) {
+      value = compute();
+      done = true;
+    }
+    return value;
+  };
+}
 function factsFor(command) {
   const lower = command.toLowerCase();
-  const redactionKinds = new Set(redact(command).kinds);
-  return commandsIn(command).map((tokens) => {
-    const pathLabels = /* @__PURE__ */ new Set();
-    for (const token of tokens) {
-      for (const candidate of pathsIn(token)) {
-        const label = describeSensitivity(candidate);
-        if (label !== void 0) pathLabels.add(label);
+  const redactionKinds = once(() => new Set(redact(command).kinds));
+  return commandsIn(command).map((tokens) => ({
+    commandWord: commandWordOf(tokens),
+    tokens,
+    lower,
+    pathLabels: once(() => {
+      const labels = /* @__PURE__ */ new Set();
+      for (const token of tokens) {
+        for (const candidate of pathsIn(token)) {
+          const label = describeSensitivity(candidate);
+          if (label !== void 0) labels.add(label);
+        }
       }
-    }
-    return { commandWord: commandWordOf(tokens), tokens, lower, pathLabels, redactionKinds };
-  });
+      return labels;
+    }),
+    redactionKinds
+  }));
 }
 function holds(rule, facts) {
   const { when } = rule;
@@ -8741,11 +8766,13 @@ function holds(rule, facts) {
   }
   if (when.pathLabelled !== void 0) {
     asserted = true;
-    if (!when.pathLabelled.some((label) => facts.pathLabels.has(label))) return false;
+    const labels = facts.pathLabels();
+    if (!when.pathLabelled.some((label) => labels.has(label))) return false;
   }
   if (when.redactsAs !== void 0) {
     asserted = true;
-    if (!when.redactsAs.some((kind) => facts.redactionKinds.has(kind))) return false;
+    const kinds = facts.redactionKinds();
+    if (!when.redactsAs.some((kind) => kinds.has(kind))) return false;
   }
   if (when.notTokens !== void 0 && when.notTokens.some((t) => facts.tokens.includes(t))) {
     return false;

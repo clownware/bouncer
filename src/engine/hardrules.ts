@@ -59,29 +59,64 @@ interface CommandFacts {
   readonly tokens: readonly string[];
   readonly lower: string;
   /** Sensitivity labels carried by any token that reads as a path. */
-  readonly pathLabels: ReadonlySet<string>;
+  readonly pathLabels: () => ReadonlySet<string>;
   /** Redaction kinds the command's text matches. */
-  readonly redactionKinds: ReadonlySet<string>;
+  readonly redactionKinds: () => ReadonlySet<string>;
 }
 
+/** Computed on the first ask and kept. A `??=` would recompute a falsy answer. */
+function once<T>(compute: () => T): () => T {
+  let value: T;
+  let done = false;
+  return () => {
+    if (!done) {
+      value = compute();
+      done = true;
+    }
+    return value;
+  };
+}
+
+/**
+ * The two expensive facts are deferred, and the rest are not.
+ *
+ * `holds` checks the cheap predicates first and returns on the first that fails, so on a
+ * typical call no entry reaches `path_labelled` or `redacts_as` at all. Building both
+ * eagerly meant every gated Bash call ran the fourteen-pattern redactor over the command
+ * line and resolved every token that looks like a path, whatever the policy asked about.
+ * Measured against the 8384ad0 bundle, 50 interleaved cold spawns of instrumented builds:
+ * the short-circuit phase cost +0.55 ms more than it used to, and +0.19 ms once these two
+ * were deferred.
+ *
+ * Both are pure functions of the command, so deferring them cannot change a verdict —
+ * `test/hardrules.test.ts` sweeps the whole fixture file, which is what says so rather than
+ * the argument.
+ */
 function factsFor(command: string): CommandFacts[] {
   const lower = command.toLowerCase();
   // The redactor is the project's one tested table of credential shapes. Reusing it
   // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
   // added there is a shape the hard rule catches on the same day.
-  const redactionKinds = new Set(redact(command).kinds);
+  //
+  // Whole-string, so it is memoised across the chain rather than per command.
+  const redactionKinds = once(() => new Set(redact(command).kinds) as ReadonlySet<string>);
 
-  return commandsIn(command).map((tokens) => {
-    const pathLabels = new Set<string>();
-    for (const token of tokens) {
-      for (const candidate of pathsIn(token)) {
-        const label = describeSensitivity(candidate);
-        if (label !== undefined) pathLabels.add(label);
+  return commandsIn(command).map((tokens) => ({
+    commandWord: commandWordOf(tokens),
+    tokens,
+    lower,
+    pathLabels: once(() => {
+      const labels = new Set<string>();
+      for (const token of tokens) {
+        for (const candidate of pathsIn(token)) {
+          const label = describeSensitivity(candidate);
+          if (label !== undefined) labels.add(label);
+        }
       }
-    }
-
-    return { commandWord: commandWordOf(tokens), tokens, lower, pathLabels, redactionKinds };
-  });
+      return labels as ReadonlySet<string>;
+    }),
+    redactionKinds,
+  }));
 }
 
 /**
@@ -113,12 +148,14 @@ function holds(rule: HardRule, facts: CommandFacts): boolean {
 
   if (when.pathLabelled !== undefined) {
     asserted = true;
-    if (!when.pathLabelled.some((label) => facts.pathLabels.has(label))) return false;
+    const labels = facts.pathLabels();
+    if (!when.pathLabelled.some((label) => labels.has(label))) return false;
   }
 
   if (when.redactsAs !== undefined) {
     asserted = true;
-    if (!when.redactsAs.some((kind) => facts.redactionKinds.has(kind))) return false;
+    const kinds = facts.redactionKinds();
+    if (!when.redactsAs.some((kind) => kinds.has(kind))) return false;
   }
 
   // Checked last and never on its own: an entry that only says what it excludes would
