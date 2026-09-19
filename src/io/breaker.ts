@@ -10,9 +10,15 @@
 // visible message. State lives in a small JSON file so it survives across hook processes,
 // which are separate invocations of the same binary.
 //
-// The first gated call of a session is recorded but never counted. Measured against live
-// Jev: 513 ms cold against 168-350 ms warm, which is connection setup rather than the
-// model. A breaker counting the warm-up would trip on a perfectly healthy setup.
+// The first gated call of a session is recorded but never counted. ADR-003 asks for that,
+// and the reason it gives did not survive real traffic: it measured 513 ms cold against
+// 168-350 ms warm inside one process, but the hook is a process per call and never has a
+// warm connection to be colder than. From an installed plugin the first call of a session
+// is no slower than any other (docs/adr/003, corrected 2026-09-18).
+//
+// It stays because it cannot cost anything. Both limits count consecutive calls, five and
+// twenty of them, so one uncounted call neither trips the breaker nor saves it — and a
+// safety component is not where to delete a margin on the strength of two samples.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

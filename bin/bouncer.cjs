@@ -9390,7 +9390,7 @@ function summarize(records) {
       `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct}%) \u2014 the calls a rule could not settle on the classifier's answer alone.`
     );
   }
-  const adapterCalls = records.filter((r) => r.warmup !== true && typeof r.latency_ms.adapter === "number").map((r) => r.latency_ms.adapter).sort((a, b) => a - b);
+  const adapterCalls = records.filter((r) => typeof r.latency_ms.adapter === "number").map((r) => r.latency_ms.adapter).sort((a, b) => a - b);
   if (adapterCalls.length > 0) {
     const p = (q) => adapterCalls[Math.min(adapterCalls.length - 1, Math.floor(adapterCalls.length * q))];
     lines.push("", `Classifier latency over ${adapterCalls.length} calls: p50 ${p(0.5)}ms, p95 ${p(0.95)}ms`);
