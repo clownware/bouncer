@@ -322,10 +322,16 @@ policy file it resolved and the path to the decision log. Node 20 or newer has t
 with zero runtime dependencies ([ADR-002](docs/adr/002-bundled-single-file-on-node.md)).
 
 The `jev` backend reads `BOUNCER_TYPESAFE_API_KEY` from the environment, falling back to
-`TYPESAFE_API_KEY`. A hook inherits Claude Code's environment, so exporting it from the
-shell profile you launch `claude` from is enough. Without a key every call takes the error
-path, which emits nothing — so a missing key is invisible unless you look at
-`/bouncer:status`, which says so on the backend line.
+`TYPESAFE_API_KEY`. In the terminal, exporting it from the shell profile you launch
+`claude` from is enough. In the desktop app it is not: launched from the Dock, the app
+takes only `PATH` and its own variables out of your profile, so the key has to go in
+`~/.claude/settings.json`'s `env` block or the app's local environment editor. Without a
+key every call takes the error path, which emits nothing — so a missing key is invisible
+unless you look at `/bouncer:status`, which says so on the backend line.
+
+The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed in the
+terminal is already there; its **Chat** tab is a different product and runs no hooks at
+all. [docs/dogfooding.md](docs/dogfooding.md) has the detail.
 
 It ships in `observe`, which emits nothing at all. To change that, copy the policy file
 `/bouncer:status` printed to `~/.bouncer/bouncer.yaml` and edit the `mode:` line; the
