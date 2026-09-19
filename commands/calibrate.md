@@ -1,6 +1,6 @@
 ---
 description: Run bouncer's fixtures through its classifier and show the reliability table
-argument-hint: "[--backend jev|local|mock] [--compare a,b]"
+argument-hint: "[--backend jev|local|mock] [--compare a,b] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
 allowed-tools: Bash(node:*)
 ---
 
@@ -25,6 +25,14 @@ after the two reports. It compares `p` and Brier only: a noul answer has no conf
 field on either backend, and the confidence in the gate table is the derived statistic
 max(p, 1 - p). The row worth reading first is how many fixtures reach the same verdict
 under both, since that is what the user would actually feel.
+
+`--out run.jsonl` keeps what the classifier said about every fixture, and `--from run.jsonl`
+scores that file instead of calling a backend — no key, no network. Reach for the pair when
+the user asks what moving a threshold would do: edit the threshold, re-run with `--from`,
+and the answer comes from the run they already paid for rather than from a fresh sample.
+`--from` also reads `decisions.jsonl` and a `bouncer judge` log. `--set` names the policy
+set to score against (default `gate`) and `--fixtures` the labelled file (default the
+bundled `fixtures/gate.jsonl`).
 
 Reading the result with the user:
 
