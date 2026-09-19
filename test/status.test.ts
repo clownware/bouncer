@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { status } from "../src/commands/status.js";
+import * as breaker from "../src/io/breaker.js";
 import { LOG_FILE, type DecisionRecord } from "../src/io/log.js";
 
 let dir: string;
@@ -56,6 +57,25 @@ describe("classifier latency", () => {
     seed([timed(900, true), timed(400), timed(400)]);
 
     expect(status()).toContain("Classifier latency over 3 calls: p50 400ms, p95 900ms");
+  });
+});
+
+describe("a tripped breaker", () => {
+  // This line could never print. `status` runs outside any session, so it asked the breaker
+  // for the session named "" and was handed a fresh one every time.
+  it("says which session is standing down, and since when", () => {
+    const state = breaker.read(dir, "0f3c2a91-aaaa-bbbb-cccc-000000000000");
+    breaker.write(dir, { ...state, tripped: { reason: "failures", at: "2026-09-19T04:00:00.000Z" } });
+    breaker.write(dir, breaker.read(dir, "a-healthy-session"));
+
+    const out = status();
+    expect(out).toContain("STANDING DOWN in session 0f3c2a91 (failures since 2026-09-19T04:00:00.000Z).");
+    expect(out).not.toContain("a-health");
+  });
+
+  it("says nothing when no session has tripped", () => {
+    breaker.write(dir, breaker.read(dir, "a-healthy-session"));
+    expect(status()).not.toContain("STANDING DOWN");
   });
 });
 

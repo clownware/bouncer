@@ -7357,7 +7357,7 @@ var require_dist = __commonJS({
 });
 
 // src/hooks/pretooluse.ts
-var import_node_fs5 = require("node:fs");
+var import_node_fs6 = require("node:fs");
 
 // src/adapters/types.ts
 var AdapterError = class extends Error {
@@ -8889,9 +8889,31 @@ function matchFastPath(prefixes, command) {
 }
 
 // src/io/breaker.ts
+var import_node_fs2 = require("node:fs");
+var import_node_path3 = require("node:path");
+
+// src/io/atomic.ts
 var import_node_fs = require("node:fs");
 var import_node_path2 = require("node:path");
+function writeAtomic(file, text) {
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    (0, import_node_fs.mkdirSync)((0, import_node_path2.dirname)(file), { recursive: true });
+    (0, import_node_fs.writeFileSync)(temp, text, "utf8");
+    (0, import_node_fs.renameSync)(temp, file);
+    return true;
+  } catch {
+    try {
+      (0, import_node_fs.unlinkSync)(temp);
+    } catch {
+    }
+    return false;
+  }
+}
+
+// src/io/breaker.ts
 var BREAKER_FILE = "breaker.json";
+var MAX_SESSIONS = 8;
 var FAILURE_LIMIT = 5;
 var SLOW_LIMIT = 20;
 var FRESH = (sessionId) => ({
@@ -8900,21 +8922,28 @@ var FRESH = (sessionId) => ({
   consecutive_failures: 0,
   consecutive_slow: 0
 });
-function read(dir, sessionId) {
+function readAll(dir) {
+  let parsed;
   try {
-    const parsed = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(dir, BREAKER_FILE), "utf8"));
-    if (parsed.session_id !== sessionId) return FRESH(sessionId);
-    return parsed;
+    parsed = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path3.join)(dir, BREAKER_FILE), "utf8"));
   } catch {
-    return FRESH(sessionId);
+    return [];
   }
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const sessions = parsed["sessions"];
+  if (Array.isArray(sessions)) return sessions.filter(isState);
+  return isState(parsed) ? [parsed] : [];
+}
+function read(dir, sessionId) {
+  return readAll(dir).find((s) => s.session_id === sessionId) ?? FRESH(sessionId);
 }
 function write(dir, state) {
-  try {
-    (0, import_node_fs.mkdirSync)(dir, { recursive: true });
-    (0, import_node_fs.writeFileSync)((0, import_node_path2.join)(dir, BREAKER_FILE), JSON.stringify(state), "utf8");
-  } catch {
-  }
+  const others = readAll(dir).filter((s) => s.session_id !== state.session_id);
+  const sessions = [...others, state].slice(-MAX_SESSIONS);
+  writeAtomic((0, import_node_path3.join)(dir, BREAKER_FILE), JSON.stringify({ sessions }));
+}
+function isState(value) {
+  return typeof value === "object" && value !== null && typeof value["session_id"] === "string";
 }
 function shouldNotify(state, key) {
   return !(state.notified ?? []).includes(key);
@@ -8951,13 +8980,13 @@ function record(state, outcome) {
 }
 
 // src/io/config.ts
-var import_node_fs3 = require("node:fs");
+var import_node_fs4 = require("node:fs");
 var import_node_os = require("node:os");
-var import_node_path4 = require("node:path");
+var import_node_path5 = require("node:path");
 
 // src/io/policycache.ts
-var import_node_fs2 = require("node:fs");
-var import_node_path3 = require("node:path");
+var import_node_fs3 = require("node:fs");
+var import_node_path4 = require("node:path");
 var CACHE_VERSION = 4;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
@@ -8976,7 +9005,7 @@ function disabled() {
 function read2(file, source) {
   let entry;
   try {
-    entry = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
+    entry = JSON.parse((0, import_node_fs3.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8992,17 +9021,7 @@ function read2(file, source) {
 }
 function write2(file, source, result) {
   const entry = { version: CACHE_VERSION, source, result };
-  const temp = `${file}.${process.pid}.tmp`;
-  try {
-    (0, import_node_fs2.mkdirSync)(dirOf(file), { recursive: true });
-    (0, import_node_fs2.writeFileSync)(temp, JSON.stringify(entry), "utf8");
-    (0, import_node_fs2.renameSync)(temp, file);
-  } catch {
-    try {
-      (0, import_node_fs2.unlinkSync)(temp);
-    } catch {
-    }
-  }
+  writeAtomic(file, JSON.stringify(entry));
 }
 function fileFor(dir, path) {
   let hash = 2166136261;
@@ -9010,11 +9029,7 @@ function fileFor(dir, path) {
     hash ^= char.codePointAt(0) ?? 0;
     hash = Math.imul(hash, 16777619) >>> 0;
   }
-  return (0, import_node_path3.join)(dir, DIR, `${hash.toString(16).padStart(8, "0")}.json`);
-}
-function dirOf(file) {
-  const cut = file.lastIndexOf("/");
-  return cut <= 0 ? file : file.slice(0, cut);
+  return (0, import_node_path4.join)(dir, DIR, `${hash.toString(16).padStart(8, "0")}.json`);
 }
 function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -9035,20 +9050,20 @@ function resolvePolicy(cwd, pluginRoot2) {
 function policyCandidates(cwd, pluginRoot2) {
   const candidates = [];
   const override = process.env["BOUNCER_POLICY"];
-  if (override !== void 0 && override.length > 0) candidates.push((0, import_node_path4.resolve)(override));
+  if (override !== void 0 && override.length > 0) candidates.push((0, import_node_path5.resolve)(override));
   const repoRoot = findRepoRoot(cwd);
   if (repoRoot !== void 0) {
-    candidates.push((0, import_node_path4.join)(repoRoot, ".bouncer.yaml"), (0, import_node_path4.join)(repoRoot, ".bouncer.yml"));
+    candidates.push((0, import_node_path5.join)(repoRoot, ".bouncer.yaml"), (0, import_node_path5.join)(repoRoot, ".bouncer.yml"));
   }
-  candidates.push((0, import_node_path4.join)((0, import_node_os.homedir)(), ".bouncer", "bouncer.yaml"));
-  if (pluginRoot2 !== void 0) candidates.push((0, import_node_path4.join)(pluginRoot2, "policy", "default.yaml"));
+  candidates.push((0, import_node_path5.join)((0, import_node_os.homedir)(), ".bouncer", "bouncer.yaml"));
+  if (pluginRoot2 !== void 0) candidates.push((0, import_node_path5.join)(pluginRoot2, "policy", "default.yaml"));
   return candidates;
 }
 function findRepoRoot(from) {
-  let current = (0, import_node_path4.resolve)(from);
+  let current = (0, import_node_path5.resolve)(from);
   for (; ; ) {
-    if ((0, import_node_fs3.existsSync)((0, import_node_path4.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path4.dirname)(current);
+    if ((0, import_node_fs4.existsSync)((0, import_node_path5.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path5.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -9056,15 +9071,15 @@ function findRepoRoot(from) {
 function dataDir() {
   const fromPlugin = process.env["CLAUDE_PLUGIN_DATA"];
   if (fromPlugin !== void 0 && fromPlugin.length > 0) return fromPlugin;
-  return (0, import_node_path4.join)((0, import_node_os.homedir)(), ".bouncer");
+  return (0, import_node_path5.join)((0, import_node_os.homedir)(), ".bouncer");
 }
 function pluginRoot() {
   const fromEnv = process.env["CLAUDE_PLUGIN_ROOT"];
   if (fromEnv !== void 0 && fromEnv.length > 0) return fromEnv;
   const script = process.argv[1];
   if (script === void 0 || script.length === 0) return void 0;
-  const candidate = (0, import_node_path4.resolve)((0, import_node_path4.dirname)(script), "..");
-  return (0, import_node_fs3.existsSync)((0, import_node_path4.join)(candidate, "policy", "default.yaml")) ? candidate : void 0;
+  const candidate = (0, import_node_path5.resolve)((0, import_node_path5.dirname)(script), "..");
+  return (0, import_node_fs4.existsSync)((0, import_node_path5.join)(candidate, "policy", "default.yaml")) ? candidate : void 0;
 }
 function apiKey() {
   for (const name of ["BOUNCER_TYPESAFE_API_KEY", "TYPESAFE_API_KEY"]) {
@@ -9078,7 +9093,7 @@ function errorsIn(diagnostics) {
 }
 function tryRead(path) {
   try {
-    return (0, import_node_fs3.readFileSync)(path, "utf8");
+    return (0, import_node_fs4.readFileSync)(path, "utf8");
   } catch {
     return void 0;
   }
@@ -9097,18 +9112,18 @@ function localBackend() {
 }
 
 // src/io/log.ts
-var import_node_fs4 = require("node:fs");
-var import_node_path5 = require("node:path");
+var import_node_fs5 = require("node:fs");
+var import_node_path6 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
 var JUDGMENTS_FILE = "judgments.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
 function append(dir, record2, name = LOG_FILE) {
   try {
-    (0, import_node_fs4.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs5.mkdirSync)(dir, { recursive: true });
     const safe = record2.state !== void 0 ? { ...record2, state: redactState(record2.state) } : record2;
-    const file = (0, import_node_path5.join)(dir, name);
+    const file = (0, import_node_path6.join)(dir, name);
     rotateIfOversized(file);
-    (0, import_node_fs4.appendFileSync)(file, `${JSON.stringify(safe)}
+    (0, import_node_fs5.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
   } catch {
   }
@@ -9133,12 +9148,12 @@ function redactStrings(value) {
 function rotateIfOversized(file) {
   let size;
   try {
-    size = (0, import_node_fs4.statSync)(file).size;
+    size = (0, import_node_fs5.statSync)(file).size;
   } catch {
     return;
   }
   if (size < MAX_LOG_BYTES) return;
-  (0, import_node_fs4.renameSync)(file, `${file}.1`);
+  (0, import_node_fs5.renameSync)(file, `${file}.1`);
 }
 function parseLog(source) {
   const records = [];
@@ -9154,7 +9169,7 @@ function parseLog(source) {
 function tail(dir, count, name = LOG_FILE) {
   let raw;
   try {
-    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, name), "utf8");
+    raw = (0, import_node_fs5.readFileSync)((0, import_node_path6.join)(dir, name), "utf8");
   } catch {
     return [];
   }
@@ -9425,7 +9440,7 @@ function targetExistsFor(tool, toolInput, options) {
 }
 function defaultTargetExists(path) {
   try {
-    return (0, import_node_fs5.existsSync)(path);
+    return (0, import_node_fs6.existsSync)(path);
   } catch {
     return void 0;
   }
@@ -9435,7 +9450,7 @@ function isRecord4(value) {
 }
 
 // src/commands/status.ts
-var import_node_path6 = require("node:path");
+var import_node_path7 = require("node:path");
 var SAMPLE = 200;
 function status() {
   const cwd = process.cwd();
@@ -9459,12 +9474,13 @@ function status() {
   lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
   lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
   lines.push(`Policy:  ${resolved.source}`);
-  lines.push(`Log:     ${(0, import_node_path6.join)(dir, LOG_FILE)}`);
+  lines.push(`Log:     ${(0, import_node_path7.join)(dir, LOG_FILE)}`);
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
-  const state = readBreaker(dir);
-  if (state?.tripped !== void 0) {
-    lines.push("", `STANDING DOWN for this session (${state.tripped.reason} since ${state.tripped.at}).`);
+  const standingDown = readAll(dir).filter((s) => s.tripped !== void 0);
+  if (standingDown.length > 0) lines.push("");
+  for (const s of standingDown) {
+    lines.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
   }
   lines.push("");
   if (records.length === 0) {
@@ -9531,13 +9547,6 @@ function modeNote(mode) {
       return "  (also suppresses prompts on calls judged safe)";
     default:
       return "";
-  }
-}
-function readBreaker(dir) {
-  try {
-    return read(dir, "");
-  } catch {
-    return void 0;
   }
 }
 function backendNote(backend) {
@@ -9634,11 +9643,11 @@ function bar(p) {
 }
 
 // src/commands/calibrate.ts
-var import_node_path7 = require("node:path");
-var import_node_fs7 = require("node:fs");
+var import_node_path8 = require("node:path");
+var import_node_fs8 = require("node:fs");
 
 // src/calibrate.ts
-var import_node_fs6 = require("node:fs");
+var import_node_fs7 = require("node:fs");
 
 // src/engine/item.ts
 var MAX_ITEM_STATE_BYTES = 16 * 1024;
@@ -9762,7 +9771,7 @@ function shapeOf(raw, line) {
   return { kind: declared, item };
 }
 function loadFixtures(path) {
-  return parseFixtures((0, import_node_fs6.readFileSync)(path, "utf8"));
+  return parseFixtures((0, import_node_fs7.readFileSync)(path, "utf8"));
 }
 async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) {
   const set = policy.sets[setName];
@@ -10208,7 +10217,7 @@ async function calibrate(args, write3) {
 `);
     return 1;
   }
-  const fixturePath = args.fixtures ?? (0, import_node_path7.join)(root, "fixtures", "gate.jsonl");
+  const fixturePath = args.fixtures ?? (0, import_node_path8.join)(root, "fixtures", "gate.jsonl");
   let fixtures;
   try {
     fixtures = loadFixtures(fixturePath);
@@ -10327,14 +10336,14 @@ function writeAnswers(path, answered, policy, setName, backend) {
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
     };
   });
-  (0, import_node_fs7.mkdirSync)((0, import_node_path7.dirname)(path), { recursive: true });
-  (0, import_node_fs7.writeFileSync)(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}
+  (0, import_node_fs8.mkdirSync)((0, import_node_path8.dirname)(path), { recursive: true });
+  (0, import_node_fs8.writeFileSync)(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}
 `, "utf8");
 }
 function fromLog(args, policy, fixtures, write3) {
   let source;
   try {
-    source = (0, import_node_fs7.readFileSync)(args.from, "utf8");
+    source = (0, import_node_fs8.readFileSync)(args.from, "utf8");
   } catch (err) {
     write3(`Cannot read the log at ${args.from}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -10452,8 +10461,8 @@ async function startIfNeeded(adapter) {
 }
 
 // src/commands/judge.ts
-var import_node_fs9 = require("node:fs");
-var import_node_path9 = require("node:path");
+var import_node_fs10 = require("node:fs");
+var import_node_path10 = require("node:path");
 
 // src/judge.ts
 var DEFAULT_CONCURRENCY2 = 4;
@@ -10476,10 +10485,11 @@ async function judge(items, options) {
   const width = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY2, items.length));
   await Promise.all(Array.from({ length: width }, () => worker()));
   const escalations = results.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
-  const judgedCount = results.filter((r) => r.error === void 0).length;
-  const tokens = results.reduce(
-    (sum, r) => r.inputTokens === void 0 ? sum : (sum ?? 0) + r.inputTokens,
-    void 0
+  const judged = results.filter((r) => r.error === void 0);
+  const judgedCount = judged.length;
+  const tokens = judged.length === 0 ? void 0 : judged.reduce(
+    (sum, r) => sum === void 0 || r.inputTokens === void 0 ? void 0 : sum + r.inputTokens,
+    0
   );
   return {
     set: options.setName,
@@ -10580,15 +10590,15 @@ function formatRun(run2) {
 }
 
 // src/io/items.ts
-var import_node_fs8 = require("node:fs");
-var import_node_path8 = require("node:path");
+var import_node_fs9 = require("node:fs");
+var import_node_path9 = require("node:path");
 var MAX_FILE_BYTES = 1024 * 1024;
 var MAX_DEPTH2 = 8;
 function loadItems(path) {
-  const stats = (0, import_node_fs8.statSync)(path);
+  const stats = (0, import_node_fs9.statSync)(path);
   if (stats.isDirectory()) return loadDirectory(path);
-  const source = (0, import_node_fs8.readFileSync)(path, "utf8");
-  return (0, import_node_path8.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
+  const source = (0, import_node_fs9.readFileSync)(path, "utf8");
+  return (0, import_node_path9.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
 }
 function loadJsonl(source, path) {
   const items = [];
@@ -10643,21 +10653,21 @@ function loadDirectory(root) {
   const skipped = [];
   const walk = (dir, depth) => {
     if (depth > MAX_DEPTH2) {
-      skipped.push({ path: (0, import_node_path8.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
+      skipped.push({ path: (0, import_node_path9.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
       return;
     }
-    for (const entry of (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (0, import_node_fs9.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      const full = (0, import_node_path8.join)(dir, entry.name);
+      const full = (0, import_node_path9.join)(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full, depth + 1);
         continue;
       }
       if (!entry.isFile()) continue;
-      const id = (0, import_node_path8.relative)(root, full).split(import_node_path8.sep).join("/");
+      const id = (0, import_node_path9.relative)(root, full).split(import_node_path9.sep).join("/");
       let size;
       try {
-        size = (0, import_node_fs8.statSync)(full).size;
+        size = (0, import_node_fs9.statSync)(full).size;
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -10668,7 +10678,7 @@ function loadDirectory(root) {
       }
       let buffer;
       try {
-        buffer = (0, import_node_fs8.readFileSync)(full);
+        buffer = (0, import_node_fs9.readFileSync)(full);
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -10751,7 +10761,7 @@ async function judge2(args, write3) {
   }
   let batch;
   try {
-    batch = loadItems((0, import_node_path9.resolve)(args.path));
+    batch = loadItems((0, import_node_path10.resolve)(args.path));
   } catch (err) {
     write3(`Cannot read ${args.path}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -10795,8 +10805,8 @@ async function judge2(args, write3) {
     }
   );
   if (!args.json) process.stderr.write("\r\x1B[K");
-  const logPath = args.out ?? (0, import_node_path9.join)(dataDir(), JUDGMENTS_FILE);
-  const manifestPath = args.manifest ?? (0, import_node_path9.join)(dataDir(), "escalations.json");
+  const logPath = args.out ?? (0, import_node_path10.join)(dataDir(), JUDGMENTS_FILE);
+  const manifestPath = args.manifest ?? (0, import_node_path10.join)(dataDir(), "escalations.json");
   writeLog(logPath, run2, policy);
   const manifestWritten = writeManifest(manifestPath, run2, policy);
   if (args.json === true) {
@@ -10813,10 +10823,10 @@ async function judge2(args, write3) {
   return run2.judged === 0 ? 1 : 0;
 }
 function writeLog(path, run2, policy) {
-  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   for (const item of run2.items) {
-    append((0, import_node_path9.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
+    append((0, import_node_path10.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
   }
 }
 function recordFor(item, run2, policy, ts) {
@@ -10857,8 +10867,8 @@ function writeManifest(path, run2, policy) {
   if (run2.manifest.items.length === 0) return false;
   const set = policy.sets[run2.set];
   const models = [...new Set(run2.items.flatMap((i) => i.model === void 0 ? [] : [i.model]))];
-  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
-  (0, import_node_fs9.writeFileSync)(
+  (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
+  (0, import_node_fs10.writeFileSync)(
     path,
     `${JSON.stringify(
       {
@@ -10951,37 +10961,41 @@ async function measure(fixtures, options) {
     const r = reasoning.get(id);
     return r === void 0 ? [] : [r];
   }));
+  const scored = commonRows(byId, [judgeAnswers, reasoningAnswers, cascadeAnswers]);
   const passes = [
     {
       name: "judge",
       by: options.adapter.name,
-      ...accuracyOf(byId, judgeAnswers),
+      ...accuracyOf(byId, judgeAnswers, scored),
       ...judgeRun.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens } : {},
       items: judgeRun.judged
     },
     {
       name: "reasoning",
       by: options.reasoning.name,
-      ...accuracyOf(byId, reasoningAnswers),
+      ...accuracyOf(byId, reasoningAnswers, scored),
       ...reasoningTokens,
       items: reasoning.size
     },
     {
       name: "cascade",
       by: `${options.adapter.name} + ${options.reasoning.name}`,
-      ...accuracyOf(byId, cascadeAnswers),
+      ...accuracyOf(byId, cascadeAnswers, scored),
       // Every item pays the judge; only the escalated ones pay the reasoning model. That
-      // sum is the whole cost argument, so it is added rather than estimated.
-      ...addTokens(
-        judgeRun.inputTokens === void 0 ? {} : { inputTokens: judgeRun.inputTokens },
-        cascadeTokens
-      ),
+      // sum is the whole cost argument, so it is added rather than estimated — and it is
+      // unknown if either half is. "Undefined plus 400 is 400" prints a cascade cost that
+      // leaves out whichever model did not count, and prints it as a fact.
+      ...judgeRun.inputTokens !== void 0 && cascadeTokens.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens + cascadeTokens.inputTokens } : {},
+      // Output is the reasoning model's alone. A judgment is a probability rather than
+      // generated text, and no judge backend reports output tokens to add.
+      ...cascadeTokens.outputTokens !== void 0 ? { outputTokens: cascadeTokens.outputTokens } : {},
       items: judgeRun.judged
     }
   ];
   return {
     set: options.setName,
     fixtures: fixtures.length,
+    rows: fixtures.reduce((sum, f) => sum + Object.keys(f.expect).length, 0),
     passes,
     escalated: judgeRun.manifest.items.length,
     judged: judgeRun.judged,
@@ -10989,7 +11003,17 @@ async function measure(fixtures, options) {
     ...failures[0] !== void 0 ? { firstReasoningError: failures[0] } : {}
   };
 }
-function accuracyOf(fixtures, answers) {
+var rowKey = (id, question) => `${id}\0${question}`;
+function commonRows(fixtures, passes) {
+  const rows = /* @__PURE__ */ new Set();
+  for (const [id, fixture] of fixtures) {
+    for (const question of Object.keys(fixture.expect)) {
+      if (passes.every((answers) => answers.get(id)?.[question] !== void 0)) rows.add(rowKey(id, question));
+    }
+  }
+  return rows;
+}
+function accuracyOf(fixtures, answers, scored) {
   let n = 0;
   let correct = 0;
   let unanswered = 0;
@@ -11001,6 +11025,7 @@ function accuracyOf(fixtures, answers) {
         unanswered += 1;
         continue;
       }
+      if (!scored.has(rowKey(id, question))) continue;
       n += 1;
       if (p >= 0.5 === expected) correct += 1;
     }
@@ -11010,19 +11035,10 @@ function accuracyOf(fixtures, answers) {
 function sumTokens(responses) {
   const add = (pick) => responses.reduce((sum, r) => {
     const value = pick(r);
-    return value === void 0 ? sum : (sum ?? 0) + value;
-  }, void 0);
+    return sum === void 0 || value === void 0 ? void 0 : sum + value;
+  }, 0);
   const inputTokens = add((r) => r.inputTokens);
   const outputTokens = add((r) => r.outputTokens);
-  return {
-    ...inputTokens !== void 0 ? { inputTokens } : {},
-    ...outputTokens !== void 0 ? { outputTokens } : {}
-  };
-}
-function addTokens(left, right) {
-  const both = (a, b) => a === void 0 && b === void 0 ? void 0 : (a ?? 0) + (b ?? 0);
-  const inputTokens = both(left.inputTokens, right.inputTokens);
-  const outputTokens = both(left.outputTokens, right.outputTokens);
   return {
     ...inputTokens !== void 0 ? { inputTokens } : {},
     ...outputTokens !== void 0 ? { outputTokens } : {}
@@ -11069,7 +11085,7 @@ function formatMeasurement(m) {
     } else {
       lines.push(
         `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
-        `At ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation it is not worth running: either the thresholds are too wide or the questions are not separating the batch.`
+        `That is what ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation does: either the thresholds are too wide or the questions are not separating the batch.`
       );
     }
     if (judgePass !== void 0 && !Number.isNaN(judgePass.accuracy)) {
@@ -11078,6 +11094,19 @@ function formatMeasurement(m) {
         worth === 0 ? `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations changed no verdict.` : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`
       );
     }
+    lines.push(
+      "Tokens are not cost. The two models are priced differently, so price each row's input",
+      "and output at your own rates before deciding anything from this."
+    );
+  }
+  if (m.escalated > 0) {
+    lines.push(
+      "",
+      `The reasoning pass was shown the judge's signals on the ${m.escalated} escalated item${m.escalated === 1 ? "" : "s"},`,
+      "because the cascade reuses those answers rather than asking twice. Its row is a",
+      "signal-assisted baseline paired with the cascade, not what the same model scores",
+      "knowing nothing of the judge."
+    );
   }
   if (m.reasoningFailures > 0) {
     lines.push(
@@ -11085,9 +11114,13 @@ function formatMeasurement(m) {
       `${m.reasoningFailures} reasoning call${m.reasoningFailures === 1 ? "" : "s"} failed and are excluded from the rows above. First error: ${m.firstReasoningError ?? "(none recorded)"}`
     );
   }
-  const unanswered = m.passes.reduce((sum, p) => sum + p.unanswered, 0);
-  if (unanswered > 0) {
-    lines.push(`${unanswered} labelled rows went unanswered and are excluded rather than counted wrong.`);
+  const scoredRows = m.passes[0]?.n ?? 0;
+  if (scoredRows < m.rows) {
+    const each = m.passes.map((p) => `${p.name} ${p.unanswered}`).join(", ");
+    lines.push(
+      `Scored ${scoredRows} of ${m.rows} labelled rows: the ones every pass answered, so the three accuracies share a denominator.`,
+      `Unanswered, by pass: ${each}. They are set aside rather than counted wrong.`
+    );
   }
   lines.push(
     "",
@@ -11499,9 +11532,9 @@ function isRecord7(value) {
 }
 
 // src/io/skills.ts
-var import_node_fs10 = require("node:fs");
+var import_node_fs11 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path10 = require("node:path");
+var import_node_path11 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -11510,7 +11543,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs10.existsSync)(path)) return;
+    if (!(0, import_node_fs11.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -11524,17 +11557,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path10.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path11.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path11.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path10.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path11.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path11.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path10.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path11.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -11545,7 +11578,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path11.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -11569,7 +11602,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path11.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -11595,9 +11628,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path10.join)(installPath, "skills");
+    const dir = (0, import_node_path11.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path10.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path11.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -11605,51 +11638,51 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path10.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs10.existsSync)(root)) return [];
+  const root = (0, import_node_path11.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs11.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path10.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path11.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path10.join)(root, outer, inner);
-      const rpm = (0, import_node_path10.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs10.existsSync)(rpm)) {
+      const session = (0, import_node_path11.join)(root, outer, inner);
+      const rpm = (0, import_node_path11.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs11.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path10.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path11.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path10.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
-        if ((0, import_node_fs10.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path11.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
+        if ((0, import_node_fs11.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path10.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path11.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path10.join)(dir, outer))) {
-      buckets.push((0, import_node_path10.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path11.join)(dir, outer))) {
+      buckets.push((0, import_node_path11.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs11.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs10.readFileSync)(file, "utf8");
+    return (0, import_node_fs11.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -11662,7 +11695,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs10.statSync)(source);
+      const stat = (0, import_node_fs11.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -11672,13 +11705,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path10.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path11.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs10.existsSync)((0, import_node_path10.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path10.dirname)(current);
+    if ((0, import_node_fs11.existsSync)((0, import_node_path11.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path11.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -11758,7 +11791,7 @@ function shorten(signature) {
 
 // src/io/stdin.ts
 async function readPayload() {
-  const raw = await readAll();
+  const raw = await readAll2();
   if (raw.trim().length === 0) return void 0;
   try {
     const parsed = JSON.parse(raw);
@@ -11767,7 +11800,7 @@ async function readPayload() {
     return void 0;
   }
 }
-function readAll() {
+function readAll2() {
   return new Promise((resolve4, reject) => {
     const chunks = [];
     process.stdin.on("data", (c) => chunks.push(c));

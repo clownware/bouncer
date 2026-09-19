@@ -57,9 +57,13 @@ export function status(): string {
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
 
-  const state = readBreaker(dir);
-  if (state?.tripped !== undefined) {
-    lines.push("", `STANDING DOWN for this session (${state.tripped.reason} since ${state.tripped.at}).`);
+  // Every session the file remembers, because this command does not run inside one and has
+  // no id of its own to ask with. It used to ask with an empty one, which matches nothing,
+  // so this line never printed. The time is there so an old session's trip reads as old.
+  const standingDown = breaker.readAll(dir).filter((s) => s.tripped !== undefined);
+  if (standingDown.length > 0) lines.push("");
+  for (const s of standingDown) {
+    lines.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
   }
 
   lines.push("");
@@ -158,14 +162,6 @@ function modeNote(mode: string): string {
       return "  (also suppresses prompts on calls judged safe)";
     default:
       return "";
-  }
-}
-
-function readBreaker(dir: string): breaker.BreakerState | undefined {
-  try {
-    return breaker.read(dir, "");
-  } catch {
-    return undefined;
   }
 }
 

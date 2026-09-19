@@ -14,9 +14,10 @@
 // Every failure here is silent and falls through to a normal load. A cache that cannot be
 // read, written, parsed or trusted must never be why a session is worse off than without it.
 
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadPolicy, type LoadResult } from "../engine/policy.js";
+import { writeAtomic } from "./atomic.js";
 
 /**
  * Bumped whenever `loadPolicy`'s output shape changes.
@@ -107,23 +108,10 @@ function read(file: string, source: string): LoadResult | undefined {
 function write(file: string, source: string, result: LoadResult): void {
   const entry: CacheEntry = { version: CACHE_VERSION, source, result };
 
-  // Written to a unique temporary name and renamed, because rename is atomic on every
-  // platform this runs on and two tool calls can be in flight at once. A reader must never
-  // see half a file; a crash mid-write must leave the previous entry intact.
-  const temp = `${file}.${process.pid}.tmp`;
-  try {
-    mkdirSync(dirOf(file), { recursive: true });
-    writeFileSync(temp, JSON.stringify(entry), "utf8");
-    renameSync(temp, file);
-  } catch {
-    // A read-only or full disk is not this process's problem to solve or report. The
-    // decision it was asked for has already been computed.
-    try {
-      unlinkSync(temp);
-    } catch {
-      // Nothing left to do about it.
-    }
-  }
+  // Atomic, because two tool calls can be in flight at once. A failed write is ignored: a
+  // read-only or full disk is not this process's problem to solve or report, and the
+  // decision it was asked for has already been computed.
+  writeAtomic(file, JSON.stringify(entry));
 }
 
 /**
@@ -140,11 +128,6 @@ function fileFor(dir: string, path: string): string {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return join(dir, DIR, `${hash.toString(16).padStart(8, "0")}.json`);
-}
-
-function dirOf(file: string): string {
-  const cut = file.lastIndexOf("/");
-  return cut <= 0 ? file : file.slice(0, cut);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
