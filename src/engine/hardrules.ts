@@ -32,14 +32,30 @@ export function matchHardRule(rules: readonly HardRule[], command: string): Hard
   // redact the same command a dozen times, in the hook's latency path.
   const facts = factsFor(trimmed);
 
+  // Entries in order, and for each entry every command in the chain: the first entry that
+  // any one command satisfies wins, which keeps the policy file's order meaning what it did.
   for (const rule of rules) {
-    if (holds(rule, facts)) return rule;
+    if (facts.some((f) => holds(rule, f))) return rule;
   }
 
   return undefined;
 }
 
+/**
+ * What is known about ONE command in a chain.
+ *
+ * A predicate used to be read over the whole string, which got two things wrong in opposite
+ * directions. `first_token` saw only the first word typed, so `git status; cat .env` and
+ * `sudo cat .env` both got past an entry written for `cat`. And `tokens`, `not_tokens` and
+ * `path_labelled` saw every command at once, so `cat README.md && ls .env` added up to a
+ * credential read, and echo's `-n` excused a `git clean -fdx` sitting next to it.
+ *
+ * `lower` and `redactionKinds` stay whole-string on purpose: `text` exists to see inside a
+ * quoted argument, and a credential is a credential wherever in the chain it sits.
+ */
 interface CommandFacts {
+  /** The verb, found behind anything a shell lets you put in front of it. */
+  readonly commandWord: string;
   readonly tokens: readonly string[];
   readonly lower: string;
   /** Sensitivity labels carried by any token that reads as a path. */
@@ -48,26 +64,24 @@ interface CommandFacts {
   readonly redactionKinds: ReadonlySet<string>;
 }
 
-function factsFor(command: string): CommandFacts {
-  const tokens = tokenize(command);
+function factsFor(command: string): CommandFacts[] {
+  const lower = command.toLowerCase();
+  // The redactor is the project's one tested table of credential shapes. Reusing it
+  // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
+  // added there is a shape the hard rule catches on the same day.
+  const redactionKinds = new Set(redact(command).kinds);
 
-  const pathLabels = new Set<string>();
-  for (const token of tokens) {
-    for (const candidate of pathsIn(token)) {
-      const label = describeSensitivity(candidate);
-      if (label !== undefined) pathLabels.add(label);
+  return commandsIn(command).map((tokens) => {
+    const pathLabels = new Set<string>();
+    for (const token of tokens) {
+      for (const candidate of pathsIn(token)) {
+        const label = describeSensitivity(candidate);
+        if (label !== undefined) pathLabels.add(label);
+      }
     }
-  }
 
-  return {
-    tokens,
-    lower: command.toLowerCase(),
-    pathLabels,
-    // The redactor is the project's one tested table of credential shapes. Reusing it
-    // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
-    // added there is a shape the hard rule catches on the same day.
-    redactionKinds: new Set(redact(command).kinds),
-  };
+    return { commandWord: commandWordOf(tokens), tokens, lower, pathLabels, redactionKinds };
+  });
 }
 
 /**
@@ -84,7 +98,7 @@ function holds(rule: HardRule, facts: CommandFacts): boolean {
 
   if (when.firstToken !== undefined) {
     asserted = true;
-    if (!when.firstToken.includes(facts.tokens[0] ?? "")) return false;
+    if (!when.firstToken.includes(facts.commandWord)) return false;
   }
 
   if (when.tokens !== undefined) {
@@ -116,29 +130,83 @@ function holds(rule: HardRule, facts: CommandFacts): boolean {
   return asserted;
 }
 
+/** What separates one command from the next. Never looked for inside a quoted token. */
+const OPERATOR = /(&&|\|\||;|\|)/;
+
 /**
- * Whitespace split, except that a quoted run is one token.
+ * The token lists of each command in a chain: a whitespace split in which a quoted run is
+ * one token, cut into commands at `&&`, `||`, `;`, `|`, a lone `&` and newlines.
  *
  * Quoting matters in both directions. `psql -c 'DROP TABLE users'` must not turn `DROP`
  * into a token that some other entry matches on, and `git commit -m 'show the diff'` must
  * not produce a `show` token that the git-show entry would accept. SQL inside such a token
  * is reached by the `text` predicate instead, which is exactly why that predicate exists.
+ * For the same reason only an unquoted token is searched for an operator, so
+ * `-m 'tidy; cat .env'` stays one token of one command. `2>&1` is left alone: it holds a
+ * single `&`, which is only an operator when it stands as a token by itself.
  *
  * This is not a shell parser and does not try to be. It does not expand variables, resolve
- * redirections or split on operators, and a command that defeats it reaches the classifier
- * as it would have anyway — which is the safe direction for a miss.
+ * redirections or follow a heredoc, and a command that defeats it reaches the classifier as
+ * it would have anyway — which is the safe direction for a miss.
  */
-function tokenize(command: string): string[] {
-  const out: string[] = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+function commandsIn(command: string): string[][] {
+  const commands: string[][] = [];
+  let current: string[] = [];
+  const end = (): void => {
+    if (current.length > 0) commands.push(current);
+    current = [];
+  };
 
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(command)) !== null) {
-    const token = match[1] ?? match[2] ?? match[3] ?? "";
-    if (token.length > 0) out.push(token);
+  for (const line of command.split("\n")) {
+    const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(line)) !== null) {
+      const quoted = match[1] ?? match[2];
+      if (quoted !== undefined) {
+        if (quoted.length > 0) current.push(quoted);
+        continue;
+      }
+
+      for (const piece of (match[3] ?? "").split(OPERATOR)) {
+        if (piece.length === 0) continue;
+        if (OPERATOR.test(piece) || piece === "&") end();
+        else current.push(piece);
+      }
+    }
+    end();
   }
 
-  return out;
+  return commands;
+}
+
+/** Words that run the command after them, and so are not the command. */
+const WRAPPERS = new Set(["sudo", "command", "builtin", "exec", "env", "time", "nohup", "nice"]);
+
+/**
+ * The verb of one command: past any `NAME=value` in front of it, past a wrapper and the
+ * wrapper's own flags, with the directory and an alias-skipping backslash taken off.
+ *
+ * `sudo -u root cat .env` still gets past this — `root` reads as the verb, because knowing
+ * it is not would mean knowing every wrapper's flags. That falls to the classifier, like
+ * anything else this file does not understand.
+ */
+function commandWordOf(tokens: readonly string[]): string {
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i] as string;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      i += 1;
+    } else if (WRAPPERS.has(token)) {
+      i += 1;
+      while (i < tokens.length && (tokens[i] as string).startsWith("-")) i += 1;
+    } else {
+      break;
+    }
+  }
+
+  const word = (tokens[i] ?? "").replace(/^\\/, "");
+  return word.slice(word.lastIndexOf("/") + 1);
 }
 
 /**
@@ -154,7 +222,9 @@ function tokenize(command: string): string[] {
  * what a token "really is". A reading that labels nothing costs a failed regex.
  */
 function pathsIn(token: string): string[] {
-  const candidates = [token.startsWith("~/") ? token.slice(2) : token];
+  // `cat <.env` writes the redirect against the path, and it is still the path.
+  const bare = token.replace(/^[<>]+/, "");
+  const candidates = [bare.startsWith("~/") ? bare.slice(2) : bare];
 
   const colon = token.lastIndexOf(":");
   if (colon > 0 && colon < token.length - 1) {

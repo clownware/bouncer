@@ -62,7 +62,7 @@ export interface Question {
  * credential shapes in `src/`.
  */
 export interface HardRuleWhen {
-  /** The command's first word is one of these. */
+  /** The command's verb is one of these, found behind wrappers like `sudo` and `/bin/`. */
   readonly firstToken?: readonly string[];
   /** Every one of these appears as an exact token. */
   readonly tokens?: readonly string[];

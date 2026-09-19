@@ -3,6 +3,8 @@
 - **Status:** accepted — the deny probe confirmed the one open capture on 2026-09-18, see "What is verified, and what is not"
 - **Date:** 2026-09-18
 - **Context for:** v0.1, and `seatbelt` for v0.2
+- **Amended 2026-09-18:** predicates are read per command in a chain, and `first_token` finds
+  the verb behind a wrapper — see the note under the predicate table.
 - **Corrected 2026-09-18:** an earlier draft said run 7 *allows* the four. It does not — it
   has no `missed` fixtures at all. What it does is catch them by accident. See "Why".
 
@@ -120,6 +122,17 @@ Six predicates, each of which exists for a specific near-miss pair in `fixtures/
 | `text` | one of these appears as a case-insensitive substring | SQL arrives inside a quoted argument, so it is not tokenizable: `drop database` has to be found in `psql … -c '…'` |
 | `path_labelled` | some token is a path carrying one of these sensitivity labels | this is the `sensitive` label the state builder already computes, finally read by something that produces a verdict |
 | `redacts_as` | `redact()` reports one of these kinds for the command | the credential shapes are already a tested table in `src/engine/redact.ts`; a second list would drift from the first |
+
+> **Amended 2026-09-18.** Predicates were read over the whole command string, and are now
+> read per command in a chain (split on `&&`, `||`, `;`, `|`, a lone `&` and newlines, never
+> inside a quoted token). `first_token` means the command's verb, found behind `sudo`,
+> `command`, `env`, a `NAME=value`, a leading backslash or a directory. Driving the built
+> hook showed why: `git status; cat .env`, `sudo cat .env`, `/bin/cat .env` and
+> `FOO=1 cat .env` all got past an entry written for `cat`, and reached a classifier that
+> answers 0.15 on it — while in the other direction `cat README.md && ls .env` added up to
+> a credential read, and `git clean -fdx; echo -n done` was excused by echo's `-n`. `text`
+> and `redacts_as` still read the whole line. This is still not a shell parser:
+> `sudo -u root cat .env`, `xargs` and `$(…)` get past it and fall to the classifier.
 
 `path_labelled` never fires on its own. `find ~ -name 'id_rsa'` has a token that labels as
 `ssh_key` and is a search, not a read; the label only becomes a verdict when a verb

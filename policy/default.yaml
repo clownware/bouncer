@@ -120,9 +120,13 @@ gate:
   #
   # Each entry has a `name` (it appears in the log and in `/bouncer:explain`), a `because`
   # you will read at the prompt, an optional `then` (`ask`, the default, or `deny`), and a
-  # `when` whose predicates must ALL hold:
+  # `when` whose predicates must ALL hold — of ONE command. `npm test && cat .env` is two
+  # commands and each is read by itself, so a verb in one and a path in another never add
+  # up, and one command's `-n` never excuses another's. `text` and `redacts_as` are the
+  # exceptions: they read the whole line, because that is what they are for.
   #
-  #   first_token    the command's first word is one of these
+  #   first_token    the command's verb is one of these, found behind `sudo`, `command`,
+  #                  `env`, a `NAME=value`, a leading backslash or a directory (`/bin/cat`)
   #   tokens         every one of these appears as an exact, whitespace-delimited token
   #   not_tokens     none of these appears as a token (narrows; never used alone)
   #   text           one of these appears case-insensitively anywhere in the command —
@@ -217,10 +221,38 @@ gate:
       when:
         tokens: [git, push, --force]
 
+    # The same push, as it is usually typed. `tokens` matches exact tokens and an entry has
+    # no "or", so each spelling is its own entry: until these were here `git push -f` — the
+    # common one — reached the classifier and `--force` alone got a rule. `--force-with-lease`
+    # is a different token and stays unmatched on purpose; it is the safe form.
+    - name: git-push-force-short
+      because: "Overwrites remote history unconditionally, including work you have not seen."
+      when:
+        tokens: [git, push, -f]
+
+    # `git push origin +main`: a plus in front of the refspec forces that ref with no flag
+    # at all. `text` because the plus is part of a token, not one by itself.
+    - name: git-push-force-refspec
+      because: "A + in front of a refspec forces the push, overwriting remote history."
+      when:
+        tokens: [git, push]
+        text: [" +"]
+
     - name: git-branch-force-delete
       because: "Deletes a branch whose commits are not merged anywhere else."
       when:
         tokens: [git, branch, -D]
+
+    # `-D` is shorthand for these two, and git accepts them spelled out or split.
+    - name: git-branch-force-delete-long
+      because: "Deletes a branch whose commits are not merged anywhere else."
+      when:
+        tokens: [git, branch, --delete, --force]
+
+    - name: git-branch-force-delete-split
+      because: "Deletes a branch whose commits are not merged anywhere else."
+      when:
+        tokens: [git, branch, -d, -f]
 
     - name: git-reflog-expire
       because: "Empties the reflog, which is what every other git recovery depends on."
