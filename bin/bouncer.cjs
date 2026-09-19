@@ -8842,10 +8842,10 @@ function pathsIn(token) {
 // src/engine/evaluate.ts
 function shortCircuit(policy, input) {
   if (input.permissionMode !== void 0 && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy.mode, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+    return standAside({ kind: "permission-mode-skipped", permissionMode: input.permissionMode });
   }
   if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy.mode, "allow", { kind: "tool-not-gated", tool: input.tool });
+    return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
   const hard = matchHardRule(policy.gate.hardRules, input.command);
   if (hard !== void 0) {
@@ -8856,6 +8856,9 @@ function shortCircuit(policy, input) {
     return decide(policy.mode, "allow", { kind: "fast-path", prefix });
   }
   return void 0;
+}
+function standAside(reason) {
+  return { verdict: "allow", reason, emit: void 0 };
 }
 function decideHard(policy, rule) {
   const reason = { kind: "hard-rule", name: rule.name, because: rule.because };
