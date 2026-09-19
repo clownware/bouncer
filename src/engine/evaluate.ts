@@ -22,7 +22,19 @@ export type Reason =
   /** No rule matched and the policy has no `default`. */
   | { readonly kind: "no-rule-matched" }
   /** The rules reached an `allow`, but the classifier never answered these questions. */
-  | { readonly kind: "unanswered"; readonly missing: readonly string[] };
+  | { readonly kind: "unanswered"; readonly missing: readonly string[] }
+  /** The rules reached an `allow`, but the classifier was shown a cut-down state. */
+  | { readonly kind: "truncated" };
+
+/**
+ * What the caller knows about the evidence that `answers` cannot say for itself.
+ *
+ * `truncated` is `BuiltState.truncated`: the state was over its cap and the classifier read
+ * the head of it. Optional, because a consumer whose states cannot be cut has nothing to say.
+ */
+export interface Evidence {
+  readonly truncated?: boolean;
+}
 
 export interface Decision {
   /** What policy concluded, before mode is applied. */
@@ -107,14 +119,28 @@ function decideHard(policy: Policy, rule: HardRule): Decision {
  * `verdict` lands on the safe side; nothing emitted, because a classifier that answered
  * half the request is an error path, and an error path never adds a prompt (docs/adr/003).
  * Probes are not required — they are split out before this is called and no rule reads one.
+ *
+ * The same goes for a state the classifier only saw the head of. The gate cuts a command to
+ * its first 512 characters once the state passes 4 KB, and an agent's heredocs pass it
+ * routinely, so seven confident low answers can all be about a prefix: `echo ok`, then five
+ * kilobytes, then the part that mattered. Every answer arrived and none of them read the
+ * end. An `allow` needs the whole state; an `ask` or a `deny` found its reason in the part
+ * that was read, and stands. Unlike `unanswered` this is a real judgment of what was shown,
+ * so a caller logs it as one — it just does not get to approve.
  */
-export function evaluate(set: PolicySet, mode: Mode, answers: Readonly<Record<string, number>>): Decision {
+export function evaluate(
+  set: PolicySet,
+  mode: Mode,
+  answers: Readonly<Record<string, number>>,
+  evidence: Evidence = {},
+): Decision {
   const decision = applyRules(set, mode, answers);
   if (decision.verdict !== "allow") return decision;
 
   const missing = Object.keys(set.questions).filter((name) => answers[name] === undefined);
-  if (missing.length === 0) return decision;
-  return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: undefined };
+  if (missing.length > 0) return { verdict: "ask", reason: { kind: "unanswered", missing }, emit: undefined };
+  if (evidence.truncated === true) return { verdict: "ask", reason: { kind: "truncated" }, emit: undefined };
+  return decision;
 }
 
 function applyRules(set: PolicySet, mode: Mode, answers: Readonly<Record<string, number>>): Decision {
