@@ -34,31 +34,58 @@ There is no `npm install` step. `bin/bouncer.cjs` is a committed bundle with zer
 dependencies, because Claude Code fetches the repository and never builds it (ADR-002).
 Node 20 or newer has to be on `PATH` — the hook shells out to `node`.
 
+### In the Claude desktop app
+
+The desktop app's **Code** tab is Claude Code, and it reads the same `~/.claude` that the
+terminal does: the same `settings.json`, the same installed plugins and marketplaces, and
+the same hooks. So install once in the terminal with the two commands above and Bouncer is
+there in the Code tab too — nothing to install twice.
+
+Slash commands are not the same thing there. `/plugin` opens a plugin browser rather than
+taking `marketplace add` as an argument, so adding the marketplace is a terminal step; once
+it is added, **Manage plugins** in that browser is where you enable and disable Bouncer.
+
+The one thing that does differ is the key, and it differs silently. See the next section.
+
+The **Chat** tab is a different product and cannot run any of this: it extends through MCP
+servers and connectors, not through Claude Code hooks. Bouncer gates tool calls in Claude
+Code sessions only.
+
 ## 2. Give it a key
 
 The `jev` backend reads `BOUNCER_TYPESAFE_API_KEY`, falling back to `TYPESAFE_API_KEY`.
 It reads the environment only: no `op://` resolution, deliberately, because `op read`
 can raise a Touch ID prompt in the middle of an agent run.
 
-A hook is a child process of Claude Code, so it gets Claude Code's environment. Two ways
-to put the key there, and they trade off against each other:
+A hook is a child process of Claude Code, so it gets Claude Code's environment. Where to
+put the key depends on how you start Claude Code, and the two cases do not have the same
+answer.
 
-```json
-// ~/.claude/settings.json — reliable, but the key sits in a file in plaintext
-{ "env": { "BOUNCER_TYPESAFE_API_KEY": "sk-…" } }
-```
+**In the terminal**, a shell profile export works and keeps the key out of any file:
 
 ```bash
-# ~/.zshrc — keeps the key out of any file, but only reaches a `claude` you launched
-# from that shell
+# ~/.zshrc
 export BOUNCER_TYPESAFE_API_KEY="$(security find-generic-password -s typesafe-api-key -w)"
 ```
 
-The settings block is the one that works however Claude Code was started; the shell
-profile is the one that does not leave a key on disk. Reading it out of the Keychain is
-what makes the second worth the inconvenience.
+**In the desktop app, that export does not arrive.** Launched from the Dock or Finder on
+macOS, the app reads your shell profile only to extract `PATH` and a fixed set of Claude
+Code's own variables; anything else you export there is dropped. So a key that works in
+your terminal will read as missing in the Code tab, with no error to say why. Put it in
+the settings file instead:
 
-Then confirm the hook can see it, in a new terminal and a new Claude Code session:
+```json
+// ~/.claude/settings.json
+{ "env": { "BOUNCER_TYPESAFE_API_KEY": "sk-…" } }
+```
+
+The settings block reaches Claude Code however it was started, at the cost of the key
+sitting in a file in plaintext. The desktop app also has a local environment editor — the
+environment dropdown in the prompt box, hover **Local**, then the gear — which stores
+variables encrypted on your machine, and is the better of the two if you are only running
+there.
+
+Then confirm the hook can see it, in a new session:
 
 ```
 /bouncer:status
