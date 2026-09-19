@@ -203,8 +203,8 @@ install in two minutes and watch run, and `judge` is where the token bill goes d
 | Version | Scope | Why this order |
 |---|---|---|
 | **v0.1** (shipped) | Jev + mock adapters, policy loader, redaction, PreToolUse hook, JSONL log, `/bouncer:status`, `/bouncer:explain`, `calibrate --fixtures` with the published Jev table. Ships `observe` with nothing emitted. | Enforcement is opt-in after the user has looked at their own table. |
-| **v0.2** (in flight) | Hard rules, `seatbelt` mode, the friction pass, the local adapter, probe questions, the README reframe. | Closes the misses run 7 named, gets the Jev-vs-local compare table, sets the framing. Unchanged by ADR-008. |
-| **v0.3 — `bouncer judge`** (in flight) | Batch CLI: a policy set of questions over a JSONL file or a directory of items, producing a judgments log and an escalation manifest. Same engine, same adapters, same `calibrate`. Plus `bouncer measure`: the same batch through the judge, a reasoning model and the cascade of the two, with accuracy and tokens side by side. | The token-spend play, and the first second consumer — which is what earns the package extraction. Dogfood it on the batch scoring currently done by hand in Claude Code sessions, which is the workload it exists to replace. |
+| **v0.2** (shipped) | Hard rules, `seatbelt` mode, the friction pass, the local adapter, probe questions, the README reframe. | Closes the misses run 7 named, gets the Jev-vs-local compare table, sets the framing. Unchanged by ADR-008. |
+| **v0.3 — `bouncer judge`** (shipped) | Batch CLI: a policy set of questions over a JSONL file or a directory of items, producing a judgments log and an escalation manifest. Same engine, same adapters, same `calibrate`. Plus `bouncer measure`: the same batch through the judge, a reasoning model and the cascade of the two, with accuracy and tokens side by side. | The token-spend play, and the first second consumer — which is what earns the package extraction. Dogfood it on the batch scoring currently done by hand in Claude Code sessions, which is the workload it exists to replace. |
 | **v0.4 — extract core** | `@clownware/bouncer-core` (engine, adapters, policy, calibrate). The hook and the CLI become thin consumers. | Only after v0.3 has bent the interface. ADR-008 decision 3: no `packages/core` until a second consumer has forced it. |
 | **v0.5 — router** | Skill routing on `UserPromptSubmit`, per [ADR-006](adr/006-the-skill-router.md). | Moved out of v0.2. It is the least aligned with the thesis and the hardest thing here to calibrate, so it goes last. |
 
@@ -313,6 +313,8 @@ free number rather than the one it was asked for.
   first-class output, and no package extraction until a second consumer exists.
 - **ADR-009** `bouncer judge`, the batch consumer — named policy sets, item-shaped fixtures,
   the log's `consumer` field, three-row measurement, and the reasoning pass as a command.
+- **ADR-010** A fast-path entry is a whole command unless it ends in a space — and what the
+  space is asserting about every argument that entry can be given.
 
 Two topics this section originally earmarked for ADRs were settled without one, so no ADR
 carries their titles and nothing is reserved for them:

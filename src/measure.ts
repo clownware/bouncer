@@ -200,7 +200,15 @@ export async function measure(
 
 type Answers = ReadonlyMap<string, Readonly<Record<string, number>>>;
 
-const rowKey = (id: string, question: string): string => `${id} ${question}`;
+/**
+ * One row of the comparison: an item and one of its questions.
+ *
+ * NUL as the separator, because no item id or question name can contain one. Written as
+ * an escape rather than the byte itself: a raw NUL makes grep, ripgrep and `file` call
+ * this whole file binary and skip it, so every plain-text search of `src/` silently misses
+ * it. Git is unaffected, which is what let it sit here unnoticed.
+ */
+const rowKey = (id: string, question: string): string => `${id}\u0000${question}`;
 
 /** The labelled rows every one of `passes` answered. */
 function commonRows(fixtures: ReadonlyMap<string, Fixture>, passes: readonly Answers[]): ReadonlySet<string> {

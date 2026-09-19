@@ -84,14 +84,29 @@ gate:
   #
   # What is left produces metadata about the working tree, or runs a named project script.
   #
-  # Takes arguments: nothing these can be given writes anything or runs anything.
-  # `git branch` and `git remote -v` are not among them — `git branch -f main HEAD~20` and
+  # Takes arguments: nothing these can be given prints a file, writes anything or runs
+  # anything. They do disclose names — `ls ~/.ssh` lists your key files — and that is the
+  # accepted cost of the entry rather than an oversight: the rule above is about contents,
+  # and the `secrets` question keys on a value, not a filename. `git branch` and
+  # `git remote -v` are not among them — `git branch -f main HEAD~20` and
   # `git remote -v remove origin` are both real — and are judged like anything else.
   fast_path:
-    - "git status "
     - "ls "
     - "which "
     - "pwd"
+
+    # `git status` is a whole command, and so is each form of it worth naming, because a
+    # flag is an argument too. `git status -v` prints the diff of what is staged and `-vv`
+    # adds the unstaged one — that is `git diff` under another name, excluded two paragraphs
+    # up for exactly that reason, and it reaches a staged `.env` without the classifier ever
+    # being asked. This entry carried a trailing space until 2026-09-19; before that it had
+    # no space and matched on a word boundary, which let the same commands through, so the
+    # hole predates ADR-010 rather than arriving with it. Add the forms you use, spelled out.
+    - "git status"
+    - "git status -s"
+    - "git status -sb"
+    - "git status --short"
+    - "git status --porcelain"
 
     # Whole commands. Each runs the project's own code, which is a risk this policy accepts,
     # and each has an argument that makes it run something else instead — all four tried for
