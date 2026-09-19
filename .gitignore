@@ -3,3 +3,36 @@ node_modules/
 .DS_Store
 coverage/
 bench/results/
+
+# Claude Code, per machine. `.claude/skills/` is tracked on purpose (the vendored TypeSafe
+# skill), so these are named one by one rather than ignoring the directory. They were
+# ignored on one machine by a personal global gitignore and on nobody else's by anything:
+# settings.local.json holds that person's permission allowlist, and worktrees/ is where
+# agent sessions work — untracked, unignored, and one `git add -A` from being published.
+.claude/settings.local.json
+.claude/worktrees/
+
+# Secrets. The Jev key belongs in the environment and nowhere in this tree.
+.env
+.env.*
+!.env.example
+
+# What bouncer writes when pointed at the repository instead of its data directory: a
+# decision log is a record of every command somebody ran. Anchored to the root and spelled
+# out, because `*.jsonl` would also catch fixtures/ and the answers files that
+# docs/calibration/ commits on purpose.
+/decisions.jsonl
+/decisions.jsonl.1
+/judgments.jsonl
+/escalations.json
+/breaker.json
+/policy-cache/
+
+# Scratch. Three probe scripts from one afternoon were tracked at the root for a day.
+/.*-probe.ts
+/.*-emit.ts
+*.tmp
+
+# Editors
+.vscode/
+.idea/
