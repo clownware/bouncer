@@ -286,6 +286,33 @@ describe("shortCircuit", () => {
     }
   });
 
+  // "Bouncer has no business here" has to mean saying nothing. In `full` these two emitted
+  // `allow`, which suppresses the host's own prompt — for a call nothing had looked at. The
+  // plugin registers the hook for four tools, so narrowing `gate.tools` to `[Bash]` approved
+  // a Write to ~/.ssh/config; adding a mode to `skip_permission_modes` approved everything
+  // in it. `full` promises that for calls judged safe, and these were not judged.
+  describe("a call the gate does not look at", () => {
+    const modes = ["observe", "guard", "full", "seatbelt"] as const;
+    const withMode = (mode: (typeof modes)[number]) => ({ ...GUARD, mode });
+
+    it.each(modes)("emits nothing for an ungated tool in %s mode", (mode) => {
+      const decision = shortCircuit(withMode(mode), { tool: "Write", command: "" });
+      expect(decision?.reason).toMatchObject({ kind: "tool-not-gated" });
+      expect(decision?.emit).toBeUndefined();
+    });
+
+    it.each(modes)("emits nothing for a skipped permission mode in %s mode", (mode) => {
+      const decision = shortCircuit(withMode(mode), { tool: "Bash", command: "rm -rf /", permissionMode: "plan" });
+      expect(decision?.reason).toMatchObject({ kind: "permission-mode-skipped" });
+      expect(decision?.emit).toBeUndefined();
+    });
+
+    // The allowlist is the policy deciding, which is a different thing from nobody deciding.
+    it("still emits the fast path's allow in full mode", () => {
+      expect(shortCircuit(withMode("full"), { tool: "Bash", command: "ls src" })?.emit).toBe("allow");
+    });
+  });
+
   describe("the fast path", () => {
     const hits: ReadonlyArray<readonly [string, string]> = [
       ["an exact match", "git status"],

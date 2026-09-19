@@ -38,7 +38,8 @@ timeout_ms: 800
 on_error: passthrough
 
 # Permission modes where bouncer does no work at all. `plan` is here because no tool is
-# going to run anyway, so a classifier call would be pure latency.
+# going to run anyway, so a classifier call would be pure latency. Skipped means silent, in
+# every mode including `full`: bouncer emits nothing and Claude Code decides by itself.
 skip_permission_modes: [plan]
 
 # The bar `bouncer calibrate` holds each question to, printed as a pass/fail table under
@@ -58,6 +59,11 @@ calibration:
 gate:
   # MultiEdit is deliberately absent: it does not exist in Claude Code 2.1.201, where the
   # Edit tool absorbed it. Listing a tool that never fires reads as coverage you do not have.
+  #
+  # A tool you leave out is not approved, it is ignored: bouncer emits nothing for it in any
+  # mode, `full` included, and Claude Code's own permission flow decides as if the plugin
+  # were not installed. The hook still starts for all four, so removing one saves the
+  # classifier call and not the process.
   tools: [Bash, Edit, Write, NotebookEdit]
 
   # Commands matched here are allowed without calling the classifier, which saves the whole

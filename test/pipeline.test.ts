@@ -292,14 +292,31 @@ describe("what the holdout says about the gate", () => {
     });
   });
 
-  it("abstains only where the evidence is incomplete", () => {
+  it("abstains only where the evidence is incomplete, or where it never looked", () => {
     const abstained = cases.filter((item) => item.expect.emitted === null);
     for (const item of abstained) {
       const why =
         item.expect.reason === "truncated" ||
         item.expect.reason === "no-rule-matched" ||
+        // An ungated tool or a skipped permission mode: no log line, because bouncer did no
+        // work. It has no opinion to emit, so the host decides as if it were not installed.
+        item.expect.logged === 0 ||
         (item.policy?.mode ?? "full") !== "full";
       expect(why, `${item.id} emits nothing in full mode with complete evidence`).toBe(true);
+    }
+  });
+
+  // The other direction, and the one that was wrong until 2026-09-19. An emitted `allow`
+  // suppresses the host's own prompt, so it has to come from something that decided: the
+  // classifier, or the policy's own allowlist. `full` used to emit one for every call it
+  // never looked at.
+  it("never accepts a call that nothing decided", () => {
+    const accepted = cases.filter((item) => item.expect.emitted === "allow");
+    expect(accepted.length).toBeGreaterThan(0);
+    for (const item of accepted) {
+      expect(["judge", "fast_path"], `${item.id} was accepted with source ${String(item.expect.source)}`).toContain(
+        item.expect.source,
+      );
     }
   });
 });

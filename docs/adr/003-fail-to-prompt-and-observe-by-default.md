@@ -87,6 +87,22 @@ progression a user actually walks through:
 Note that even in `full`, an `allow` is not authoritative: hooks merge most-restrictive-wins,
 so another hook or a settings rule can still force the prompt (ADR-001).
 
+> **Corrected on 2026-09-19.** "Calls judged safe" is what the table says and not what the
+> code did. A tool outside `gate.tools`, and any call in a mode listed under
+> `skip_permission_modes`, short-circuited with the verdict `allow` — and in `full` that was
+> emitted like any other. So `full` suppressed the host's prompt for calls nothing had
+> judged. With the shipped policy it never showed, because the plugin registers the hook for
+> exactly the four gated tools and the only skipped mode is `plan`, where no tool runs. It
+> showed the moment either was edited: narrow `gate.tools` to `[Bash]` and a `Write` to
+> `~/.ssh/config` came back `allow`, "Write is not gated by this policy", with no log line.
+> The frozen holdout (`test/holdout/cases.jsonl`) had pinned it as an open question.
+>
+> Both now emit nothing in every mode. Bouncer having no business with a call means the host
+> decides exactly as it would without it, which is the worst case this ADR promises
+> everywhere else. The fast path still emits its `allow`: an allowlist entry is the policy
+> deciding, which is a different thing from nobody deciding. The holdout now asserts the
+> general form — every emitted `allow` came from the classifier or the fast path.
+
 ## Why no deny rules on day one
 
 A false-positive `ask` costs the user one keystroke. A false-positive `deny` returns
