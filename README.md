@@ -309,26 +309,25 @@ probability, whose false-positive rate is a property of the model's day.
 
 ## Install
 
-The repository is its own single-plugin marketplace. Merge two keys into
-`~/.claude/settings.json` — keeping whatever marketplaces and plugins it already lists —
-and Claude Code installs it at the next session start, in the terminal and the desktop app
-alike:
+The repository is its own single-plugin marketplace. Add it, then install from it — two
+steps either way. From any shell, including the desktop app's own terminal:
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
-  },
-  "enabledPlugins": { "bouncer@bouncer": true }
-}
+```bash
+claude plugin marketplace add clownware/bouncer
+claude plugin install bouncer@bouncer
 ```
 
-Or, at a Claude Code prompt rather than a shell prompt, the same thing as two commands:
+Or, at a Claude Code prompt rather than a shell prompt, the same two:
 
 ```
 /plugin marketplace add clownware/bouncer
 /plugin install bouncer@bouncer
 ```
+
+Setting `extraKnownMarketplaces` and `enabledPlugins` in a settings file is not a third
+route: since v2.1.195 those keys register the catalog and record the intent, but a plugin
+from a GitHub repository is not fetched until you install it. They are for handing a
+teammate the marketplace, not for installing.
 
 Restart Claude Code, then run `/bouncer:status`. It prints the mode, the backend, the
 policy file it resolved and the path to the decision log. Node 20 or newer has to be on
@@ -345,8 +344,8 @@ unless you look at `/bouncer:status`, which says so on the backend line.
 
 The desktop app's **Code** tab reads the same `~/.claude`, so a plugin installed anywhere
 is already there; its **Chat** tab is a different product and runs no hooks at all.
-[docs/dogfooding.md](docs/dogfooding.md) has the detail, including why the settings keys
-rather than the plugin browser are what registers a marketplace.
+[docs/dogfooding.md](docs/dogfooding.md) has the detail, including what the settings keys
+do and do not do.
 
 It ships in `observe`, which emits nothing at all. To change that, copy the policy file
 `/bouncer:status` printed to `~/.bouncer/bouncer.yaml` and edit the `mode:` line; the

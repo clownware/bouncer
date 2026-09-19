@@ -13,26 +13,23 @@ Bouncer ships as a single-plugin marketplace, so the repository is both the mark
 and the plugin. `bouncer@bouncer` is `<plugin>@<marketplace>`, and both are called
 `bouncer` here.
 
-**The settings file is the route that works everywhere**, terminal and desktop app alike,
-and it is two keys. Open `~/.claude/settings.json` in whatever editor you like and add
-them:
+Adding the marketplace and installing the plugin are two separate steps, and the second one
+is the one that actually puts Bouncer on your disk. There are two places to do them.
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
-  },
-  "enabledPlugins": { "bouncer@bouncer": true }
-}
+**From any shell**, including the Claude desktop app's own terminal:
+
+```bash
+claude plugin marketplace add clownware/bouncer
+claude plugin install bouncer@bouncer
 ```
 
-Those are keys to **merge into** the file, not a file to replace it with. If you already
-have marketplaces and plugins configured, keep them — add `bouncer` alongside, and leave
-every other entry in both objects where it is. Claude Code installs what `enabledPlugins`
-declares when a session starts.
+`claude plugin install` needs no interactive session and installs to user scope, so this is
+the route to use when you are not already sitting at a Claude Code prompt. It does not
+affect a session that is already running — Claude Code picks the plugin up the next time it
+starts, so quit and reopen afterwards.
 
-**Or, if you are already at a Claude Code prompt**, the same thing as two commands. These
-go to Claude, not to your shell:
+**Or at a Claude Code prompt**, which is a different thing from a shell prompt — these go
+to Claude, and your shell will reject them:
 
 ```
 /plugin marketplace add clownware/bouncer
@@ -48,6 +45,26 @@ Either way, restart Claude Code and check it took:
 You should see `Mode: observe`, the path to the policy, and the path to the decision log.
 If you see nothing at all, the plugin did not install; `/plugin` lists what did.
 
+### What the settings file does and does not do
+
+You will also see `extraKnownMarketplaces` and `enabledPlugins` in the settings file, and
+they look like they should be an install on their own. They are not, for a plugin like this
+one that comes from a GitHub repository. Since Claude Code v2.1.195, adding a marketplace
+"doesn't install plugins that come from an external source, on any path that loads
+plugins", and such a plugin "doesn't load until the team member installs it". So the keys
+register the catalog and record that you want the plugin; the install step above is still
+what fetches it.
+
+Setting both and restarting therefore does nothing visible, which is a confusing way to
+fail: the settings look right and no error appears anywhere. If you have already added
+them, they are harmless — run the install commands above and they will agree.
+
+Those keys are worth setting deliberately for a repository your team shares, in the
+project's `.claude/settings.json`, so a collaborator who trusts the folder gets the
+marketplace without adding it by hand. Merge them into whatever the file already holds
+rather than replacing it; a paste-over drops every other marketplace and plugin already
+listed.
+
 There is no `npm install` step. `bin/bouncer.cjs` is a committed bundle with zero runtime
 dependencies, because Claude Code fetches the repository and never builds it (ADR-002).
 Node 20 or newer has to be on `PATH` — the hook shells out to `node`.
@@ -59,17 +76,16 @@ terminal does: the same `settings.json`, the same installed plugins and marketpl
 the same hooks. So if you have already installed it anywhere, it is there in the Code tab
 too — nothing to install twice.
 
-If you have not installed it yet, the settings-file route above is the one to use, and it
-needs no terminal. There is a plugin browser — the **+** beside the prompt box, then
-**Plugins**, then **Add plugin** — but it installs from marketplaces that are already
-configured, and nothing documents a way to register a new one from it. So the two settings
-keys are not a workaround for the UI; they are how the marketplace gets registered at all.
-**Manage plugins**, in that same menu, is where you enable, disable and uninstall
-afterwards.
+If you have not installed it yet, run the two `claude plugin` commands above. The Code tab
+has its own terminal for exactly this — the **Views** menu, or `Ctrl` + `` ` `` — so you
+never have to leave the app; it opens in the session's working directory and is available
+in local sessions only, not cloud or WSL. Then quit and reopen the app, since a shell
+install lands on the next launch rather than in the running session.
 
-If you would rather type the commands, the Code tab has its own terminal — the **Views**
-menu, or `Ctrl` + `` ` `` — which opens in the session's working directory. It is in local
-sessions only, not cloud or WSL.
+There is a plugin browser too — the **+** beside the prompt box, then **Plugins**, then
+**Add plugin** — but it installs from marketplaces that are already configured, and nothing
+documents a way to register a new one from it. **Manage plugins**, in that same menu, is
+where you enable, disable and uninstall afterwards.
 
 The one thing that genuinely differs in the desktop app is the key, and it differs
 silently. See the next section.
