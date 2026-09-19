@@ -30,7 +30,10 @@ export interface HookOutput {
 }
 
 export interface RunOptions {
-  /** Injected in tests. Defaults to the backend named by the policy. */
+  /**
+   * Injected in tests. Defaults to `$BOUNCER_BACKEND`, or the policy's backend when that is
+   * unset. Whichever answers is the name the log line records.
+   */
   readonly adapter?: Adapter;
   /** Injected in tests so the engine never stats a real path. */
   readonly targetExists?: (path: string) => boolean | undefined;
@@ -85,7 +88,7 @@ export async function runPreToolUse(
     ...(permissionMode !== undefined ? { permission_mode: permissionMode } : {}),
     ...(agentType !== undefined ? { agent_type: agentType } : {}),
     mode: policy.mode,
-    backend: policy.backend,
+    backend: options.adapter?.name ?? backendName(policy),
   };
 
   // What an escalation names this item by. The tool_use_id when Claude Code sent one,
@@ -379,9 +382,28 @@ function questionsFor(policy: Policy): Record<string, Question> {
   return questions;
 }
 
-function adapterFor(policy: Policy): Adapter {
+/**
+ * Which backend will actually answer: the environment override if one is set, the policy's
+ * otherwise.
+ *
+ * Split out of `adapterFor` because the log line is built before the adapter is, and it has
+ * to name the backend that answered rather than the one the policy asked for. Writing
+ * `policy.backend` there made every `BOUNCER_BACKEND=mock` run — the whole bench, and every
+ * manual run against the mock — claim on disk to be a `jev` judgment. That is worse than a
+ * noisy log: a line that misnames its source cannot be filtered out of one, and three
+ * readers now depend on the field (`bouncer status`, `calibrate --from`, and the offline
+ * replay in docs/adr/006).
+ *
+ * Naming an unknown backend is deliberate too. `adapterFor` throws on one, `on_error`
+ * applies, and the line that records the failure says which name could not be resolved.
+ */
+function backendName(policy: Policy): string {
   const override = process.env["BOUNCER_BACKEND"];
-  const backend = override !== undefined && override.length > 0 ? override : policy.backend;
+  return override !== undefined && override.length > 0 ? override : policy.backend;
+}
+
+function adapterFor(policy: Policy): Adapter {
+  const backend = backendName(policy);
 
   if (backend === "mock") return new MockAdapter();
   if (backend === "jev") return new JevAdapter({ apiKey: apiKey() ?? "" });

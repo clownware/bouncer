@@ -430,3 +430,68 @@ describe("probe questions", () => {
     expect(logLines()[0]).not.toHaveProperty("probes");
   });
 });
+
+// A log line that misnames the backend that answered is worse than a noisy one: it cannot
+// be filtered out of the log afterwards, and three readers depend on the field (`bouncer
+// status`, `calibrate --from`, and docs/adr/006's offline replay). Writing `policy.backend`
+// while the adapter resolved as `$BOUNCER_BACKEND ?? policy.backend` made every mock run
+// claim on disk to be a `jev` judgment — the policy ships `backend: jev`.
+describe("the backend a record names", () => {
+  afterEach(() => {
+    delete process.env["BOUNCER_BACKEND"];
+  });
+
+  it("is the override that answered, not the jev the policy asked for", async () => {
+    process.env["BOUNCER_BACKEND"] = "mock";
+    await runPreToolUse(payload());
+
+    const [record] = logLines();
+    expect(record.backend).toBe("mock");
+    expect(record.answers.destructive).toBeGreaterThan(0);
+  });
+
+  it("is the policy's when nothing overrides it, even on the line that records a failure", async () => {
+    // No key, so the jev adapter refuses to construct and `on_error` applies. The line
+    // still has to say which backend could not answer.
+    const keys = ["BOUNCER_TYPESAFE_API_KEY", "TYPESAFE_API_KEY"] as const;
+    const saved = keys.map((k) => [k, process.env[k]] as const);
+    for (const k of keys) delete process.env[k];
+
+    try {
+      await runPreToolUse(payload());
+    } finally {
+      for (const [k, v] of saved) if (v !== undefined) process.env[k] = v;
+    }
+
+    const [record] = logLines();
+    expect(record.backend).toBe("jev");
+    expect(record.error.kind).toBe("auth");
+  });
+
+  it("is the injected adapter's name when a caller supplies one", async () => {
+    await runPreToolUse(payload(), { adapter: dangerous });
+    expect(logLines()[0].backend).toBe("mock");
+  });
+
+  // The resolved name reaches the short-circuit paths too, which build their line from the
+  // same base and never touch an adapter at all.
+  it("names the resolved backend on a hard-rule line the classifier never saw", async () => {
+    process.env["BOUNCER_BACKEND"] = "mock";
+    await runPreToolUse(payload({ tool_input: { command: "git push --force origin main" } }));
+
+    const [record] = logLines();
+    expect(record.source).toBe("hard_rule");
+    expect(record.backend).toBe("mock");
+  });
+
+  // An unresolvable name is recorded rather than swallowed into the policy's: `on_error`
+  // applies, and the line says which name failed.
+  it("names an unknown backend rather than the policy's", async () => {
+    process.env["BOUNCER_BACKEND"] = "gpt5";
+    await runPreToolUse(payload());
+
+    const [record] = logLines();
+    expect(record.backend).toBe("gpt5");
+    expect(record.error.kind).toBe("invalid_request");
+  });
+});
