@@ -1,19 +1,29 @@
 // Measures cold-start overhead of the hook binary: process spawn, bundle parse,
 // policy load, and the synchronous decision path with the mock adapter.
 //
-// This is the number the whole "TypeScript bundled to one file" bet rests on.
-// CI asserts it stays under BUDGET_MS. If it regresses, the fix is almost always
-// a new dependency pulled into the bundle, not the decision code itself.
+// This is the number the whole "TypeScript bundled to one file" bet rests on. If it
+// regresses, the fix is almost always a new dependency pulled into the bundle, not the
+// decision code itself.
 //
 // Both paths are measured: a command the classifier judges, and one a hard rule stops
-// before the adapter. Each gets its own line and each is held to the budget.
+// before the adapter. Each gets its own line, printed beside the 80 ms design target.
+//
+// The target is printed and not enforced, because an absolute number measures the machine
+// as much as the code (#73). On unchanged code it read p95 34 to 38 ms on an M4 laptop,
+// 102.0 ms on an agent container and 151.3 ms on a CI runner: loose enough on the first
+// that the hook could double and pass, and failing on the other two before anyone had
+// changed anything. Passing `--budget` explicitly turns it back into a gate, for whoever
+// knows the machine they are standing on. The gate that fails a change is the paired one,
+// `--against` with `--max-regression-pct`, below.
 //
 // The policy is compiled once and cached on disk (ADR-007), and the warm-up runs populate
 // that cache, so what is measured here is what a user experiences on every call after their
 // first. To measure the YAML parse instead, run with BOUNCER_NO_CACHE=1.
 //
-//   node scripts/bench.mjs [--budget 80] [--runs 30]
+//   node scripts/bench.mjs [--runs 30]                  prints, exits 0
+//   node scripts/bench.mjs --budget 80 [--runs 30]      fails when a p95 exceeds it
 //   node scripts/bench.mjs --against <other-bundle.cjs> [--runs 40]
+//   node scripts/bench.mjs --against <other-bundle.cjs> --max-regression-pct 15
 //
 // A p95 is only as good as the sample behind it: at 20 runs it rests on one observation.
 // Keep --runs high enough that the tail means something.
@@ -67,9 +77,13 @@ const flag = (name) => {
   return i === -1 ? undefined : process.argv[i + 1];
 };
 
-const BUDGET_MS = arg("budget", 80);
+const TARGET_MS = 80;
+const BUDGET_MS = arg("budget", undefined);
 const RUNS = arg("runs", 30);
 const AGAINST = flag("against");
+// No default, here or anywhere in this file. How much slower a change may make the hook is
+// a threshold, and the caller owns it: CI's lives in the workflow, beside the step.
+const MAX_REGRESSION_PCT = arg("max-regression-pct", undefined);
 const WARMUP = 5;
 const BIN = "bin/bouncer.cjs";
 
@@ -80,6 +94,21 @@ if (!existsSync(BIN)) {
 
 if (AGAINST !== undefined && !existsSync(AGAINST)) {
   console.error(`${AGAINST} not found.`);
+  process.exit(1);
+}
+
+// A gate that was asked for and cannot be evaluated has to fail rather than pass. `NaN`
+// compares false against everything, so `--budget` with its value missing would otherwise
+// be a gate that nothing can trip.
+for (const [name, value] of [["budget", BUDGET_MS], ["runs", RUNS], ["max-regression-pct", MAX_REGRESSION_PCT]]) {
+  if (value !== undefined && !(Number.isFinite(value) && value > 0)) {
+    console.error(`--${name} needs a positive number.`);
+    process.exit(1);
+  }
+}
+
+if (MAX_REGRESSION_PCT !== undefined && AGAINST === undefined) {
+  console.error("--max-regression-pct compares two bundles, so it needs --against <bundle>.");
   process.exit(1);
 }
 
@@ -155,11 +184,22 @@ function cacheVersionOf(bin) {
   }
 }
 
+// The shipped policy, unless one is named. Left to resolve, the hook prefers the
+// developer's own ~/.bouncer/bouncer.yaml, so the printed number would be for whatever
+// policy and mode this machine's owner happens to run, under a label that does not say so.
+const POLICY = process.env.BOUNCER_POLICY ?? join(ROOT, "policy", "default.yaml");
+
 function once(command, bin = BIN) {
   const start = process.hrtime.bigint();
   const r = spawnSync(process.execPath, [bin, "pretooluse"], {
     input: payloadFor(command),
-    env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PLUGIN_DATA: dataFor(bin) },
+    env: {
+      ...process.env,
+      BOUNCER_BACKEND: "mock",
+      BOUNCER_POLICY: POLICY,
+      CLAUDE_PLUGIN_ROOT: ROOT,
+      CLAUDE_PLUGIN_DATA: dataFor(bin),
+    },
   });
   const end = process.hrtime.bigint();
   if (r.status !== 0) {
@@ -203,6 +243,8 @@ if (AGAINST !== undefined) {
   }
   console.log("");
 
+  let regressed = false;
+
   for (const { name, command } of CASES) {
     for (let i = 0; i < WARMUP; i++) {
       once(command, AGAINST);
@@ -226,10 +268,25 @@ if (AGAINST !== undefined) {
       `  paired median diff ${median >= 0 ? "+" : ""}${median.toFixed(1)}ms  ` +
         `over ${RUNS} pairs  [range ${diffs[0].toFixed(1)} to ${diffs[diffs.length - 1].toFixed(1)}]`,
     );
+
+    // The paired median as a share of the before arm's own median, so the margin means the
+    // same thing on a 35 ms laptop and a 60 ms runner. Both halves are medians: a tail is
+    // what a shared runner's scheduler produces, and a gate resting on one fails on
+    // unchanged code, which is the defect this replaced.
+    if (MAX_REGRESSION_PCT !== undefined) {
+      const pct = (median / summarise(before).p50) * 100;
+      console.log(`  ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% of the before median  (limit +${MAX_REGRESSION_PCT}%)`);
+      if (pct > MAX_REGRESSION_PCT) {
+        console.error(
+          `FAIL: ${command} is ${pct.toFixed(1)}% slower than ${AGAINST}, over the ${MAX_REGRESSION_PCT}% limit`,
+        );
+        regressed = true;
+      }
+    }
   }
-  // Deliberately no pass/fail. Whether a real difference is acceptable is a judgement
-  // about what it bought; the budget gate above is where a number becomes a rule.
-  process.exit(0);
+  // Without a limit there is deliberately no pass/fail. Whether a real difference is
+  // acceptable is a judgement about what it bought; the caller who passes a limit has made it.
+  process.exit(regressed ? 1 : 0);
 }
 
 let failed = false;
@@ -242,10 +299,11 @@ for (const { name, command } of CASES) {
 
   console.log(
     `${name}  runs=${RUNS}  mean=${stats.mean.toFixed(1)}ms  p50=${stats.p50.toFixed(1)}ms  ` +
-      `p95=${stats.p95.toFixed(1)}ms  budget=${BUDGET_MS}ms`,
+      `p95=${stats.p95.toFixed(1)}ms  ` +
+      (BUDGET_MS === undefined ? `target=${TARGET_MS}ms (not enforced)` : `budget=${BUDGET_MS}ms`),
   );
 
-  if (stats.p95 > BUDGET_MS) {
+  if (BUDGET_MS !== undefined && stats.p95 > BUDGET_MS) {
     console.error(`FAIL: ${command} p95 ${stats.p95.toFixed(1)}ms exceeds budget ${BUDGET_MS}ms`);
     failed = true;
   }

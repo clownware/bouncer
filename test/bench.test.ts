@@ -84,4 +84,62 @@ describe("the bench script", () => {
     expect(r.stdout).toContain("different cache entries");
     expect(r.stdout).toMatch(/paired median diff/);
   });
+
+  // #73. An absolute budget measures the machine as much as the code: unchanged `main` read
+  // p95 36 ms on a laptop, 102.0 ms on an agent container and 151.3 ms on a CI runner. So
+  // the default run reports and does not judge, and the gate that fails a change is the
+  // paired one, whose limit the caller supplies.
+  describe("what fails it", () => {
+    const run = (...args: string[]) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+      delete env["CLAUDE_PLUGIN_DATA"];
+      delete env["BOUNCER_POLICY"];
+      return spawnSync(process.execPath, ["scripts/bench.mjs", "--runs", "5", ...args], { encoding: "utf8", env });
+    };
+
+    // A stand-in arm. It is never asked to be a bouncer, only to be reliably quicker or
+    // reliably slower than one, which is all the comparison reads.
+    const arm = (name: string, body: string) => {
+      const file = join(home, name);
+      writeFileSync(file, body, "utf8");
+      return file;
+    };
+
+    it("prints the 80 ms target without enforcing it", () => {
+      const r = run();
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("target=80ms (not enforced)");
+    });
+
+    it("still fails on an absolute budget that was asked for", () => {
+      const r = run("--budget", "0.001");
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("exceeds budget 0.001ms");
+    });
+
+    it("fails when the bundle is slower than the other arm by more than the limit", () => {
+      const r = run("--against", arm("quick.cjs", "process.exit(0);\n"), "--max-regression-pct", "0.001");
+      expect(r.status, r.stdout).toBe(1);
+      expect(r.stderr).toMatch(/FAIL: .* slower than .*quick\.cjs, over the 0\.001% limit/);
+    });
+
+    it("passes when the bundle is the quicker arm", () => {
+      const slow = "const until = Date.now() + 60; while (Date.now() < until);\n";
+      const r = run("--against", arm("slow.cjs", slow), "--max-regression-pct", "1");
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("(limit +1%)");
+    });
+
+    // A gate that cannot be evaluated has to fail. NaN compares false against everything,
+    // so a missing value used to be a budget nothing could exceed.
+    it.each([
+      [["--budget"], "--budget needs a positive number"],
+      [["--max-regression-pct", "abc", "--against", "bin/bouncer.cjs"], "--max-regression-pct needs a positive number"],
+      [["--max-regression-pct", "15"], "needs --against"],
+    ])("refuses %j", (args, message) => {
+      const r = run(...args);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(message);
+    });
+  });
 });

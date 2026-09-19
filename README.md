@@ -618,10 +618,14 @@ turns it off, which is how to measure the parse. See
 [ADR-007](docs/adr/007-cache-the-compiled-policy.md), which reverses item 2 of
 [ADR-002](docs/adr/002-bundled-single-file-on-node.md) and says why that call was wrong.
 
-CI gates hook overhead at `--budget 150`, and 600 ms p95 end to end is the budget for the
-whole call. The 80 ms in `npm run bench`'s default and in ADR-002 is a local target rather
-than an enforced one, and ADR-007 flags it as the wrong number now: uncached, `main` itself
-measured p95 102.0 ms on an agent container; cached, the same path runs at about 53 ms.
+CI gates hook overhead relatively: the bundle a change produces is benched against the
+base commit's, interleaved, and the change fails if the paired median is more than 10%
+worse. 600 ms p95 end to end is the budget for the whole call. The 80 ms in ADR-002 is the
+design target, which `npm run bench` prints and does not enforce, because an absolute number
+measures the machine as much as the hook: unchanged `main` has read p95 36 ms on a laptop,
+102.0 ms on an agent container (uncached) and 151.3 ms on a CI runner, where it failed a 150 ms gate
+that a rerun of the same commit passed. `--budget <ms>` makes it a gate again on a machine
+you know.
 
 **Comparing two runs means running them paired.** An unpaired p95 measures the machine at
 least as much as the diff: CI has reported 60.9 ms against 122.3 ms at p95 for a
@@ -641,7 +645,7 @@ npm install
 npm run build      # bundles src/ -> bin/bouncer.cjs (committed; see ADR-002)
 npm test
 npm run typecheck
-npm run bench      # asserts hook overhead against the budget
+npm run bench      # prints hook overhead; --against <bundle> compares two builds
 ```
 
 `bin/bouncer.cjs` is a build artifact that lives in git, because Claude Code installs

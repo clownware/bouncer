@@ -25,9 +25,15 @@ change that makes Bouncer prompt more often than not having it installed is a bu
 every individual verdict is correct. This is why observe mode emits nothing rather than
 `ask` (ADR-003).
 
-**Latency is a feature.** `npm run bench` gates hook overhead at 80 ms p95. Adding a
-dependency has a direct, measurable cost — bundling is what keeps startup at ~45 ms rather
-than ~87 ms (ADR-002). Run the bench before and after anything that touches imports.
+**Latency is a feature.** The design target for hook overhead is 80 ms p95, and the gate is
+relative: CI runs `bench --against` the base commit's bundle and fails a change that makes
+the paired median more than 10% worse (the number lives in `ci.yml`). `npm run bench` prints
+the target and does not enforce it, because an absolute number measures the machine —
+unchanged `main` read p95 36 ms on the M4, 102 on an agent container before the policy cache, and 151 on a runner
+(#73). Adding a dependency has a direct, measurable cost — bundling is what keeps startup at
+~45 ms rather than ~87 ms (ADR-002). After anything that touches imports, run
+`git show origin/main:bin/bouncer.cjs > "$TMPDIR/base.cjs"` and
+`node scripts/bench.mjs --against "$TMPDIR/base.cjs"`; two unpaired runs cannot answer it.
 Two things measured since: YAML parse cost tracks node count rather than file size, so a
 structured block costs about 5x what the same bytes cost as comments (ADR-004), and the
 compiled policy is cached on disk, so the bench measures the cached path unless you set
