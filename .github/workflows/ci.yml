@@ -8,8 +8,13 @@ on:
 # Actions are pinned to a commit, with the release it was in the comment beside it. A tag
 # like `@v4` is a name its owner can move to different code at any time; a commit is not.
 # Nothing updates these automatically, which is the price: to bump one, take the commit a
-# release tag points at — `gh api repos/actions/checkout/commits/v4.4.0 --jq .sha` — and
+# release tag points at — `gh api repos/actions/checkout/commits/v7.0.1 --jq .sha` — and
 # change the hash and the comment together.
+#
+# The runner image is pinned for the same reason. `ubuntu-latest` is a name that moves (to
+# Ubuntu 26 from 2026-10-19), and the latency budget below is a number measured on one
+# image: a change of image should arrive as a commit that can be read beside the bench
+# line, not as a morning when the budget fails on unchanged code.
 
 jobs:
   # The gate that counts. A local hook that scans staged changes only protects commits made
@@ -35,11 +40,11 @@ jobs:
   # When bumping, read `digest` and `updated_at` from
   # `gh api repos/gitleaks/gitleaks/releases/tags/v<version>` before trusting the new one.
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -57,12 +62,12 @@ jobs:
         run: '"$RUNNER_TEMP/gitleaks" git --no-banner --redact'
 
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
