@@ -180,4 +180,6 @@ recorded reality; the docs are a description of it.
   a real key seeded into a fixture from someone's history. It also catches a key-shaped
   example written anywhere else, this file included — which is why none is spelled out
   here. Do not widen it to the whole directory, and do not reach for `--no-verify` or an
-  inline allow.
+  inline allow. CI runs the same scan over the whole history on every push and pull
+  request, so it is the gate that counts: a thread with no local hook is not thereby free
+  to commit a key, it just finds out later.
