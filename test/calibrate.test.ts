@@ -57,6 +57,25 @@ describe("the shipped fixture set", () => {
     expect(new Set(FIXTURES.map((f) => f.id)).size).toBe(FIXTURES.length);
   });
 
+  // The README says how many fixtures ship, twice, next to a table measured over them. A
+  // fixture added without touching the README is a fixture added without a live rerun: that
+  // is how the file came to hold 100 under prose and a table that both said 99. This cannot
+  // tell whether the rerun happened, only that someone had to open the README and decide
+  // what it should now say — which is the moment the question gets asked at all.
+  it("is the size the README says it is", () => {
+    const readme = readFileSync("README.md", "utf8");
+    const stated = [
+      /The (\d+) fixtures in \[`fixtures\/gate\.jsonl`\]/,
+      /not the (\d+) that\s+ship/,
+    ].map((pattern) => Number(readme.match(pattern)?.[1]));
+
+    expect(
+      stated,
+      `README.md states ${stated.join(" and ")} fixtures and fixtures/gate.jsonl holds ${FIXTURES.length}. ` +
+        "A changed fixture set invalidates the published table: rerun live, or say in the README what was and was not re-measured.",
+    ).toEqual([FIXTURES.length, FIXTURES.length]);
+  });
+
   it("only expects questions the default policy actually asks", () => {
     const known = new Set(Object.keys(POLICY.gate.questions));
     for (const fixture of FIXTURES) {
