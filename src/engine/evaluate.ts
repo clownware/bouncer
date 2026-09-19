@@ -178,10 +178,10 @@ function matchFastPath(prefixes: readonly string[], command: string): string | u
 
   for (const prefix of prefixes) {
     if (trimmed === prefix.trim()) return prefix;
+    // Only an entry written with a trailing space takes arguments. One written without is a
+    // whole command and matches nothing longer: `npm test` is the project's own script, and
+    // `npm test --script-shell /tmp/x.sh` is somebody else's program. See docs/adr/010.
     if (prefix.endsWith(" ") && trimmed.startsWith(prefix)) return prefix;
-    // A prefix written without a trailing space still has to match on a word boundary,
-    // so "git log" does not match "git logsomething".
-    if (!prefix.endsWith(" ") && trimmed.startsWith(`${prefix} `)) return prefix;
   }
 
   return undefined;

@@ -8799,7 +8799,6 @@ function matchFastPath(prefixes, command) {
   for (const prefix of prefixes) {
     if (trimmed === prefix.trim()) return prefix;
     if (prefix.endsWith(" ") && trimmed.startsWith(prefix)) return prefix;
-    if (!prefix.endsWith(" ") && trimmed.startsWith(`${prefix} `)) return prefix;
   }
   return void 0;
 }
