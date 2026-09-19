@@ -6,6 +6,41 @@ on:
   pull_request:
 
 jobs:
+  # The gate that counts. A local hook that scans staged changes only protects commits made
+  # where that hook runs; a commit from a cloud session, or from anyone without it, was
+  # scanned by nothing, which is how eleven credential-shaped test values reached main
+  # before anything objected. This runs for every push and every pull request.
+  #
+  # The whole history, not the diff: it is small, and "this range is clean" is a weaker
+  # statement than "this repository is clean". `.gitleaks.toml` says what is allowed and why.
+  #
+  # The binary is downloaded at a pinned version and checked against the digest published
+  # with that release, rather than using the official action, which needs a paid licence
+  # key for an organisation's repositories. Bumping it means changing both values together.
+  # `--redact` because this log is public: a scanner that prints what it found has just
+  # published it.
+  secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan the history for secrets
+        run: '"$RUNNER_TEMP/gitleaks" git --no-banner --redact'
+
   check:
     runs-on: ubuntu-latest
     steps:
