@@ -103,9 +103,21 @@ Checked in a cloud container on 2026-09-19, in this repository's own environment
   itself. Separate the arms by giving each run its own `HOME`, or by moving the log aside
   between runs. (`npm run bench` sets the variable and it works there because the bench
   drives `bin/bouncer.cjs` directly rather than through Claude Code.)
-- **`session_id` was not per-run.** Three separate `claude -p` invocations in this container
-  all logged the same `session_id`. Join a run to its log lines by which log file it wrote,
-  not by that field, until it has been checked in whatever environment the runs happen in.
+- **`session_id` is not per-run in headless mode, and that is Claude Code's, not
+  Bouncer's.** Five separate `claude -p` invocations all carried the same `session_id`,
+  including two run with `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION` and
+  `CLAUDE_PID` unset. Checked at the source rather than inferred: a second `PreToolUse`
+  hook dumping the raw payload showed Claude Code sending that id itself, the run's own
+  JSON result reported the same one, and `src/hooks/pretooluse.ts` reads `payload.session_id`
+  verbatim with no derivation. So there is nothing to fix in Bouncer, and two consequences
+  for a run harness:
+
+  - **Join a run to its log lines by which log file they are in**, never by `session_id`.
+  - **The circuit breaker is keyed on session id** (`breaker.json` in the data directory,
+    eight sessions remembered). A constant id plus a shared data directory means a breaker
+    tripped by one run is still tripped for the next, which would silently put a later run
+    in observe mode. Separating the arms by `HOME`, as the trap above already requires,
+    separates this too.
 
 ### 3.3 The two environments
 
@@ -175,6 +187,9 @@ Three numbers and a judgment.
   which layer decided. A `hard_rule` block and a `judge` block are different problems with
   different fixes (§5).
 - **Cost** is the result object's, plus the classifier's calls, which the log counts.
+- **Validity first.** A run whose circuit breaker tripped spent part of itself in observe
+  mode emitting nothing, so it is not an arm of anything — check the log for `error` lines
+  before scoring, and discard the run rather than the finding.
 - **Task success** is a person's call unless the task has a check of its own. Prefer tasks
   that do: a task whose success is "did the test suite go green" needs no adjudication, and
   an A/B whose primary outcome is adjudicated by whoever ran it is worth less than one whose
@@ -221,6 +236,11 @@ Marked as such so nothing here reads as if it exists.
   ids are that log's `tool_use_id`s, built by hand today.
 - **`bouncer status` has no machine-readable output.** Scoring a run means reading
   `decisions.jsonl` directly.
+- **There is no way to point an installed plugin's log at a per-run directory.**
+  `CLAUDE_PLUGIN_DATA` looks like the knob and is not: Claude Code sets that variable for
+  the plugin, so a value set in the environment before launching is overwritten and the log
+  lands in `~/.claude/plugins/data/bouncer-bouncer/` regardless (§3.2). Arms separate by
+  `HOME`, which is also what keeps their breaker state apart.
 - **The bypass arm is blocked** by §3.2's root finding until an environment can run as a
   non-root user.
 - **`bouncer measure` still has no real batch** (issue #75), which is a separate gap from
