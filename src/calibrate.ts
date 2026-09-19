@@ -98,11 +98,15 @@ export interface Scored {
    * `unanswered` is `evaluate` refusing an allow because the classifier skipped questions;
    * `question` lists them. At hook time that is an error line, not a verdict, so
    * `disagreements` leaves the fixture out rather than calling it friction.
+   *
+   * `truncated` is the other refused allow: every question was answered, about the head of
+   * a state that was over its cap. The gate emits nothing for it either, so it is left out
+   * of `disagreements` the same way. `question` is empty — no one question decided it.
    */
   readonly verdictReason: {
     readonly question: string;
     readonly p: number;
-    readonly source: "hard_rule" | "rule" | "unanswered";
+    readonly source: "hard_rule" | "rule" | "unanswered" | "truncated";
   };
   /**
    * True when this row scores a `gate.probe_questions` entry rather than a live one.
@@ -295,6 +299,7 @@ export async function score(
       probes,
       latencyMs: response.latencyMs,
       ...(response.model !== undefined ? { model: response.model } : {}),
+      ...(state.truncated ? { truncated: true } : {}),
     };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
 
@@ -320,6 +325,14 @@ export interface Answered {
   readonly latencyMs: number;
   /** The model that answered, as the backend reported it. */
   readonly model?: string;
+  /**
+   * The state was over its cap, so these answers are about its head.
+   *
+   * `evaluate` refuses an allow on that, and the hook and `judge` both tell it. Without this
+   * the verdict here was `allow` where the installed gate's is the refusal — the same
+   * "a policy that is not the one installed" the hard-rule comment below is about.
+   */
+  readonly truncated?: boolean;
 }
 
 /**
@@ -355,7 +368,7 @@ export function scoreAnswered(
       ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input))
       : undefined;
 
-  const decision = hard === undefined ? evaluate(set, policy.mode, answers) : undefined;
+  const decision = hard === undefined ? evaluate(set, policy.mode, answers, { truncated: answered.truncated === true }) : undefined;
   const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
   const reason: Reason =
     hard !== undefined
@@ -367,11 +380,13 @@ export function scoreAnswered(
       ? { question: reason.name, p: Number.NaN, source: "hard_rule" as const }
       : reason.kind === "unanswered"
         ? { question: reason.missing.join(", "), p: Number.NaN, source: "unanswered" as const }
-        : {
-          question: reason.kind === "rule" ? reason.question : "default",
-          p: reason.kind === "rule" ? reason.p : Number.NaN,
-          source: "rule" as const,
-        };
+        : reason.kind === "truncated"
+          ? { question: "", p: Number.NaN, source: "truncated" as const }
+          : {
+              question: reason.kind === "rule" ? reason.question : "default",
+              p: reason.kind === "rule" ? reason.p : Number.NaN,
+              source: "rule" as const,
+            };
 
   const rows: Scored[] = [];
   for (const [question, expected] of Object.entries(fixture.expect)) {
@@ -520,7 +535,10 @@ export function scoreFromLog(
     if (record.policy !== undefined && record.policy.questions !== set.questionsFingerprint) reworded += 1;
     if (record.model !== undefined) models.add(record.model);
 
-    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
+    // Read off the line rather than rebuilt from the fixture: the line is what the classifier
+    // was actually shown, and a cap that has moved since would make the two disagree.
+    const truncated = record.truncated === true ? { truncated: true } : {};
+    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated }, policy, set, setName).rows);
   }
 
   return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
@@ -599,8 +617,9 @@ export function disagreements(scored: readonly Scored[]): Disagreement[] {
   for (const items of byFixture.values()) {
     const first = items[0];
     if (first === undefined) continue;
-    // Half an answer decided nothing, so it neither missed nor added friction.
-    if (first.verdictReason.source === "unanswered") continue;
+    // Half an answer decided nothing, so it neither missed nor added friction. Nor did a
+    // whole answer about half a state: both are an allow refused, and the gate emits nothing.
+    if (first.verdictReason.source === "unanswered" || first.verdictReason.source === "truncated") continue;
     const anyTrue = items.some((i) => i.expected);
     const asks = first.verdict !== "allow";
 

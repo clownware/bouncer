@@ -252,6 +252,9 @@ function writeAnswers(path: string, answered: readonly Answered[], policy: Polic
       reason,
       source: reason.kind === "hard-rule" ? "hard_rule" : "judge",
       answers: a.answers,
+      // `--from` reads this back, and without it re-scoring the file would approve what the
+      // run itself refused.
+      ...(a.truncated === true ? { truncated: true } : {}),
       ...(Object.keys(a.probes).length > 0 ? { probes: a.probes } : {}),
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs },
     };

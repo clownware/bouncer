@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,6 +14,8 @@ import {
   score,
   scoreFromLog,
   stateFor,
+  toolCallOf,
+  type Answered,
   type Fixture,
   type Scored,
 } from "../src/calibrate.js";
@@ -779,6 +781,89 @@ describe("scoring from a log", () => {
     expect(scored[0]?.verdictReason.source).toBe("unanswered");
     expect(scored[0]?.verdictReason.question).toContain("secrets");
     expect(disagreements(scored)).toEqual([]);
+  });
+
+  const QUIET = { destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 };
+
+  // The hook refuses an allow on a state it cut, and writes `truncated` on the line. Scoring
+  // that line without reading the field approved what the gate had refused, and reported a
+  // labelled-true fixture as `missed` by a verdict the gate never gave. Both halves are
+  // here so the difference is the field's doing.
+  it("refuses the allow on a line whose state was cut, the way the hook that wrote it did", () => {
+    const fixtures = parseFixtures(FIXTURES_JSONL);
+
+    const whole = scoreFromLog(line({ item: "a", answers: QUIET }), fixtures, POLICY).scored;
+    expect(whole[0]?.verdict).toBe("allow");
+    expect(disagreements(whole).map((d) => d.kind)).toEqual(["missed"]);
+
+    const cut = scoreFromLog(line({ item: "a", answers: QUIET, truncated: true }), fixtures, POLICY).scored;
+    expect(cut[0]?.verdict).toBe("ask");
+    expect(cut[0]?.verdictReason.source).toBe("truncated");
+    expect(disagreements(cut)).toEqual([]);
+    // The answer is still evidence about the classifier, and is still scored as one.
+    expect(cut[0]?.correct).toBe(false);
+  });
+
+  it("lets an ask found in the part that was read stand", () => {
+    const log = line({ item: "b", answers: { ...QUIET, destructive: 0.97 }, truncated: true });
+    const { scored } = scoreFromLog(log, parseFixtures(FIXTURES_JSONL), POLICY);
+    expect(scored[0]?.verdictReason).toMatchObject({ source: "rule", question: "destructive" });
+    expect(disagreements(scored).map((d) => d.kind)).toEqual(["friction"]);
+  });
+});
+
+// No fixture in fixtures/gate.jsonl is near the cap — the largest is a few hundred bytes
+// against 4,096 — so nothing that ships exercises this. These are the over-long ones.
+describe("a fixture over the state cap", () => {
+  const QUIET = { destructive: 0.01, secrets: 0.01, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 };
+  const long = `cat > notes.txt <<'EOF'\n${"lorem ipsum dolor sit amet ".repeat(400)}\nEOF`;
+  const fixtures = parseFixtures(
+    [
+      JSON.stringify({ id: "long", tool: "Bash", input: { command: long }, expect: { destructive: false }, note: "n" }),
+      JSON.stringify({ id: "short", tool: "Bash", input: { command: "ls" }, expect: { destructive: false }, note: "n" }),
+    ].join("\n"),
+  );
+
+  it("is one: the state it builds was cut", () => {
+    expect(fixtures.map((f) => stateFor(f).truncated)).toEqual([true, false]);
+  });
+
+  it("is refused its allow by the live path, as the hook would refuse it", async () => {
+    const scored = await score(fixtures, POLICY, new MockAdapter({ answers: QUIET }));
+    expect(scored.map((s) => [s.fixture.id, s.verdict, s.verdictReason.source])).toEqual([
+      ["long", "ask", "truncated"],
+      ["short", "allow", "rule"],
+    ]);
+    // Not friction: the gate emits nothing for it, so nobody was asked anything.
+    expect(disagreements(scored)).toEqual([]);
+  });
+
+  it("survives --out and --from, so a re-scored run refuses what the run refused", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bouncer-calibrate-cut-"));
+    process.env["BOUNCER_POLICY"] = resolve("policy/default.yaml");
+    try {
+      const path = join(dir, "fixtures.jsonl");
+      const out = join(dir, "run.jsonl");
+      writeFileSync(path, fixtures.map((f) => JSON.stringify({ id: f.id, ...toolCallOf(f), expect: f.expect, note: "n" })).join("\n"), "utf8");
+
+      const answered: Answered[] = [];
+      await score(fixtures, POLICY, new MockAdapter({ answers: QUIET }), (_d, _t, a) => answered.push(a));
+      expect(answered.map((a) => a.truncated)).toEqual([true, undefined]);
+
+      let printed = "";
+      const code = await calibrateCommand({ fixtures: path, backend: "mock", out, json: true }, (s) => (printed += s));
+      expect(code).toBe(0);
+
+      const lines = readFileSync(out, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      expect(lines.map((l) => [l.item, l.truncated])).toEqual([["long", true], ["short", undefined]]);
+      expect(lines[0].reason).toEqual({ kind: "truncated" });
+
+      const again = scoreFromLog(readFileSync(out, "utf8"), fixtures, POLICY).scored;
+      expect(again.find((s) => s.fixture.id === "long")?.verdictReason.source).toBe("truncated");
+    } finally {
+      delete process.env["BOUNCER_POLICY"];
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
