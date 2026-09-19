@@ -73,6 +73,19 @@ ends in a space (ADR-010):
 project's script. And do not count on the fast path for latency — agents chain commands,
 chained commands are refused, and it matched 0 of 88 real calls.
 
+**A good calibration table is not safe gate behaviour.** `fixtures/gate.jsonl` labels
+probabilities and is what `calibrate` tunes against, so it is relabelled every pass and
+cannot say anything about the fast path or a hard rule — neither reaches the classifier.
+`test/holdout/cases.jsonl` is the other corpus: each line labels an **emitted decision**,
+and `test/pipeline.test.ts` spawns the built `bin/bouncer.cjs` over it with the mock backend
+and asserts stdout plus the log line's `source`. It is frozen by the SHA-256 in
+`test/holdout/FROZEN`, so changing a case takes two edits in one commit and cannot happen as
+a side effect of tuning. Add cases freely; relaxing one is the thing to read twice. Every
+judgment in it is the mock's, so a judged expectation is a claim about routing and
+disposition, never about whether the answer was right — including the dangerous false
+accepts it names on purpose (review finding 10 asks for those to be reported, so the suite
+asserts the list rather than printing it).
+
 **The engine has two consumers now, and neither is privileged.** `bouncer judge` runs a
 policy set over a batch of items and `bouncer measure` compares it against a reasoning
 model (ADR-009). Anything below `src/cli.ts` that would have to know which one is calling
