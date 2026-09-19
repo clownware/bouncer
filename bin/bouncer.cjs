@@ -7885,6 +7885,20 @@ var MockAdapter = class {
 // src/engine/policy.ts
 var import_yaml = __toESM(require_dist(), 1);
 
+// src/engine/fingerprint.ts
+function fingerprintQuestions(questions, probeQuestions) {
+  const sorted = (record2) => Object.keys(record2).sort().map((name) => [name, record2[name]]);
+  return fingerprint(JSON.stringify([sorted(questions), sorted(probeQuestions)]));
+}
+function fingerprint(text) {
+  let hash = 2166136261;
+  for (const char of text) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return `${text.length}-${hash.toString(16).padStart(8, "0")}`;
+}
+
 // src/engine/types.ts
 var ANY_QUESTION = "any";
 var GATE_SET = "gate";
@@ -7894,7 +7908,8 @@ var EMPTY_GATE = {
   hardRules: [],
   questions: {},
   probeQuestions: {},
-  rules: []
+  rules: [],
+  questionsFingerprint: fingerprintQuestions({}, {})
 };
 
 // src/engine/policy.ts
@@ -8001,7 +8016,8 @@ function loadPolicy(source) {
     skipPermissionModes,
     sets,
     gate: gate ?? EMPTY_GATE,
-    calibration: { confidenceFloor, accuracyBar }
+    calibration: { confidenceFloor, accuracyBar },
+    fingerprint: fingerprint(source)
   };
   return { policy, diagnostics };
 }
@@ -8072,7 +8088,7 @@ function readPolicySet(raw, path, error, warn, isGate = false) {
     }
   }
   const rules = readRules(raw["rules"], path, questions, probeQuestions, error, warn);
-  return { questions, probeQuestions, rules };
+  return { questions, probeQuestions, rules, questionsFingerprint: fingerprintQuestions(questions, probeQuestions) };
 }
 function readQuestions(raw, basePath, required, error) {
   const questions = {};
@@ -8971,7 +8987,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 3;
+var CACHE_VERSION = 4;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -9202,7 +9218,9 @@ async function runPreToolUse(payload, options = {}) {
     ...permissionMode !== void 0 ? { permission_mode: permissionMode } : {},
     ...agentType !== void 0 ? { agent_type: agentType } : {},
     mode: policy.mode,
-    backend: options.adapter?.name ?? backendName(policy)
+    backend: options.adapter?.name ?? backendName(policy),
+    // On every line, not only judged ones: a hard rule and the fast path are the policy too.
+    policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint }
   };
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
   const early = shortCircuit(policy, {
@@ -9287,6 +9305,7 @@ async function runPreToolUse(payload, options = {}) {
     write(dir, next.state);
     append(dir, {
       ...base,
+      ...response.model !== void 0 ? { model: response.model } : {},
       ...verdictFields(decision),
       answers,
       ...Object.keys(probes).length > 0 ? { probes } : {},
@@ -9773,7 +9792,13 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
       if (probeNames.has(name)) probes[name] = value;
       else answers[name] = value;
     }
-    const answered = { fixture, answers, probes, latencyMs: response.latencyMs };
+    const answered = {
+      fixture,
+      answers,
+      probes,
+      latencyMs: response.latencyMs,
+      ...response.model !== void 0 ? { model: response.model } : {}
+    };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
     onProgress?.(i + 1, fixtures.length, answered);
   }
@@ -9848,10 +9873,17 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
   }
   const byId = new Map(fixtures.map((f) => [f.id, f]));
   const scored = [];
+  const models = /* @__PURE__ */ new Set();
   let matched = 0;
   let unmatched = 0;
   let unscorable = 0;
+  let otherSet = 0;
+  let reworded = 0;
   for (const record2 of parseLog(source)) {
+    if ((record2.set ?? GATE_SET) !== setName) {
+      otherSet += 1;
+      continue;
+    }
     const key = record2.item ?? record2.tool_use_id;
     if (key === void 0) {
       unscorable += 1;
@@ -9869,9 +9901,11 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
       continue;
     }
     matched += 1;
+    if (record2.policy !== void 0 && record2.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record2.model !== void 0) models.add(record2.model);
     scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
   }
-  return { scored, matched, unmatched, unscorable };
+  return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
 }
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
@@ -10289,6 +10323,10 @@ function writeAnswers(path, answered, policy, setName, backend) {
       state_kind: a.fixture.kind,
       mode: policy.mode,
       backend,
+      // A published run is re-scored for as long as the repository exists. Which model gave
+      // these answers, and to which wording of the questions, is what makes that legitimate.
+      ...a.model !== void 0 ? { model: a.model } : {},
+      policy: { file: policy.fingerprint, questions: set.questionsFingerprint },
       verdict,
       emitted: null,
       reason,
@@ -10323,7 +10361,8 @@ function fromLog(args, policy, fixtures, write3) {
     write3(
       `No line in ${args.from} matched a fixture id.
   ${result.unmatched} lines named an item with no fixture, and ${result.unscorable} carried no answers.
-  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.
+` + (result.otherSet > 0 ? `  ${result.otherSet} were judged against a different set than "${args.set ?? "gate"}" \u2014 pass --set to score those.
+` : "") + `  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.
 `
     );
     return 1;
@@ -10336,6 +10375,9 @@ function fromLog(args, policy, fixtures, write3) {
           matched: result.matched,
           unmatched: result.unmatched,
           unscorable: result.unscorable,
+          otherSet: result.otherSet,
+          reworded: result.reworded,
+          models: result.models,
           reports: report(result.scored, policy.calibration)
         },
         null,
@@ -10351,6 +10393,26 @@ function fromLog(args, policy, fixtures, write3) {
 Scored ${result.matched} logged items against their labels. ${result.unmatched} had no fixture; ${result.unscorable} carried no classifier answer (a hard rule, the fast path, or an error).
 `
   );
+  if (result.otherSet > 0) {
+    write3(`${result.otherSet} were judged against a different set and are left out.
+`);
+  }
+  if (result.models.length > 0) {
+    write3(
+      result.models.length === 1 ? `Answered by ${result.models[0]}.
+` : `Answered by ${result.models.length} models (${result.models.join(", ")}), so this is not one sample.
+`
+    );
+  }
+  if (result.reworded > 0) {
+    write3(
+      `
+${result.reworded} of those ${result.matched} were answered under a different wording of this set's questions than
+the policy has now. The probabilities above are about the old wording. Moving a threshold
+leaves them valid; rewording a question does not, and only a live run re-asks it.
+`
+    );
+  }
   return 0;
 }
 async function run(fixtures, policy, adapter, label, total, args, answered) {
@@ -10495,7 +10557,8 @@ async function judgeOne(id, state, questions, probeNames, options) {
     // own — unlike the gate's, which sits on a log line that already carries the string.
     ...escalation !== void 0 ? { escalation: { ...escalation, state: state.text } } : {},
     latencyMs: response.latencyMs,
-    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {}
+    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {},
+    ...response.model !== void 0 ? { model: response.model } : {}
   };
 }
 function tally(run2) {
@@ -10745,7 +10808,7 @@ async function judge2(args, write3) {
   const logPath = args.out ?? (0, import_node_path10.join)(dataDir(), JUDGMENTS_FILE);
   const manifestPath = args.manifest ?? (0, import_node_path10.join)(dataDir(), "escalations.json");
   writeLog(logPath, run2, policy);
-  const manifestWritten = writeManifest(manifestPath, run2);
+  const manifestWritten = writeManifest(manifestPath, run2, policy);
   if (args.json === true) {
     write3(`${JSON.stringify({ ...run2, log: logPath, manifest: manifestPath }, null, 2)}
 `);
@@ -10775,6 +10838,8 @@ function recordFor(item, run2, policy, ts) {
     state_kind: "item",
     mode: policy.mode,
     backend: run2.backend,
+    ...item.model !== void 0 ? { model: item.model } : {},
+    policy: identityOf(policy, run2.set),
     verdict: item.verdict,
     // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
     // rather than left out so a reader never has to ask which kind of line it is holding.
@@ -10795,12 +10860,28 @@ function withoutState(escalation) {
   const { state: _state, ...rest } = escalation;
   return rest;
 }
-function writeManifest(path, run2) {
+function identityOf(policy, setName) {
+  return { file: policy.fingerprint, questions: policy.sets[setName]?.questionsFingerprint ?? "" };
+}
+function writeManifest(path, run2, policy) {
   if (run2.manifest.items.length === 0) return false;
+  const set = policy.sets[run2.set];
+  const models = [...new Set(run2.items.flatMap((i) => i.model === void 0 ? [] : [i.model]))];
   (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
   (0, import_node_fs10.writeFileSync)(
     path,
-    `${JSON.stringify({ set: run2.set, backend: run2.backend, ...run2.manifest }, null, 2)}
+    `${JSON.stringify(
+      {
+        set: run2.set,
+        backend: run2.backend,
+        ...models.length > 0 ? { models } : {},
+        policy: identityOf(policy, run2.set),
+        ...set !== void 0 ? { questions: questionsOf(set) } : {},
+        ...run2.manifest
+      },
+      null,
+      2
+    )}
 `,
     "utf8"
   );

@@ -177,6 +177,38 @@ describe("the judge command", () => {
     expect(lines[0]?.["tool"]).toBeUndefined();
   });
 
+  it("says on every line which model answered and which policy was installed", () => {
+    const out = join(dataDir, "identity.jsonl");
+    judge(["fixtures/judge-example.jsonl", "--set", "content", "--backend", "mock", "--out", out]);
+
+    const lines = readFileSync(out, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines.every((l) => l["model"] === "mock")).toBe(true);
+    expect((lines[0]?.["policy"] as Record<string, string>)["questions"]).toMatch(/^\d+-[0-9a-f]{8}$/);
+  });
+
+  // The manifest goes to something that has never seen the policy file. A signal's `asks` is
+  // the instructions alone, and the criteria are half of what the classifier was told, so
+  // without the questions whole the same judgment cannot be asked again.
+  it("writes a manifest that carries the questions whole, and says what produced it", () => {
+    const batch = join(dataDir, "destructive.jsonl");
+    writeFileSync(batch, `${JSON.stringify({ id: "wipe", kind: "item", item: { text: "rm -rf ~/Documents" } })}\n`, "utf8");
+    const manifest = join(dataDir, "identity.json");
+
+    const r = spawnSync(process.execPath, [BIN, "judge", batch, "--backend", "mock", "--out", join(dataDir, "d.jsonl"), "--manifest", manifest], {
+      encoding: "utf8",
+      env: { ...env, BOUNCER_POLICY: resolve("policy/default.yaml") },
+    });
+    expect(r.status).toBe(0);
+
+    const written = JSON.parse(readFileSync(manifest, "utf8")) as Record<string, unknown>;
+    const questions = written["questions"] as Record<string, { instructions?: string; criteria?: unknown }>;
+    expect(written["models"]).toEqual(["mock"]);
+    expect((written["policy"] as Record<string, string>)["file"]).toMatch(/^\d+-[0-9a-f]{8}$/);
+    expect(questions["destructive"]?.instructions).toBeDefined();
+    expect(questions["destructive"]?.criteria).toBeDefined();
+    expect((written["items"] as unknown[]).length).toBe(1);
+  });
+
   it("names the sets that exist when asked for one that does not", () => {
     const r = judge(["fixtures/judge-example.jsonl", "--set", "nope", "--backend", "mock"]);
     expect(r.status).toBe(1);

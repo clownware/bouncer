@@ -89,6 +89,8 @@ export async function runPreToolUse(
     ...(agentType !== undefined ? { agent_type: agentType } : {}),
     mode: policy.mode,
     backend: options.adapter?.name ?? backendName(policy),
+    // On every line, not only judged ones: a hard rule and the fast path are the policy too.
+    policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint },
   };
 
   // What an escalation names this item by. The tool_use_id when Claude Code sent one,
@@ -217,6 +219,7 @@ export async function runPreToolUse(
 
     append(dir, {
       ...base,
+      ...(response.model !== undefined ? { model: response.model } : {}),
       ...verdictFields(decision),
       answers,
       ...(Object.keys(probes).length > 0 ? { probes } : {}),

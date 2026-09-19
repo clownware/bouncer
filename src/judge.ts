@@ -38,6 +38,8 @@ export interface JudgedItem {
   readonly escalation?: EscalationItem;
   readonly latencyMs: number;
   readonly inputTokens?: number;
+  /** The model that answered, as the backend reported it. Absent when it does not say. */
+  readonly model?: string;
   /**
    * Present when the classifier could not answer.
    *
@@ -211,6 +213,7 @@ async function judgeOne(
     ...(escalation !== undefined ? { escalation: { ...escalation, state: state.text } } : {}),
     latencyMs: response.latencyMs,
     ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
+    ...(response.model !== undefined ? { model: response.model } : {}),
   };
 }
 

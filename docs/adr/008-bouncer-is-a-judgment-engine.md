@@ -1,6 +1,6 @@
 # ADR-008: Bouncer is a judgment engine; the gate is its first consumer
 
-- **Status:** accepted
+- **Status:** accepted; what a manifest and a record carry corrected on 2026-09-19, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.2 (naming), v0.3 (`bouncer judge`), v0.4 (package extraction)
 - **Numbering:** proposed as ADR-006, written as ADR-008. ADR-006 is the skill router and
@@ -102,6 +102,27 @@ policy. That is what makes the manifest a prompt rather than a log: the reasonin
 English, settle it" — and because the wording comes from the policy file, a user who
 rewrites a question rewrites the escalation prompt with it. No question text in `src/`,
 same as the thresholds.
+
+> **Corrected on 2026-09-19**, after `docs/adr-review-2026-09-18.md` findings 4 and 9.
+> `asks` is the instructions and only the instructions. The criteria are the other half of
+> what the classifier was told — `unreviewed_execution`'s instructions are one sentence and
+> its criteria are where inline scripts and file edits are ruled out — so a manifest read by
+> something that never saw the policy file could not ask the same question again. `measure`
+> never noticed, because it holds the policy in the same process and passes the questions
+> itself. A standalone manifest now carries the set's questions whole, once, at the top.
+>
+> It also says what produced it, and so does every record: the model as the backend
+> reported it (`jev-1.13.0`, not the `jev-latest` that was asked for — the adapter always
+> read this and nothing wrote it down), and two fingerprints. `policy.file` is the policy
+> file's text. `policy.questions` is what the set asks and deliberately leaves the rules
+> out, because `calibrate --from` exists to re-score old answers under *moved thresholds*:
+> a changed rule must leave it alone and a reworded question must not. `--from` skips a
+> line judged against a different set, which an id shared by two fixture files would
+> otherwise join to the wrong labels, and counts — but still scores — lines answered under
+> a different wording, saying so under the table. Both fingerprints are FNV-1a, computed
+> when the policy compiles and carried in the policy cache, so the hook pays nothing and
+> `node:crypto` stays out of it (ADR-007). Pinning the model through the policy is not done
+> here; recording what answered is the part a published run cannot do without.
 
 **It has a denominator.** `itemsJudged` is passed in rather than derived from
 `items.length`. One escalation out of one and one out of a hundred produce the same list;
