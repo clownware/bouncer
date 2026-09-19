@@ -491,6 +491,23 @@ No backend is constructed at all on that path — it reads the probabilities the
 holds and recomputes the verdicts against your current thresholds. `judge` writes the item's
 id on every line, so a judgments log over a fixture file joins by construction.
 
+A calibration run keeps its answers the same way:
+
+```bash
+BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate --out docs/calibration/run.jsonl
+```
+
+```bash
+node bin/bouncer.cjs calibrate --from docs/calibration/run.jsonl
+```
+
+`--out` writes what the classifier said about every fixture, one line each. The second
+command needs no key, applies the hard rules the live run applied, and prints the same
+table — until you move a threshold, at which point it prints what that threshold would have
+done to the run you already have. Running live again is not the same question: one fixture
+has read 0.63, 0.64 and 0.65 on `unreviewed_execution` across three runs, so a second sample
+can move a verdict that the policy did not.
+
 ## Design commitments
 
 These are the parts worth arguing with, stated up front.

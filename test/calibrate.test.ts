@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAdapter } from "../src/adapters/mock.js";
 import {
@@ -652,5 +653,79 @@ describe("scoring from a log", () => {
 
   it("refuses a set the policy does not define", () => {
     expect(() => scoreFromLog("", [], POLICY, "nope")).toThrow(/no set named "nope"/);
+  });
+
+  // The live path applies hard rules before it reads an answer, so the recorded path has to
+  // as well or the same answers print two different tables. `export-stripe-key` is the
+  // fixture that showed it: run 8's first pass had it `missed` at secrets 0.20, and a hard
+  // rule is the only thing that catches it.
+  it("lets a hard rule decide, the way the live run and the hook both do", () => {
+    const quiet = { destructive: 0.01, secrets: 0.2, outside_repo: 0.01, egress: 0.01, prod: 0.01, sensitive_target: 0.01, unreviewed_execution: 0.01 };
+    const log = line({ item: "export-stripe-key", answers: quiet });
+
+    const [row] = scoreFromLog(log, FIXTURES, POLICY).scored;
+    expect(row?.verdict).toBe("ask");
+    expect(row?.verdictReason.source).toBe("hard_rule");
+    expect(disagreements(scoreFromLog(log, FIXTURES, POLICY).scored)).toEqual([]);
+  });
+});
+
+describe("calibrate --out", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "bouncer-calibrate-out-"));
+    process.env["BOUNCER_POLICY"] = resolve("policy/default.yaml");
+  });
+  afterEach(() => {
+    delete process.env["BOUNCER_POLICY"];
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const run = async (args: Parameters<typeof calibrateCommand>[0]) => {
+    let out = "";
+    const code = await calibrateCommand({ fixtures: "fixtures/gate.jsonl", json: true, ...args }, (s) => {
+      out += s;
+    });
+    return { code, out };
+  };
+
+  // The whole claim: what `--out` keeps is enough to print the same table again with no
+  // backend. Compared as reports rather than as headline accuracy, since two fixtures can
+  // swap verdicts and leave the headline where it was.
+  it("writes answers that --from scores into the same report the live run printed", async () => {
+    const out = join(dir, "run.jsonl");
+
+    const live = await run({ backend: "mock", out });
+    const recorded = await run({ from: out });
+
+    expect(live.code).toBe(0);
+    expect(recorded.code).toBe(0);
+    expect(JSON.parse(recorded.out).matched).toBe(FIXTURES.length);
+    expect(JSON.parse(recorded.out).reports).toEqual(JSON.parse(live.out).reports);
+  });
+
+  it("writes one line per fixture, keyed by its id, and no state", async () => {
+    const out = join(dir, "run.jsonl");
+    await run({ backend: "mock", out });
+
+    const lines = readFileSync(out, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.map((l) => l.item)).toEqual(FIXTURES.map((f) => f.id));
+    expect(lines.every((l) => l.backend === "mock" && l.state === undefined)).toBe(true);
+    // Every gate question, not only the labelled ones: the `any` rule reads all of them.
+    expect(Object.keys(lines[0].answers).sort()).toEqual(Object.keys(POLICY.gate.questions).sort());
+  });
+
+  it("replaces the file, so a rerun does not match every fixture twice", async () => {
+    const out = join(dir, "run.jsonl");
+    await run({ backend: "mock", out });
+    await run({ backend: "mock", out });
+    expect(readFileSync(out, "utf8").trim().split("\n")).toHaveLength(FIXTURES.length);
+  });
+
+  it("refuses --compare, since one file cannot hold two classifiers' answers", async () => {
+    const { code, out } = await run({ backend: "mock", compare: "local", out: join(dir, "run.jsonl") });
+    expect(code).toBe(1);
+    expect(out).toContain("--out records one run");
   });
 });

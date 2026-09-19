@@ -9652,45 +9652,55 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
   }
   const questions = questionsOf(set);
   const probeNames = new Set(Object.keys(set.probeQuestions));
-  const gateExtras = setName === GATE_SET ? policy.gate : void 0;
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
     const state = stateFor(fixture);
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
     const answers = {};
+    const probes = {};
     for (const name of Object.keys(questions)) {
-      if (probeNames.has(name)) continue;
       const value = noulProbability(response.answers[name]);
-      if (value !== void 0) answers[name] = value;
+      if (value === void 0) continue;
+      if (probeNames.has(name)) probes[name] = value;
+      else answers[name] = value;
     }
-    const hard = gateExtras !== void 0 && fixture.kind === "tool_call" ? matchHardRule(gateExtras.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
-    const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
-    const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
-    const verdictReason = hard !== void 0 ? { question: hard.name, p: Number.NaN, source: "hard_rule" } : {
-      question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
-      p: decision?.reason.kind === "rule" ? decision.reason.p : Number.NaN,
-      source: "rule"
-    };
-    for (const [question, expected] of Object.entries(fixture.expect)) {
-      const p = noulProbability(response.answers[question]);
-      if (p === void 0) continue;
-      const predicted = p >= 0.5;
-      results.push({
-        fixture,
-        question,
-        expected,
-        p,
-        predicted,
-        correct: predicted === expected,
-        confidence: Math.max(p, 1 - p),
-        verdict,
-        verdictReason,
-        probe: probeNames.has(question)
-      });
-    }
-    onProgress?.(i + 1, fixtures.length);
+    const answered = { fixture, answers, probes, latencyMs: response.latencyMs };
+    results.push(...scoreAnswered(answered, policy, set, setName).rows);
+    onProgress?.(i + 1, fixtures.length, answered);
   }
   return results;
+}
+function scoreAnswered(answered, policy, set, setName) {
+  const { fixture, answers, probes } = answered;
+  const hard = setName === GATE_SET && fixture.kind === "tool_call" ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
+  const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
+  const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
+  const reason = hard !== void 0 ? { kind: "hard-rule", name: hard.name, because: hard.because } : decision?.reason ?? { kind: "no-rule-matched" };
+  const verdictReason = reason.kind === "hard-rule" ? { question: reason.name, p: Number.NaN, source: "hard_rule" } : {
+    question: reason.kind === "rule" ? reason.question : "default",
+    p: reason.kind === "rule" ? reason.p : Number.NaN,
+    source: "rule"
+  };
+  const rows = [];
+  for (const [question, expected] of Object.entries(fixture.expect)) {
+    const probe = question in set.probeQuestions;
+    const p = probe ? probes[question] : answers[question];
+    if (p === void 0) continue;
+    const predicted = p >= 0.5;
+    rows.push({
+      fixture,
+      question,
+      expected,
+      p,
+      predicted,
+      correct: predicted === expected,
+      confidence: Math.max(p, 1 - p),
+      verdict,
+      verdictReason,
+      probe
+    });
+  }
+  return { rows, verdict, reason };
 }
 function questionsOf(set) {
   const questions = {};
@@ -9728,7 +9738,6 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
     throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
   }
   const byId = new Map(fixtures.map((f) => [f.id, f]));
-  const probeNames = new Set(Object.keys(set.probeQuestions));
   const scored = [];
   let matched = 0;
   let unmatched = 0;
@@ -9751,29 +9760,7 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
       continue;
     }
     matched += 1;
-    const decision = evaluate(set, policy.mode, answers);
-    const verdictReason = {
-      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
-      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
-      source: "rule"
-    };
-    for (const [question, expected] of Object.entries(fixture.expect)) {
-      const p = probeNames.has(question) ? probes[question] : answers[question];
-      if (p === void 0) continue;
-      const predicted = p >= 0.5;
-      scored.push({
-        fixture,
-        question,
-        expected,
-        p,
-        predicted,
-        correct: predicted === expected,
-        confidence: Math.max(p, 1 - p),
-        verdict: decision.verdict,
-        verdictReason,
-        probe: probeNames.has(question)
-      });
-    }
+    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
   }
   return { scored, matched, unmatched, unscorable };
 }
@@ -10072,6 +10059,7 @@ function parseArgs(argv) {
     ...value("from") !== void 0 ? { from: value("from") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
+    ...value("out") !== void 0 ? { out: value("out") } : {},
     json: argv.includes("--json")
   };
 }
@@ -10099,6 +10087,10 @@ async function calibrate(args, write3) {
   }
   const primary = args.backend ?? resolved.policy.backend;
   const names = backendsFor(primary, args.compare);
+  if (args.out !== void 0 && names.length > 1) {
+    write3("--out records one run; drop --compare, or run each backend with its own --out.\n");
+    return 1;
+  }
   const adapters = [];
   for (const name of names) {
     const adapter = adapterFor2(name);
@@ -10118,11 +10110,12 @@ async function calibrate(args, write3) {
     }
   }
   const runs = [];
+  const answered = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i];
     let scored;
     try {
-      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
     } catch (err) {
       write3(`${err instanceof Error ? err.message : String(err)}
 `);
@@ -10134,6 +10127,15 @@ async function calibrate(args, write3) {
   if (first === void 0) {
     write3("No backend to run.\n");
     return 1;
+  }
+  if (args.out !== void 0) {
+    try {
+      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, first.backend);
+    } catch (err) {
+      write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
   }
   if (args.json === true) {
     const payload = second === void 0 ? { backend: first.backend, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) } : {
@@ -10156,7 +10158,39 @@ async function calibrate(args, write3) {
   if (second !== void 0) {
     write3(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
   }
+  if (args.out !== void 0) {
+    write3(`
+Answers written to ${args.out}. Re-score them without a key: bouncer calibrate --from ${args.out}
+`);
+  }
   return 0;
+}
+function writeAnswers(path, answered, policy, setName, backend) {
+  const set = policy.sets[setName];
+  if (set === void 0) return;
+  const ts = (/* @__PURE__ */ new Date()).toISOString();
+  const lines = answered.map((a) => {
+    const { verdict, reason } = scoreAnswered(a, policy, set, setName);
+    return {
+      ts,
+      consumer: "judge",
+      set: setName,
+      item: a.fixture.id,
+      state_kind: a.fixture.kind,
+      mode: policy.mode,
+      backend,
+      verdict,
+      emitted: null,
+      reason,
+      source: reason.kind === "hard-rule" ? "hard_rule" : "judge",
+      answers: a.answers,
+      ...Object.keys(a.probes).length > 0 ? { probes: a.probes } : {},
+      latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
+    };
+  });
+  (0, import_node_fs7.mkdirSync)((0, import_node_path7.dirname)(path), { recursive: true });
+  (0, import_node_fs7.writeFileSync)(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}
+`, "utf8");
 }
 function fromLog(args, policy, fixtures, write3) {
   let source;
@@ -10209,13 +10243,14 @@ Scored ${result.matched} logged items against their labels. ${result.unmatched} 
   );
   return 0;
 }
-async function run(fixtures, policy, adapter, label, total, args) {
+async function run(fixtures, policy, adapter, label, total, args, answered) {
   const prefix = total > 1 ? `${label}: ` : "";
   const scored = await score(
     fixtures,
     policy,
     adapter,
-    (done, n) => {
+    (done, n, a) => {
+      answered.push(a);
       if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
     },
     args.set

@@ -143,6 +143,10 @@ recorded reality; the docs are a description of it.
 - A policy file names its sets under `policies:`; a top-level `gate:` is a permanent alias
   and not a deprecated spelling, so never add a warning to it (ADR-009). `policy/default.yaml`
   deliberately stays on the alias: it is the file every user copies.
+- A published calibration run commits its answers beside its write-up: run live with
+  `--out docs/calibration/<run>.jsonl`. The markdown lists only the disagreements, so without
+  the answers a threshold question ("what falls in `[0.61, 0.64]`?") costs a live rerun to
+  ask, and the rerun is a different sample. `calibrate --from` re-scores the file with no key.
 - The reasoning model in `bouncer measure` is a command the user supplies, never a client
   bouncer ships. That is what keeps zero runtime dependencies true and keeps the claim about
   a class of model rather than one vendor. `test/fixtures/reasoning/oracle.mjs` is the

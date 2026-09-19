@@ -20,7 +20,7 @@ import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
 import { buildState, commandOf } from "./engine/state.js";
 import { itemState } from "./engine/item.js";
-import { evaluate } from "./engine/evaluate.js";
+import { evaluate, type Reason } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
 import { GATE_SET, type BuiltState, type CalibrationPolicy, type Policy, type PolicySet, type Verdict } from "./engine/types.js";
 import { parseLog, type DecisionRecord } from "./io/log.js";
@@ -254,7 +254,7 @@ export async function score(
   fixtures: readonly Fixture[],
   policy: Policy,
   adapter: Adapter,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, answered: Answered) => void,
   setName: string = GATE_SET,
 ): Promise<Scored[]> {
   const set = policy.sets[setName];
@@ -267,10 +267,6 @@ export async function score(
   // Probes are scored only where a fixture labels them, and never enter the verdict below.
   const probeNames = new Set(Object.keys(set.probeQuestions));
 
-  // Hard rules and the fast path belong to the gate (ADR-008), so they only apply when the
-  // set being scored is the gate and the fixture is a tool call.
-  const gateExtras = setName === GATE_SET ? policy.gate : undefined;
-
   const results: Scored[] = [];
 
   for (const [i, fixture] of fixtures.entries()) {
@@ -281,60 +277,112 @@ export async function score(
     // Every question's answer, not just the labelled ones: the `any` uncertainty rule
     // reads all of them, so a verdict computed from a subset would not be the real one.
     const answers: Record<string, number> = {};
+    const probes: Record<string, number> = {};
     for (const name of Object.keys(questions)) {
-      if (probeNames.has(name)) continue;
       const value = noulProbability(response.answers[name]);
-      if (value !== undefined) answers[name] = value;
-    }
-    // Hard rules decide before the classifier at hook time, so the verdict reported here
-    // has to come from them too — otherwise the `missed` and `friction` sections describe
-    // a policy that is not the one installed. The adapter is still called for every
-    // fixture regardless: the accuracy and Brier columns measure the classifier, and hard
-    // rules neither help nor hurt a question's answer.
-    //
-    // The fast path is deliberately still not modelled here, unchanged from run 7. It
-    // would only ever turn an `ask` into an `allow`, and doing it in the same run as this
-    // change would make two things move at once.
-    const hard =
-      gateExtras !== undefined && fixture.kind === "tool_call"
-        ? matchHardRule(gateExtras.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input))
-        : undefined;
-    const decision = hard === undefined ? evaluate(set, policy.mode, answers) : undefined;
-
-    const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
-    const verdictReason = hard !== undefined
-      ? { question: hard.name, p: Number.NaN, source: "hard_rule" as const }
-      : {
-          question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
-          p: decision?.reason.kind === "rule" ? decision.reason.p : Number.NaN,
-          source: "rule" as const,
-        };
-
-    for (const [question, expected] of Object.entries(fixture.expect)) {
-      const p = noulProbability(response.answers[question]);
-      // A question the classifier did not answer is not scored. Counting it as wrong
-      // would blame the model for an adapter problem.
-      if (p === undefined) continue;
-
-      const predicted = p >= 0.5;
-      results.push({
-        fixture,
-        question,
-        expected,
-        p,
-        predicted,
-        correct: predicted === expected,
-        confidence: Math.max(p, 1 - p),
-        verdict,
-        verdictReason,
-        probe: probeNames.has(question),
-      });
+      if (value === undefined) continue;
+      if (probeNames.has(name)) probes[name] = value;
+      else answers[name] = value;
     }
 
-    onProgress?.(i + 1, fixtures.length);
+    const answered: Answered = { fixture, answers, probes, latencyMs: response.latencyMs };
+    results.push(...scoreAnswered(answered, policy, set, setName).rows);
+
+    onProgress?.(i + 1, fixtures.length, answered);
   }
 
   return results;
+}
+
+/**
+ * What the classifier said about one fixture, before anything scored it.
+ *
+ * This is the part of a run that costs a live call, and the only part. Everything in a
+ * report is computed from it and from the policy, so a run that keeps these can be scored
+ * again under a different threshold without a key — `calibrate --out` writes them and
+ * `calibrate --from` reads them back.
+ */
+export interface Answered {
+  readonly fixture: Fixture;
+  readonly answers: Readonly<Record<string, number>>;
+  /** Answers to `probe_questions`. Scored where labelled; never read by a rule. */
+  readonly probes: Readonly<Record<string, number>>;
+  readonly latencyMs: number;
+}
+
+/**
+ * Scores one fixture's answers: the policy's verdict, and a row per labelled question.
+ *
+ * `score()` and `scoreFromLog()` both end here, which is the point of it being one function.
+ * When they each computed the verdict themselves, only the live path applied hard rules, so
+ * re-scoring a recorded run reported `export-stripe-key` as `missed` under a policy whose
+ * hard rules catch it — a different table from the same answers.
+ */
+export function scoreAnswered(
+  answered: Answered,
+  policy: Policy,
+  set: PolicySet,
+  setName: string,
+): { rows: Scored[]; verdict: Verdict; reason: Reason } {
+  const { fixture, answers, probes } = answered;
+
+  // Hard rules and the fast path belong to the gate (ADR-008), so they only apply when the
+  // set being scored is the gate and the fixture is a tool call.
+  //
+  // Hard rules decide before the classifier at hook time, so the verdict reported here
+  // has to come from them too — otherwise the `missed` and `friction` sections describe
+  // a policy that is not the one installed. The adapter is still called for every
+  // fixture regardless: the accuracy and Brier columns measure the classifier, and hard
+  // rules neither help nor hurt a question's answer.
+  //
+  // The fast path is deliberately still not modelled here, unchanged from run 7. It
+  // would only ever turn an `ask` into an `allow`, and doing it in the same run as this
+  // change would make two things move at once.
+  const hard =
+    setName === GATE_SET && fixture.kind === "tool_call"
+      ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input))
+      : undefined;
+
+  const decision = hard === undefined ? evaluate(set, policy.mode, answers) : undefined;
+  const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
+  const reason: Reason =
+    hard !== undefined
+      ? { kind: "hard-rule", name: hard.name, because: hard.because }
+      : (decision?.reason ?? { kind: "no-rule-matched" });
+
+  const verdictReason =
+    reason.kind === "hard-rule"
+      ? { question: reason.name, p: Number.NaN, source: "hard_rule" as const }
+      : {
+          question: reason.kind === "rule" ? reason.question : "default",
+          p: reason.kind === "rule" ? reason.p : Number.NaN,
+          source: "rule" as const,
+        };
+
+  const rows: Scored[] = [];
+  for (const [question, expected] of Object.entries(fixture.expect)) {
+    const probe = question in set.probeQuestions;
+    const p = probe ? probes[question] : answers[question];
+    // A question the classifier did not answer is not scored. Counting it as wrong
+    // would blame the model for an adapter problem.
+    if (p === undefined) continue;
+
+    const predicted = p >= 0.5;
+    rows.push({
+      fixture,
+      question,
+      expected,
+      p,
+      predicted,
+      correct: predicted === expected,
+      confidence: Math.max(p, 1 - p),
+      verdict,
+      verdictReason,
+      probe,
+    });
+  }
+
+  return { rows, verdict, reason };
 }
 
 /**
@@ -411,7 +459,6 @@ export function scoreFromLog(
   }
 
   const byId = new Map(fixtures.map((f) => [f.id, f]));
-  const probeNames = new Set(Object.keys(set.probeQuestions));
 
   const scored: Scored[] = [];
   let matched = 0;
@@ -442,31 +489,7 @@ export function scoreFromLog(
     }
 
     matched += 1;
-    const decision = evaluate(set, policy.mode, answers);
-    const verdictReason = {
-      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
-      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
-      source: "rule" as const,
-    };
-
-    for (const [question, expected] of Object.entries(fixture.expect)) {
-      const p = probeNames.has(question) ? probes[question] : answers[question];
-      if (p === undefined) continue;
-
-      const predicted = p >= 0.5;
-      scored.push({
-        fixture,
-        question,
-        expected,
-        p,
-        predicted,
-        correct: predicted === expected,
-        confidence: Math.max(p, 1 - p),
-        verdict: decision.verdict,
-        verdictReason,
-        probe: probeNames.has(question),
-      });
-    }
+    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0 }, policy, set, setName).rows);
   }
 
   return { scored, matched, unmatched, unscorable };
