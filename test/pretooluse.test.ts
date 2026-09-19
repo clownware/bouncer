@@ -20,7 +20,7 @@ function usePolicy(mode: "observe" | "guard" | "full", extra = "") {
 function payload(overrides: Record<string, unknown> = {}) {
   return {
     session_id: "test-session",
-    cwd: process.cwd(),
+    cwd: "/home/user/project",
     hook_event_name: "PreToolUse",
     tool_name: "Bash",
     tool_use_id: "toolu_test",
