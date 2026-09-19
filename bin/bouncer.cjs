@@ -8447,9 +8447,28 @@ var PATTERNS = [
   // questions actually need to see.
   { kind: "url-credentials", re: /\b([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s:/@]+):[^\s@/]+@/g },
   // An inline assignment to something named like a secret: FOO_TOKEN=..., --password=...
+  //
+  // Each part of this has been wrong once.
+  //
+  // The name. Anything in front of the keyword is optional: it used to be required, so
+  // `PASSWORD=`, `TOKEN=`, `API_KEY=` and `--password=` — the example in the line above —
+  // never matched, and their values went to the classifier and the log in clear. After the
+  // keyword comes the end of the name, a plural, digits, or a separator and the rest, so
+  // `SECRET_KEY_BASE` and `TOKEN2` are names and `TOKENIZER` is a word.
+  //
+  // The value is skipped when a pattern above already redacted it. This one runs last, and
+  // used to redact the marker: `STRIPE_SECRET_KEY=sk_live_…` came out as `assigned-secret`,
+  // so naming a variable like a secret erased what kind of secret it held — against the
+  // ordering comment at the top of this table.
+  //
+  // It is also skipped when it is nothing but a reference: `$VAR`, `${VAR}`, either in
+  // double quotes, or a `$(command)`. Nothing secret is on the line, and the hard rule that
+  // reads this kind tells the user a credential "appears literally". Single quotes make a
+  // `$` literal and a value with a literal part beside a reference still has one, so both
+  // are still redacted.
   {
     kind: "assigned-secret",
-    re: /\b([A-Za-z_][A-Za-z0-9_-]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIALS?)[A-Za-z0-9_-]*)(\s*=\s*)(?!\s)(?:"[^"]{4,}"|'[^']{4,}'|[^\s;&|)"']{4,})/gi
+    re: /\b((?:[A-Za-z_][A-Za-z0-9_-]*)?(?:PASSWORD|PASSWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIALS?)S?(?:[_-][A-Za-z0-9_-]*|\d+)?)(\s*=\s*)(?!\s)(?!["']?\[REDACTED:)(?!"?\$\()(?!"?\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"?(?=[\s;&|)]|$))(?:"[^"]{4,}"|'[^']{4,}'|[^\s;&|)"']{4,})/gi
   }
 ];
 function redact(input) {

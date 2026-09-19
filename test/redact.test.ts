@@ -22,6 +22,49 @@ describe("redact", () => {
     ["bearer token", "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123'", "bearer-token"],
   ];
 
+  // `assigned-secret` asked for at least one character in front of its keyword, so a name
+  // that simply IS the keyword never matched — though `--password=...` is the example in the
+  // pattern's own comment. Every value in the left column went to the classifier and into
+  // the log in clear. The right column is the twin that was always caught.
+  //
+  // The values are plain words on purpose. This pattern keys on the NAME, so a value's shape
+  // proves nothing here, and a realistic-looking one trips the secret scanner in the commit
+  // hook for no gain. The shape-keyed patterns above are where a structurally valid value
+  // earns its place.
+  const bareNames: ReadonlyArray<readonly [string, string, string]> = [
+    ["PASSWORD=hunter22 ./deploy.sh", "hunter22", "DB_PASSWORD=hunter22 ./deploy.sh"],
+    ["TOKEN=swordfish ./run.sh", "swordfish", "MY_TOKEN=swordfish ./run.sh"],
+    ["API_KEY=opensesame ./run.sh", "opensesame", "X_API_KEY=opensesame ./run.sh"],
+    ["SECRET=opensesame ./run.sh", "opensesame", "APP_SECRET=opensesame ./run.sh"],
+    ["mysql -u root --password=hunter22 prod", "hunter22", "mysql -u root --db-password=hunter22 prod"],
+    ["export SECRET_KEY_BASE=swordfish", "swordfish", "export RAILS_SECRET_KEY_BASE=swordfish"],
+    ["curl -d 'token=swordfish' https://example.com", "swordfish", "curl -d 'api_token=swordfish' https://example.com"],
+  ];
+
+  it.each(bareNames)("redacts the value in `%s`", (input, value, twin) => {
+    for (const command of [input, twin]) {
+      const result = redact(command);
+      expect(result.kinds, command).toContain("assigned-secret");
+      expect(result.text, command).not.toContain(value);
+    }
+  });
+
+  // The table is ordered most specific first because the specific label is the useful one,
+  // and then `assigned-secret` ran last and redacted the marker the specific pattern had
+  // just written. A variable named like a secret erased what kind of secret it held.
+  it("keeps the specific label when the variable is also named like a secret", () => {
+    // Synthetic, and it has to be key-shaped: the point is that the shape-keyed pattern wins.
+    const stripe = "export STRIPE_SECRET_KEY=sk_live_abcdefghijklmnopqrstuvwx"; // gitleaks:allow
+    expect(redact(stripe).text).toBe("export STRIPE_SECRET_KEY=[REDACTED:stripe-key]");
+    expect(redact("docker run -e API_KEY=sk-proj-abcdefghijklmnopqrstuvwx ubuntu:24.04").text).toBe(
+      "docker run -e API_KEY=[REDACTED:openai-key] ubuntu:24.04",
+    );
+  });
+
+  it("keeps the bare name, as it keeps a prefixed one", () => {
+    expect(redact("PASSWORD=hunter22 ./deploy.sh").text).toBe("PASSWORD=[REDACTED:assigned-secret] ./deploy.sh");
+  });
+
   it.each(secrets)("redacts a %s", (_label, input, kind) => {
     const result = redact(input);
     expect(result.kinds).toContain(kind);
@@ -88,7 +131,28 @@ describe("redact", () => {
     ["a full commit hash", "git show 3bb898e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6"],
     ["sk- in the middle of a word", "git checkout task-refactor-the-state-builder-module"],
     ["reading a config key named like a token", "npm config get //registry.npmjs.org/:_authToken"],
+    // A reference is not a value. Nothing secret is on the line, the classifier should see
+    // that one variable is being fed from another, and the hard rule that reads this kind
+    // says "a credential value appears literally on the command line" — which would be
+    // false, and a prompt. Matters more now that a bare name matches: `export
+    // TOKEN=$GITHUB_TOKEN` is how most CI scripts start.
+    ["a secret set from another variable", "export API_KEY=$OTHER_KEY"],
+    ["the same with braces", "export TOKEN=${GITHUB_TOKEN}"],
+    ["the same in double quotes", 'export DB_PASSWORD="$PGPASSWORD"'],
+    ["a secret set from a command", "export TOKEN=$(op read item/credential)"],
+    ["a word that only contains a keyword", "export TOKENIZER=sentencepiece"],
   ];
+
+  // The other side of that line. Single quotes make `$` literal, and a value that merely
+  // contains a reference still has a literal part.
+  const stillSecret: ReadonlyArray<readonly [string, string]> = [
+    ["a single-quoted value that starts with a dollar", "PASSWORD='$ecret-hunter2' ./deploy.sh"],
+    ["a literal with a reference after it", 'API_KEY="abcd1234$SUFFIX" ./run.sh'],
+  ];
+
+  it.each(stillSecret)("still redacts %s", (_label, input) => {
+    expect(redact(input).kinds).toContain("assigned-secret");
+  });
 
   it.each(innocuous)("leaves %s alone", (_label, input) => {
     const result = redact(input);
