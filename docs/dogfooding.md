@@ -152,6 +152,12 @@ newline `op read` ends with, which otherwise pastes into the field as a second l
 Bouncer trims the value it reads either way, so this is about the paste landing cleanly,
 not about the key working.
 
+**Whichever you choose, quit the app and reopen it.** A session reads its environment when
+it starts, so one that was already open when you saved keeps the old one. A new chat inside
+a running app is not enough — verified on a live install on 2026-09-19, where three sessions
+went on standing down with `auth` errors after the value was saved, and only a full restart
+cleared it.
+
 Then confirm the hook can see it, in a new session:
 
 ```
@@ -162,6 +168,13 @@ Then confirm the hook can see it, in a new session:
 the environment)` means it is not, and every call will take the error path — which emits
 nothing and falls through to Claude Code's normal behaviour, so a missing key is invisible
 unless you look.
+
+That line alone does not prove the hook can see the key: `/bouncer:status` runs as a Bash
+command and the hook is a separate process. To check the hook itself, run something the
+fast path does not cover — `date` will do, where `ls`, `pwd`, `git status` and the
+`npm`/`cargo`/`go` entries are all allowlisted and never reach the classifier — a few
+times, then run `/bouncer:status` again. The judged count rising, with no new `STANDING
+DOWN` line for the session you are in, is the confirmation.
 
 ## 3. Choose a mode
 
