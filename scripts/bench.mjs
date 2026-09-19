@@ -41,9 +41,18 @@
 // It comes back about 20 ms faster on a checkout measured at 65 ms, which reads as a
 // large win for whichever arm happened to be the copy. Pinning the root puts both arms
 // on the same code path, which is the only way the difference means anything.
+//
+// Each arm gets its own data directory, for the same reason and against a subtler trap.
+// The compiled policy is cached on disk under a key that includes `CACHE_VERSION`
+// (docs/adr/007), so two bundles that disagree about that number evict each other's entry
+// on every call: both arms then re-parse the whole policy every time, both read about 32 ms
+// slower, and the difference being reported is the cold parse rather than the path a user
+// pays. That is not hypothetical — it is what made `8384ad0` against `b213fe7` read +4.4 ms
+// when the same pair, each with its own cache, reads +1.1 ms. So the versions are printed
+// in the header and a mismatch says so out loud.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,14 +127,39 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Fresh per run rather than a fixed path, so two benches never share a breaker state, and
 // so the policy cache starts cold. The warm-up spawns populate that cache before any
 // sample is taken, which is what ADR-007 says the number should be measured against.
-const DATA = mkdtempSync(join(tmpdir(), "bouncer-bench-"));
-process.on("exit", () => rmSync(DATA, { recursive: true, force: true }));
+const dataFor = (() => {
+  const dirs = new Map();
+  return (bin) => {
+    let dir = dirs.get(bin);
+    if (dir === undefined) {
+      dir = mkdtempSync(join(tmpdir(), "bouncer-bench-"));
+      dirs.set(bin, dir);
+      process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+    }
+    return dir;
+  };
+})();
+
+/**
+ * The cache version a bundle was built with, read out of its text.
+ *
+ * Crude on purpose: the point is to compare two files on disk, and one of them is usually
+ * an old commit's bundle that cannot be asked. `undefined` means the bundle predates the
+ * cache or spells the constant some other way, which is itself worth printing.
+ */
+function cacheVersionOf(bin) {
+  try {
+    return /CACHE_VERSION = (\d+)/.exec(readFileSync(bin, "utf8"))?.[1];
+  } catch {
+    return undefined;
+  }
+}
 
 function once(command, bin = BIN) {
   const start = process.hrtime.bigint();
   const r = spawnSync(process.execPath, [bin, "pretooluse"], {
     input: payloadFor(command),
-    env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PLUGIN_DATA: DATA },
+    env: { ...process.env, BOUNCER_BACKEND: "mock", CLAUDE_PLUGIN_ROOT: ROOT, CLAUDE_PLUGIN_DATA: dataFor(bin) },
   });
   const end = process.hrtime.bigint();
   if (r.status !== 0) {
@@ -154,6 +188,21 @@ const line = (label, s) =>
   `[sd=${s.sd.toFixed(1)}ms iqr=${s.iqr.toFixed(1)}ms]`;
 
 if (AGAINST !== undefined) {
+  const beforeVersion = cacheVersionOf(AGAINST);
+  const afterVersion = cacheVersionOf(BIN);
+  console.log(
+    `policy cache version: before=${beforeVersion ?? "?"}  after=${afterVersion ?? "?"}  ` +
+      `(one data directory per arm, so each runs warm)`,
+  );
+  if (beforeVersion !== afterVersion) {
+    console.log(
+      `  note: the two bundles compile to different cache entries. They share no cached policy,\n` +
+        `  which is why each arm gets its own data directory. A single shared one would make\n` +
+        `  every call in both arms a cache miss and report the cold parse as the difference.`,
+    );
+  }
+  console.log("");
+
   for (const { name, command } of CASES) {
     for (let i = 0; i < WARMUP; i++) {
       once(command, AGAINST);

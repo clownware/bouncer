@@ -31,7 +31,11 @@ than ~87 ms (ADR-002). Run the bench before and after anything that touches impo
 Two things measured since: YAML parse cost tracks node count rather than file size, so a
 structured block costs about 5x what the same bytes cost as comments (ADR-004), and the
 compiled policy is cached on disk, so the bench measures the cached path unless you set
-`BOUNCER_NO_CACHE=1` (ADR-007). `node:crypto` is not free either — its first `require` in a
+`BOUNCER_NO_CACHE=1` (ADR-007). `--against` gives each arm its own `CLAUDE_PLUGIN_DATA` and
+prints each bundle's `CACHE_VERSION`, because two bundles either side of a bump evicted each
+other's cache entry and the flag then measured the cold parse and called it the diff — 32 ms
+on both arms and the wrong question, with the pairing still cancelling machine drift so it
+all looked sound (ADR-007, 2026-09-19). `node:crypto` is not free either — its first `require` in a
 CJS file costs 10 to 15 ms, which is why nothing in the hot path hashes anything.
 
 **The decision log is evidence, so only real judgments belong in it.** `bouncer status`
