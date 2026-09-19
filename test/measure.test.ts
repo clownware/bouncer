@@ -168,6 +168,88 @@ describe("tokens", () => {
     expect(m.passes[1]?.inputTokens).toBeUndefined();
     expect(formatMeasurement(m)).toContain("| — |");
   });
+
+  // The half that was never tested, because the mock always counts: a judge that reports no
+  // tokens beside a reasoning model that does. The cascade used to print the reasoning
+  // model's 1,000 as its whole cost, and then draw a conclusion from the ratio.
+  it("leaves the cascade total unknown when the judge counted nothing", async () => {
+    const uncounted = {
+      name: "uncounted",
+      async decide() {
+        return { answers: { unsupported_claim: { type: "noul" as const, noul: 0.5 } }, latencyMs: 0 };
+      },
+    };
+    const m = await measure(fixtures([true]), {
+      setName: "content", set: SET, mode: POLICY.mode, adapter: uncounted,
+      reasoning: new Scripted(true, { in: 1000, out: 100 }), timeoutMs: 1000,
+    });
+
+    expect(m.passes[0]?.inputTokens).toBeUndefined();
+    expect(m.passes[1]?.inputTokens).toBe(1000);
+    expect(m.passes[2]?.inputTokens).toBeUndefined();
+    // No ratio to state, so no sentence built on one.
+    expect(formatMeasurement(m)).not.toMatch(/input tokens than/);
+  });
+
+  // Three of ten calls counting is not a small total, it is an unknown one.
+  it("leaves a pass total unknown when only some of its calls counted", async () => {
+    let calls = 0;
+    const sometimes: ReasoningBackend = {
+      name: "sometimes",
+      async answer(request) {
+        const counted = calls++ === 0;
+        return {
+          answers: Object.fromEntries(Object.keys(request.questions).map((q) => [q, 1])),
+          ...(counted ? { inputTokens: 1000, outputTokens: 100 } : {}),
+        };
+      },
+    };
+    const m = await run([true, true], 0.5, sometimes);
+    expect(m.passes[1]?.inputTokens).toBeUndefined();
+    expect(m.passes[1]?.outputTokens).toBeUndefined();
+    expect(m.passes[2]?.inputTokens).toBeUndefined();
+  });
+
+  // No calls is a known total, and it is zero — not the same thing as nobody counting.
+  it("knows a cascade that escalated nothing spent nothing on the reasoning model", async () => {
+    const m = await run([true, true], 0.02, new Scripted(true, { in: 1000, out: 100 }));
+    expect(m.escalated).toBe(0);
+    expect(m.passes[2]?.inputTokens).toBe(m.passes[0]?.inputTokens);
+    expect(m.passes[2]?.outputTokens).toBe(0);
+  });
+});
+
+describe("the rows each pass is scored on", () => {
+  /** Fails on the first item it is asked about and answers the rest. */
+  const flaky = (): ReasoningBackend => {
+    let calls = 0;
+    return {
+      name: "flaky",
+      async answer(request) {
+        if (calls++ === 0) throw new Error("timed out");
+        return { answers: Object.fromEntries(Object.keys(request.questions).map((q) => [q, 1])) };
+      },
+    };
+  };
+
+  // ADR-005 says it of `--compare` and it is as true here: a 94-row mean against an 89-row
+  // mean is not a model difference. The judge answered all three rows and is scored on two.
+  it("scores all three passes on the rows every pass answered", async () => {
+    const m = await run([true, true, true], 0.02, flaky());
+    expect(m.rows).toBe(3);
+    expect(m.passes.map((p) => p.n)).toEqual([2, 2, 2]);
+    expect(m.passes.map((p) => p.unanswered)).toEqual([0, 1, 0]);
+  });
+
+  it("says how many rows were scored, and which pass left the rest unanswered", async () => {
+    const out = formatMeasurement(await run([true, true, true], 0.02, flaky()));
+    expect(out).toContain("Scored 2 of 3 labelled rows");
+    expect(out).toContain("Unanswered, by pass: judge 0, reasoning 1, cascade 0.");
+  });
+
+  it("says nothing about it when every pass answered every row", async () => {
+    expect(formatMeasurement(await run([true, true], 0.02, new Scripted(true)))).not.toContain("labelled rows");
+  });
 });
 
 describe("when a reasoning call fails", () => {
@@ -186,9 +268,15 @@ describe("when a reasoning call fails", () => {
     expect(m.passes[1]?.unanswered).toBe(2);
   });
 
-  it("leaves the cascade on the judge's answer for an item the reasoning pass never returned", async () => {
+  // The cascade falls back to the judge's answer on an item the reasoning pass never
+  // returned, so it has an answer there and the reasoning row does not. Scoring it anyway
+  // would give the cascade a row its baseline was never asked about; the row is set aside
+  // for all three instead, and with every call failing that is every row.
+  it("scores no pass on rows the reasoning pass never returned", async () => {
     const m = await run([true, true], 0.5, failing);
-    expect(m.passes[2]?.accuracy).toBe(m.passes[0]?.accuracy);
+    expect(m.passes.map((p) => p.n)).toEqual([0, 0, 0]);
+    expect(m.passes.map((p) => p.unanswered)).toEqual([0, 2, 0]);
+    expect(formatMeasurement(m)).toContain("Scored 0 of 2 labelled rows");
   });
 
   it("says so in the output", async () => {
@@ -220,7 +308,28 @@ describe("the printed report", () => {
     const out = formatMeasurement(await run([true, true], 0.5, new Scripted(true, { in: 1000, out: 100 })));
     // `<1%` when the judge's own tokens are all the cascade added, which is this case.
     expect(out).toMatch(/cost (<1|\d+)% MORE input tokens/);
-    expect(out).toContain("not worth running");
+    expect(out).toContain("100% escalation");
+  });
+
+  // It used to say so, and "not worth running" is a claim about money made from a ratio of
+  // tokens that two different models bill at two different prices. docs/adr/009 says this
+  // command reports tokens and does not price them, so the sentence stops where the ADR does.
+  it("reports the token ratio without concluding anything about cost from it", async () => {
+    const out = formatMeasurement(await run([true, true], 0.5, new Scripted(true, { in: 1000, out: 100 })));
+    expect(out).not.toContain("not worth running");
+    expect(out).toContain("Tokens are not cost");
+  });
+
+  // One shared reasoning pass, so the escalated items reach the reasoning model with the
+  // judge's signals attached. The row is called `reasoning`; this is what says which kind.
+  it("says the reasoning row is a signal-assisted baseline when anything escalated", async () => {
+    const out = formatMeasurement(await run([true, true], 0.5, new Scripted(true)));
+    expect(out).toContain("shown the judge's signals on the 2 escalated items");
+    expect(out).toContain("signal-assisted baseline");
+  });
+
+  it("does not say so when nothing escalated, because then nothing was assisted", async () => {
+    expect(formatMeasurement(await run([true, true], 0.02, new Scripted(true)))).not.toContain("signal-assisted");
   });
 
   it("prints the escalation ratio with its denominator", async () => {
