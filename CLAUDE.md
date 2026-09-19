@@ -59,6 +59,18 @@ hundreds of mock verdicts over one hardcoded payload in a real `~/.bouncer/decis
 which `status` then reported as a 100% ask rate. `status` sets mock-backend lines aside for
 the same reason, unless the policy names `mock` itself.
 
+**Anything that reads the decision log resolves it through `dataDir()`.** Claude Code
+exports `${CLAUDE_PLUGIN_DATA}` to hook processes and to MCP and LSP subprocesses, and
+documents that it is absent from commands run through the Bash tool — which is what a slash
+command is. So the hook wrote `~/.claude/plugins/data/bouncer-bouncer/decisions.jsonl` while
+`status`, `explain`, `calibrate --from` and the policy cache read `~/.bouncer`, and `status`
+reported "No decisions logged yet" over a thousand real decisions with nothing erroring
+(PR #69, shipped in 0.2.1). The general rule is the one to carry: never assume a plugin
+environment variable reaches anything but a hook, and never hardcode `~/.bouncer` — it is
+the fallback, not the location. A unit test on the resolver cannot see this, which is why
+`test/datadir.test.ts` runs the built bundle twice, once with a hook's environment and once
+with a bare one, and asserts they meet on one file.
+
 **No thresholds in code.** Questions are plain English and thresholds are numbers, both
 living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the
 number belongs in `policy/default.yaml` instead.
@@ -186,6 +198,32 @@ recorded reality; the docs are a description of it.
 ## Conventions
 
 - Conventional commits. Branch per thread. PRs only, no `--no-verify`.
+- **Merged is not landed until the commit is an ancestor of `main`.** A PR based on another
+  PR's branch rather than on `main` can merge, report `merged: true` with `merged_by` and
+  `merged_at` set, and put its commit on a branch that has already been merged and never
+  will be again. GitHub retargets an open stacked PR to the grandparent base only when the
+  base branch is **deleted** on merge, and this repository does not delete branches, so the
+  base stays alive and leads nowhere. Nothing warns you; the only tell is `base.ref`. PR #64
+  went this way on 2026-09-19 and was re-landed as #68. So: prefer not to stack, say so in
+  the body when you do and retarget to `main` yourself once the parent merges, and after any
+  PR of yours reports merged run
+  `git fetch origin main && git merge-base --is-ancestor <head-sha> origin/main` before
+  saying it shipped.
+- **Before asking for a merge, merge `origin/main` into the branch and re-run the suite** —
+  not only when GitHub reports a conflict. The repository does not require a branch to be up
+  to date before merging and CI runs per-PR rather than on a merge queue, so two PRs green on
+  their own branches can leave `main` red. #19 and #20 did exactly that on 2026-09-18, fixed
+  by #22. The collision point is any test that pins a *global* fact — a compiled shape, a
+  fixture count, a firing list, an ADR number — because the textual merge succeeds while the
+  assertion becomes false, and `mergeable_state: "clean"` says nothing about it. When a
+  shape-pinning test fails on a field someone else added, the version bump is the fix and the
+  guard is working; do not relax the pin. Concurrent PRs also conflict in `bin/bouncer.cjs`,
+  which is the same remedy: merge `main`, rebuild, commit.
+- **Two repository settings would close both of those classes** and are the owner's to set
+  (issue #74): "Automatically delete head branches" ends the orphaned-stack case outright,
+  and branch protection requiring branches to be up to date before merging ends the red-`main`
+  case, at the cost of a re-run per merge. Neither is on today, so the two rules above are
+  what stands in for them.
 - A policy file names its sets under `policies:`; a top-level `gate:` is a permanent alias
   and not a deprecated spelling, so never add a warning to it (ADR-009). `policy/default.yaml`
   deliberately stays on the alias: it is the file every user copies.
