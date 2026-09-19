@@ -180,7 +180,9 @@ calibration table.
 ### Where it is
 
 `decisions.jsonl`, inside `$CLAUDE_PLUGIN_DATA` — the directory Claude Code gives a plugin
-for data that survives updates, which resolves to `~/.claude/plugins/data/bouncer/`. Run
+for data that survives updates, which resolves to `~/.claude/plugins/data/bouncer-bouncer/`:
+the plugin's name, then the marketplace's, and this repository is both. Installed from a
+marketplace with another name, the second half is that name. Run
 from a checkout instead of as an installed plugin, with nothing setting that variable, it
 falls back to `~/.bouncer`.
 
@@ -189,7 +191,7 @@ Do not guess between them: `/bouncer:status` prints the resolved path on the `Lo
 Set `LOG` to whatever that line said, so the queries below can use it:
 
 ```bash
-LOG=~/.claude/plugins/data/bouncer/decisions.jsonl
+LOG=~/.claude/plugins/data/bouncer-bouncer/decisions.jsonl
 ```
 
 If that path is empty but the plugin is clearly running, check the other one. The two
