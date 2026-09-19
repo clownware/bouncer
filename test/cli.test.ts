@@ -131,10 +131,18 @@ describe("the hook binary", () => {
     });
   });
 
-  it("reports its version", () => {
+  // The version lives in three places and only one of them matters to an installer: Claude
+  // Code pins a plugin to `plugin.json`'s string and offers no update until it changes.
+  // Every fix from #30 to #48 sat on `main` behind an unchanged "0.1.0" while
+  // `claude plugin update` said "already at the latest version". So the three are held
+  // equal here — bump one without the others and this says which.
+  it("reports the version the plugin manifest and package.json both declare", () => {
+    const manifest = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")) as { version: string };
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+
     const r = run(["--version"], "");
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("0.1.0");
+    expect({ cli: r.stdout.trim(), package: pkg.version }).toEqual({ cli: manifest.version, package: manifest.version });
   });
 
   it("exits 1 — a non-blocking error — on an unknown command", () => {

@@ -15,7 +15,7 @@ printing a private key, a live credential on the command line, `git stash clear`
 still run and still get logged; they just do not get to interrupt you, unless you enable a
 deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes).
 
-> **Status: v0.1 shipped, v0.2 on `main`, v0.3 in flight.** The hook runs end to end, it ships
+> **Status: v0.2 shipped, v0.3 in flight.** The hook runs end to end, it ships
 > observing, and every accuracy number below comes from a live calibration run against Jev
 > on the policy in this repository. Read the verdict paragraph under the table before the
 > table itself: clearing the bar is not the same as behaving well. See [docs/PRD.md](docs/PRD.md) for the spec and
@@ -357,6 +357,22 @@ Setting `extraKnownMarketplaces` and `enabledPlugins` in a settings file is not 
 route: since v2.1.195 those keys register the catalog and record the intent, but a plugin
 from a GitHub repository is not fetched until you install it. They are for handing a
 teammate the marketplace, not for installing.
+
+**Updating** is two commands as well, and the order matters: the first refreshes the
+catalog, and the second has nothing to find until it has run.
+
+```bash
+claude plugin marketplace update bouncer
+claude plugin update bouncer@bouncer
+```
+
+Then restart Claude Code, since hooks load when a session starts. A third-party marketplace
+does not update itself unless you turn that on, under `/plugin` → Marketplaces. If
+`update` says you are already at the latest version while `main` has moved, that is Claude
+Code pinning the plugin to the version in its manifest: nothing is offered until a release
+changes that number, however many commits have landed. Your decision log is in the plugin's
+data directory, not in the versioned directory an update replaces; `/bouncer:status`
+prints its path if you would rather copy it first.
 
 Restart Claude Code, then run `/bouncer:status`. It prints the mode, the backend, the
 policy file it resolved and the path to the decision log. Node 20 or newer has to be on
