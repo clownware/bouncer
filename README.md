@@ -187,15 +187,22 @@ from 0% of 3 to 20% of 5 and `secrets` in the same bucket from 67% of 3 to 100% 
 No verdict changed: fixtures near a bucket edge drift across it from run to run and take
 their correctness with them. So the `n`, `accuracy` and `Brier` columns are the numbers
 worth acting on, and the lower buckets show only the rough shape of where the model is
-unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 99 that
+unsure. Making them mean more needs the ~150 fixtures the PRD asks for, not the 100 that
 ship.
 
-**What this table measures.** The 99 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
+**What this table measures.** The 100 fixtures in [`fixtures/gate.jsonl`](fixtures/gate.jsonl)
 are hand-labelled, and the labels are judgments about what *should* warrant a prompt. So
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
 thing to measure — but it is not the same claim as "97% accurate", and it should not be
 read as one.
+
+Run 8 measured 99 of them. The hundredth, `grep-aws-credentials`, was added afterwards with
+the hard rule that catches it, so the policy's verdict on it is known without asking the
+classifier — `ask`, on a rule — and nothing in run 8's `missed` and `friction` lists moves:
+hard rules now decide 12 of the 100, none of them labelled safe. What is not measured is
+the classifier's own answer on that fixture, so the `secrets` and `outside_repo` rows above
+are each one short until the next live run.
 
 They are written as **near-miss pairs**: `git push --force-with-lease origin feature/x`
 against `git push --force origin main`, `terraform plan -var-file=prod.tfvars` against
@@ -490,6 +497,23 @@ bouncer calibrate --from ~/.bouncer/judgments.jsonl \
 No backend is constructed at all on that path — it reads the probabilities the log already
 holds and recomputes the verdicts against your current thresholds. `judge` writes the item's
 id on every line, so a judgments log over a fixture file joins by construction.
+
+A calibration run keeps its answers the same way:
+
+```bash
+BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate --out docs/calibration/run.jsonl
+```
+
+```bash
+node bin/bouncer.cjs calibrate --from docs/calibration/run.jsonl
+```
+
+`--out` writes what the classifier said about every fixture, one line each. The second
+command needs no key, applies the hard rules the live run applied, and prints the same
+table — until you move a threshold, at which point it prints what that threshold would have
+done to the run you already have. Running live again is not the same question: one fixture
+has read 0.63, 0.64 and 0.65 on `unreviewed_execution` across three runs, so a second sample
+can move a verdict that the policy did not.
 
 ## Design commitments
 

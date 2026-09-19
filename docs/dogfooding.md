@@ -219,6 +219,21 @@ jq -r 'select(.backend == "mock") | .ts' "$LOG" | wc -l   # how many are being i
 
 `npm run bench` writes to a scratch directory of its own and never to this file.
 
+One exception, for a log older than that fix. Until #30 the bench did write here, and the
+same build recorded `backend` as the policy's rather than the adapter's — so those lines
+say `jev`, and the filter above cannot see them. They are recognisable by their session:
+
+```bash
+jq -r 'select(.session_id == "bench") | .ts' "$LOG" | wc -l
+```
+
+If that prints anything but 0, `/bouncer:status` is counting benchmark traffic as yours.
+Move the file aside rather than editing it; bouncer starts a new one on the next call.
+
+```bash
+mv "$LOG" "${LOG%.jsonl}.pre-30.jsonl"
+```
+
 ### How it rotates
 
 At 8 MB the file is renamed to `decisions.jsonl.1`, replacing the previous generation, and

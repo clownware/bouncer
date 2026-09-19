@@ -4,8 +4,14 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|local|mock] [--compare a,b] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|local|mock] [--compare a,b] [--out run.jsonl] [--json]
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
+//
+// `--out` writes what the classifier said about each fixture, one line per fixture, in the
+// shape `--from` reads. The answers are the only part of a run that costs a live call, and a
+// published table that keeps them can be re-scored under a moved threshold by anyone, with
+// no key. A second live run is not a substitute: the same fixture has read 0.63, 0.64 and
+// 0.65 across runs 6 to 8, which is the width of the window being argued about.
 //
 // `--from` scores a log's recorded answers instead of asking a backend, so re-scoring a run
 // you have already paid for — after a relabelling, or after moving a threshold — costs
@@ -21,7 +27,7 @@
 // two code paths that happen to agree.
 
 import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
@@ -33,12 +39,15 @@ import {
   loadFixtures,
   report,
   score,
+  scoreAnswered,
   scoreFromLog,
+  type Answered,
   type Fixture,
   type Scored,
 } from "../calibrate.js";
-import type { Policy } from "../engine/types.js";
+import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import type { DecisionRecord } from "../io/log.js";
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
@@ -49,6 +58,8 @@ export interface CalibrateArgs {
   readonly backend?: string;
   /** One or two backend names. One means "against the backend already selected". */
   readonly compare?: string;
+  /** Where to write the run's raw answers, for `--from` to read back. */
+  readonly out?: string;
   readonly json?: boolean;
 }
 
@@ -63,6 +74,7 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     ...(value("from") !== undefined ? { from: value("from") as string } : {}),
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
     ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
+    ...(value("out") !== undefined ? { out: value("out") as string } : {}),
     json: argv.includes("--json"),
   };
 }
@@ -93,6 +105,13 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   const primary = args.backend ?? resolved.policy.backend;
   const names = backendsFor(primary, args.compare);
 
+  if (args.out !== undefined && names.length > 1) {
+    // One file, one run. Two backends in it would match every fixture twice on the way back
+    // in, and `--from` would score the pair as if it were one classifier.
+    write("--out records one run; drop --compare, or run each backend with its own --out.\n");
+    return 1;
+  }
+
   const adapters: Adapter[] = [];
   for (const name of names) {
     const adapter = adapterFor(name);
@@ -115,11 +134,12 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   }
 
   const runs: Array<{ backend: string; scored: Scored[] }> = [];
+  const answered: Answered[] = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i] as string;
     let scored: Scored[];
     try {
-      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
     } catch (err) {
       // A set name that is not in the policy is a typo, not a crash. Say which names exist.
       write(`${err instanceof Error ? err.message : String(err)}\n`);
@@ -132,6 +152,15 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   if (first === undefined) {
     write("No backend to run.\n");
     return 1;
+  }
+
+  if (args.out !== undefined) {
+    try {
+      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, first.backend);
+    } catch (err) {
+      write(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
   }
 
   if (args.json === true) {
@@ -160,7 +189,56 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     write(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
   }
 
+  if (args.out !== undefined) {
+    write(`\nAnswers written to ${args.out}. Re-score them without a key: bouncer calibrate --from ${args.out}\n`);
+  }
+
   return 0;
+}
+
+/**
+ * The run's raw answers, one line per fixture, in the log's own line shape.
+ *
+ * Same shape as a judgments line for the reason `bouncer judge` gives: `--from` already
+ * reads it, so a new schema would have needed a new reader. `item` is the fixture id, which
+ * is what `--from` joins on.
+ *
+ * No `state`. The fixture file is committed beside whatever this writes and the state is
+ * built from it, so repeating it here would only be a second copy that can drift. The file
+ * is replaced rather than appended to: it is one run, and a rerun appended to the last
+ * would match every fixture twice.
+ *
+ * A fixture a hard rule decides still carries its answers — the classifier was asked, and
+ * the accuracy columns are computed from what it said — with `source` naming what decided
+ * the verdict.
+ */
+function writeAnswers(path: string, answered: readonly Answered[], policy: Policy, setName: string, backend: string): void {
+  const set = policy.sets[setName];
+  if (set === undefined) return;
+
+  const ts = new Date().toISOString();
+  const lines = answered.map((a): DecisionRecord => {
+    const { verdict, reason } = scoreAnswered(a, policy, set, setName);
+    return {
+      ts,
+      consumer: "judge",
+      set: setName,
+      item: a.fixture.id,
+      state_kind: a.fixture.kind,
+      mode: policy.mode,
+      backend,
+      verdict,
+      emitted: null,
+      reason,
+      source: reason.kind === "hard-rule" ? "hard_rule" : "judge",
+      answers: a.answers,
+      ...(Object.keys(a.probes).length > 0 ? { probes: a.probes } : {}),
+      latency_ms: { total: a.latencyMs, adapter: a.latencyMs },
+    };
+  });
+
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`, "utf8");
 }
 
 /**
@@ -235,6 +313,7 @@ async function run(
   label: string,
   total: number,
   args: CalibrateArgs,
+  answered: Answered[],
 ): Promise<Scored[]> {
   // Progress matters here: a live run is one network call per fixture and takes minutes.
   // It goes to stderr so `--json` output stays pipeable.
@@ -243,7 +322,8 @@ async function run(
     fixtures,
     policy,
     adapter,
-    (done, n) => {
+    (done, n, a) => {
+      answered.push(a);
       if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
     },
     args.set,
