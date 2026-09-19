@@ -155,8 +155,17 @@ export function pluginRoot(): string | undefined {
  *
  * Deliberately not resolving `op://` references here, though the PRD allowed it: `op read`
  * spawns a subprocess and can raise a biometric prompt, and doing that inside a
- * PreToolUse hook means Touch ID appearing in the middle of an agent run. If 1Password
- * support returns, it belongs in a SessionStart hook that resolves once per session.
+ * PreToolUse hook means Touch ID appearing in the middle of an agent run.
+ *
+ * This note used to say that if 1Password support returned it belonged in a SessionStart
+ * hook resolving once per session. That is not available, checked 2026-09-19.
+ * `CLAUDE_ENV_FILE` is the only documented way a hook exports anything to the session, and
+ * it is scoped to the Bash tool: the docs define it as a script Claude Code runs "before
+ * each Bash command in the same shell process". A PreToolUse hook is not a Bash command and
+ * never sources it (anthropics/claude-code#60697 asks for it to reach beyond bash). A
+ * plugin's SessionStart hook is handed the variable empty in any case (#11649). So the key
+ * reaches this function from the environment Claude Code itself was started with, and
+ * nowhere else; `docs/dogfooding.md` lists the three places that environment can come from.
  */
 export function apiKey(): string | undefined {
   for (const name of ["BOUNCER_TYPESAFE_API_KEY", "TYPESAFE_API_KEY"]) {
