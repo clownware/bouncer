@@ -10,18 +10,36 @@ marketplace. Nothing here needs a checkout of this repository except the last se
 ## 1. Install the plugin
 
 Bouncer ships as a single-plugin marketplace, so the repository is both the marketplace
-and the plugin. Two commands, inside Claude Code:
+and the plugin. `bouncer@bouncer` is `<plugin>@<marketplace>`, and both are called
+`bouncer` here.
+
+**The settings file is the route that works everywhere**, terminal and desktop app alike,
+and it is two keys. Open `~/.claude/settings.json` in whatever editor you like and add
+them:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
+  },
+  "enabledPlugins": { "bouncer@bouncer": true }
+}
+```
+
+Those are keys to **merge into** the file, not a file to replace it with. If you already
+have marketplaces and plugins configured, keep them — add `bouncer` alongside, and leave
+every other entry in both objects where it is. Claude Code installs what `enabledPlugins`
+declares when a session starts.
+
+**Or, if you are already at a Claude Code prompt**, the same thing as two commands. These
+go to Claude, not to your shell:
 
 ```
 /plugin marketplace add clownware/bouncer
 /plugin install bouncer@bouncer
 ```
 
-The first fetches the repository and reads `.claude-plugin/marketplace.json`; the second
-installs the plugin it lists. `bouncer@bouncer` is `<plugin>@<marketplace>`, and both are
-called `bouncer` here.
-
-Restart Claude Code, then check it took:
+Either way, restart Claude Code and check it took:
 
 ```
 /bouncer:status
@@ -41,33 +59,20 @@ terminal does: the same `settings.json`, the same installed plugins and marketpl
 the same hooks. So if you have already installed it anywhere, it is there in the Code tab
 too — nothing to install twice.
 
-Slash commands are not the same thing there. `/plugin` opens a plugin browser rather than
-taking `marketplace add` as an argument, and that browser installs from marketplaces that
-are already configured rather than adding new ones. Neither of those means you need a
-terminal window, though — there are two ways to do it without leaving the app.
+If you have not installed it yet, the settings-file route above is the one to use, and it
+needs no terminal. There is a plugin browser — the **+** beside the prompt box, then
+**Plugins**, then **Add plugin** — but it installs from marketplaces that are already
+configured, and nothing documents a way to register a new one from it. So the two settings
+keys are not a workaround for the UI; they are how the marketplace gets registered at all.
+**Manage plugins**, in that same menu, is where you enable, disable and uninstall
+afterwards.
 
-**The settings file, with no `/plugin` command anywhere.** Registering the marketplace and
-enabling the plugin are both settings keys, so one edit to `~/.claude/settings.json` is the
-whole install:
+If you would rather type the commands, the Code tab has its own terminal — the **Views**
+menu, or `Ctrl` + `` ` `` — which opens in the session's working directory. It is in local
+sessions only, not cloud or WSL.
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "bouncer": { "source": { "source": "github", "repo": "clownware/bouncer" } }
-  },
-  "enabledPlugins": { "bouncer@bouncer": true }
-}
-```
-
-Merge those keys into whatever the file already holds rather than replacing it. Restart
-Claude Code afterwards.
-
-**Or the Code tab's own terminal**, from the **Views** menu or `Ctrl` + `` ` ``, which opens
-in the session's working directory. Run `claude` there and the two commands above work
-exactly as they do anywhere else. It is only in local sessions, not cloud or WSL.
-
-The one thing that genuinely differs is the key, and it differs silently. See the next
-section.
+The one thing that genuinely differs in the desktop app is the key, and it differs
+silently. See the next section.
 
 The **Chat** tab is a different product and cannot run any of this: it extends through MCP
 servers and connectors, not through Claude Code hooks. Bouncer gates tool calls in Claude
@@ -83,10 +88,10 @@ A hook is a child process of Claude Code, so it gets Claude Code's environment. 
 put the key depends on how you start Claude Code, and the two cases do not have the same
 answer.
 
-**In the terminal**, a shell profile export works and keeps the key out of any file:
+**In the terminal**, a shell profile export works and keeps the key out of any file. Add
+this line to `~/.zshrc` — as a line in that file, not as something to run:
 
 ```bash
-# ~/.zshrc
 export BOUNCER_TYPESAFE_API_KEY="$(security find-generic-password -s typesafe-api-key -w)"
 ```
 
@@ -165,8 +170,10 @@ falls back to `~/.bouncer`.
 
 Do not guess between them: `/bouncer:status` prints the resolved path on the `Log:` line.
 
+Set `LOG` to whatever that line said, so the queries below can use it:
+
 ```bash
-LOG=~/.claude/plugins/data/bouncer/decisions.jsonl   # or whatever `Log:` said
+LOG=~/.claude/plugins/data/bouncer/decisions.jsonl
 ```
 
 If that path is empty but the plugin is clearly running, check the other one. The two
@@ -209,9 +216,12 @@ means Bouncer stopped calling out and is emitting nothing — safe, and worth kn
 
 ### One decision
 
+`/bouncer:explain` on its own explains the most recent judged call; with an argument it
+explains that one:
+
 ```
-/bouncer:explain                 # the most recent judged call
-/bouncer:explain <tool_use_id>   # a specific one
+/bouncer:explain
+/bouncer:explain <tool_use_id>
 ```
 
 It prints the probability every question returned, names the rule that matched, and — for
