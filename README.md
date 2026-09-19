@@ -15,7 +15,7 @@ printing a private key, a live credential on the command line, `git stash clear`
 still run and still get logged; they just do not get to interrupt you, unless you enable a
 deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes).
 
-> **Status: v0.1, with the v0.2 work on `main`.** The hook runs end to end, it ships
+> **Status: v0.1 shipped, v0.2 on `main`, v0.3 in flight.** The hook runs end to end, it ships
 > observing, and every accuracy number below comes from a live calibration run against Jev
 > on the policy in this repository. Read the verdict paragraph under the table before the
 > table itself: clearing the bar is not the same as behaving well. See [docs/PRD.md](docs/PRD.md) for the spec and
@@ -334,6 +334,142 @@ above — `seatbelt` if you run `--dangerously-skip-permissions`.
 
 Then watch it: [docs/dogfooding.md](docs/dogfooding.md) covers where the log lives, how it
 rotates, and the queries worth having.
+
+## Batch judging: `bouncer judge`
+
+The gate is the demo. This is where the bill goes down.
+
+`bouncer judge` runs a policy set over a batch of items — a JSONL file, a JSON array, or a
+directory of documents — and writes two things: a judgments log in the same line shape the
+hook writes, and an **escalation manifest**: the items the judge could not settle, each
+with the thresholds it crossed, the probability it crossed them at, and the questions'
+own words.
+
+```
+bouncer judge ./drafts --set content --backend jev
+```
+
+```
+Set: content   Backend: jev
+
+  judged     240
+  allow      211
+  ask         29
+
+  escalated  29 / 240  (12.1%)
+  tokens in  214,800 total, 895 per item
+  wall clock 74.3s
+```
+
+That manifest is the input to a reasoning model. The pattern is the one TypeSafe's own
+extraction-cascade cookbook builds: the fast model judges everything, the expensive model
+sees only what the fast one flagged, and the gate is max-style — any single question
+crossing a threshold escalates, rather than an average of signals.
+
+**`judge` sends the items you point it at.** This is the one place Bouncer's behaviour
+differs from the hook's, and it is deliberate: the gate turns a file's contents into a byte
+count because the bytes are not what it is judging, and here the document *is* the thing
+being judged. Every string still goes through the same redactor, so a credential pasted
+into a draft does not leave with it, and the [local adapter](#jev-versus-a-local-model) is
+the answer for a batch that cannot leave the machine at all. See
+[ADR-009](docs/adr/009-the-batch-judge.md).
+
+`policy/judge-example.yaml` is a worked set — reviewing written drafts — with
+`fixtures/judge-example.jsonl` as fourteen labelled near-miss pairs to calibrate it against.
+
+### Measuring what the substitution bought: `bouncer measure`
+
+The claim underneath all of this is that a judgment model can do the work a reasoning model
+was doing, for a fraction of the tokens, at a quality you can live with. That is measurable,
+and asserting it instead would be the thing this project keeps telling you not to do.
+
+`bouncer measure` runs one labelled batch three ways and prints them side by side:
+
+| pass | what runs |
+|---|---|
+| `judge` | the policy set over every item — how good the fast model is alone |
+| `reasoning` | your reasoning model over every item — the ceiling, and the bill |
+| `cascade` | judge everything, re-ask only the escalation manifest — **the actual claim** |
+
+The third row is the one that matters. "The judgment model is 0.89 and the reasoning model
+is 0.94" is not something anyone can act on; "judge everything, re-adjudicate the 12% it
+flagged, land at 0.93 for a seventh of the tokens" is. A cascade's accuracy is not the
+judge's and its bill is not either, so both get measured rather than inferred.
+
+The reasoning pass is **a command you supply**, not an API client Bouncer ships. It reads
+one JSON object on stdin and writes one on stdout:
+
+```
+stdin   { "item": "draft-42",
+          "state": "{\"title\":\"...\",\"text\":\"...\"}",
+          "questions": { "unsupported_claim": { "type": "noul", "instructions": "..." } },
+          "signals":   [ { "question": "unsupported_claim", "p": 0.52,
+                           "criterion": "0.40..0.60", "asks": "..." } ] }
+
+stdout  { "answers": { "unsupported_claim": true },
+          "input_tokens": 1840, "output_tokens": 210 }
+```
+
+`signals` is present only for an item the judge escalated, and it is what makes the second
+pass a re-adjudication rather than a fresh classification: the expensive model is told
+exactly what the cheap one was unsure about, in your own English, because the wording comes
+out of your policy file.
+
+Keeping this a command rather than a client means zero runtime dependencies survives,
+Bouncer never sees a second credential, and the claim stays about a *class* of model rather
+than one vendor's SDK.
+
+#### A recipe you can run
+
+The stand-in model in `test/fixtures/reasoning/oracle.mjs` answers from a lookup table in
+`$ORACLE_ANSWERS` and says `false` to anything not in it, so the whole path runs with no key
+at all — and with an empty table every row scores the same, which is the plumbing working
+rather than a result:
+
+```
+BOUNCER_POLICY=policy/judge-example.yaml \
+bouncer measure fixtures/judge-example.jsonl \
+  --set content --backend mock \
+  --reasoning "node test/fixtures/reasoning/oracle.mjs"
+```
+
+For a real run, point `--reasoning` at whatever CLI you already have. With Claude Code:
+
+```
+export BOUNCER_REASONING_CMD='claude -p --output-format json "$(cat)
+Reply with only {\"answers\":{\"<name>\":true|false}}, one entry per question above." \
+  | jq -c "{answers: (.result | sub(\"^[^{]*\";\"\") | sub(\"[^}]*$\";\"\") | fromjson | .answers),
+            input_tokens: (.usage | .input_tokens + .cache_creation_input_tokens + .cache_read_input_tokens),
+            output_tokens: .usage.output_tokens}"'
+
+bouncer measure my-batch.jsonl --set content --backend jev
+```
+
+Two things in that `jq` filter are load-bearing rather than decoration. The two `sub`s throw
+away everything outside the outermost braces, because a model that wraps its answer in a
+```` ```json ```` fence is the normal case and not an error. And the input count is
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`, because Claude Code
+reports cached input separately: on a warm session `usage.input_tokens` alone can read `2`
+against a real 48,644, which would make the `reasoning` row's bill look like nothing and the
+cascade look like it saved nothing. Whatever CLI you point at, check that its token fields
+mean what the column says before believing a row.
+
+Tokens are reported; money is not. A price per million is a number that goes stale, and
+putting one in the code would be the same mistake as putting a threshold there.
+
+### Re-scoring a run you already paid for
+
+A live run costs one call per item. Once you have paid for it, changing a label or moving a
+threshold should cost nothing:
+
+```
+bouncer calibrate --from ~/.bouncer/judgments.jsonl \
+  --fixtures fixtures/judge-example.jsonl --set content
+```
+
+No backend is constructed at all on that path — it reads the probabilities the log already
+holds and recomputes the verdicts against your current thresholds. `judge` writes the item's
+id on every line, so a judgments log over a fixture file joins by construction.
 
 ## Design commitments
 

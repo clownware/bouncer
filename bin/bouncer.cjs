@@ -3700,22 +3700,22 @@ var require_errors = __commonJS({
   "node_modules/yaml/dist/errors.js"(exports2) {
     "use strict";
     var YAMLError = class extends Error {
-      constructor(name, pos, code, message) {
+      constructor(name, pos, code, message2) {
         super();
         this.name = name;
         this.code = code;
-        this.message = message;
+        this.message = message2;
         this.pos = pos;
       }
     };
     var YAMLParseError = class extends YAMLError {
-      constructor(pos, code, message) {
-        super("YAMLParseError", pos, code, message);
+      constructor(pos, code, message2) {
+        super("YAMLParseError", pos, code, message2);
       }
     };
     var YAMLWarning = class extends YAMLError {
-      constructor(pos, code, message) {
-        super("YAMLWarning", pos, code, message);
+      constructor(pos, code, message2) {
+        super("YAMLWarning", pos, code, message2);
       }
     };
     var prettifyError = (src, lc) => (error) => {
@@ -3989,10 +3989,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -4006,7 +4006,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep2) {
+          if (!keyProps.anchor && !keyProps.tag && !sep3) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -4030,7 +4030,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep3 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -4046,7 +4046,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep3, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -4137,7 +4137,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep2 = "";
+        let sep3 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -4151,13 +4151,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep2 + cb;
-              sep2 = "";
+                comment += sep3 + cb;
+              sep3 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep2 += source;
+                sep3 += source;
               hasSpace = true;
               break;
             default:
@@ -4200,18 +4200,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep: sep3, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep3?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep2 && !value) {
+          if (!props.anchor && !props.tag && !sep3 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -4265,8 +4265,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep2 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
+        if (!isMap && !sep3 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep3, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -4278,7 +4278,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep3 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -4289,8 +4289,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep2)
-                for (const st of sep2) {
+              if (sep3)
+                for (const st of sep3) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -4307,7 +4307,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep3, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4395,8 +4395,8 @@ var require_compose_collection = __commonJS({
         const { anchor, newlineAfterProp: nl } = props;
         const lastProp = anchor && tagToken ? anchor.offset > tagToken.offset ? anchor : tagToken : anchor ?? tagToken;
         if (lastProp && (!nl || nl.offset < lastProp.offset)) {
-          const message = "Missing newline after block sequence props";
-          onError(lastProp, "MISSING_CHAR", message);
+          const message2 = "Missing newline after block sequence props";
+          onError(lastProp, "MISSING_CHAR", message2);
         }
       }
       const expType = token.type === "block-map" ? "map" : token.type === "block-seq" ? "seq" : token.start.source === "{" ? "map" : "seq";
@@ -4468,15 +4468,15 @@ var require_resolve_block_scalar = __commonJS({
             trimIndent = indent.length;
         } else {
           if (indent.length < trimIndent) {
-            const message = "Block scalars with more-indented leading empty lines must use an explicit indentation indicator";
-            onError(offset + indent.length, "MISSING_CHAR", message);
+            const message2 = "Block scalars with more-indented leading empty lines must use an explicit indentation indicator";
+            onError(offset + indent.length, "MISSING_CHAR", message2);
           }
           if (header.indent === 0)
             trimIndent = indent.length;
           contentStart = i;
           if (trimIndent === 0 && !ctx.atRoot) {
-            const message = "Block scalar values in collections must be indented";
-            onError(offset, "BAD_INDENT", message);
+            const message2 = "Block scalar values in collections must be indented";
+            onError(offset, "BAD_INDENT", message2);
           }
           break;
         }
@@ -4487,7 +4487,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep2 = "";
+      let sep3 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -4499,29 +4499,29 @@ var require_resolve_block_scalar = __commonJS({
           content = content.slice(0, -1);
         if (content && indent.length < trimIndent) {
           const src = header.indent ? "explicit indentation indicator" : "first line";
-          const message = `Block scalar lines must not be less indented than their ${src}`;
-          onError(offset - content.length - (crlf ? 2 : 1), "BAD_INDENT", message);
+          const message2 = `Block scalar lines must not be less indented than their ${src}`;
+          onError(offset - content.length - (crlf ? 2 : 1), "BAD_INDENT", message2);
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep2 === " ")
-            sep2 = "\n";
-          else if (!prevMoreIndented && sep2 === "\n")
-            sep2 = "\n\n";
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          if (sep3 === " ")
+            sep3 = "\n";
+          else if (!prevMoreIndented && sep3 === "\n")
+            sep3 = "\n\n";
+          value += sep3 + indent.slice(trimIndent) + content;
+          sep3 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep2 === "\n")
+          if (sep3 === "\n")
             value += "\n";
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          value += sep2 + content;
-          sep2 = " ";
+          value += sep3 + content;
+          sep3 = " ";
           prevMoreIndented = false;
         }
       }
@@ -4578,8 +4578,8 @@ var require_resolve_block_scalar = __commonJS({
             break;
           case "comment":
             if (strict && !hasSpace) {
-              const message = "Comments must be separated from other tokens by white space characters";
-              onError(token, "MISSING_CHAR", message);
+              const message2 = "Comments must be separated from other tokens by white space characters";
+              onError(token, "MISSING_CHAR", message2);
             }
             length += token.source.length;
             comment = token.source.substring(1);
@@ -4590,8 +4590,8 @@ var require_resolve_block_scalar = __commonJS({
             break;
           /* istanbul ignore next should not happen */
           default: {
-            const message = `Unexpected token in block scalar header: ${token.type}`;
-            onError(token, "UNEXPECTED_TOKEN", message);
+            const message2 = `Unexpected token in block scalar header: ${token.type}`;
+            onError(token, "UNEXPECTED_TOKEN", message2);
             const ts = token.source;
             if (ts && typeof ts === "string")
               length += ts.length;
@@ -4704,25 +4704,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep2 = " ";
+      let sep3 = " ";
       let pos = line.lastIndex;
       while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep2 === "\n")
-            res += sep2;
+          if (sep3 === "\n")
+            res += sep3;
           else
-            sep2 = "\n";
+            sep3 = "\n";
         } else {
-          res += sep2 + lm;
-          sep2 = " ";
+          res += sep3 + lm;
+          sep3 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep2 + (match?.[1] ?? "");
+      return res + sep3 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -4984,13 +4984,13 @@ var require_compose_node = __commonJS({
             if (anchor)
               node.anchor = anchor.source.substring(1);
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            onError(token, "RESOURCE_EXHAUSTION", message);
+            const message2 = error instanceof Error ? error.message : String(error);
+            onError(token, "RESOURCE_EXHAUSTION", message2);
           }
           break;
         default: {
-          const message = token.type === "error" ? token.message : `Unsupported token (type: ${token.type})`;
-          onError(token, "UNEXPECTED_TOKEN", message);
+          const message2 = token.type === "error" ? token.message : `Unsupported token (type: ${token.type})`;
+          onError(token, "UNEXPECTED_TOKEN", message2);
           isSrcToken = false;
         }
       }
@@ -5146,12 +5146,12 @@ var require_composer = __commonJS({
         this.prelude = [];
         this.errors = [];
         this.warnings = [];
-        this.onError = (source, code, message, warning) => {
+        this.onError = (source, code, message2, warning) => {
           const pos = getErrorPos(source);
           if (warning)
-            this.warnings.push(new errors.YAMLWarning(pos, code, message));
+            this.warnings.push(new errors.YAMLWarning(pos, code, message2));
           else
-            this.errors.push(new errors.YAMLParseError(pos, code, message));
+            this.errors.push(new errors.YAMLParseError(pos, code, message2));
         };
         this.directives = new directives.Directives({ version: options.version || "1.2" });
         this.options = options;
@@ -5221,10 +5221,10 @@ ${cb}` : comment;
           console.dir(token, { depth: null });
         switch (token.type) {
           case "directive":
-            this.directives.add(token.source, (offset, message, warning) => {
+            this.directives.add(token.source, (offset, message2, warning) => {
               const pos = getErrorPos(token);
               pos[0] += offset;
-              this.onError(pos, "BAD_DIRECTIVE", message, warning);
+              this.onError(pos, "BAD_DIRECTIVE", message2, warning);
             });
             this.prelude.push(token.source);
             this.atDirectives = true;
@@ -5313,12 +5313,12 @@ var require_cst_scalar = __commonJS({
     var stringifyString = require_stringifyString();
     function resolveAsScalar(token, strict = true, onError) {
       if (token) {
-        const _onError = (pos, code, message) => {
+        const _onError = (pos, code, message2) => {
           const offset = typeof pos === "number" ? pos : Array.isArray(pos) ? pos[0] : pos.offset;
           if (onError)
-            onError(offset, code, message);
+            onError(offset, code, message2);
           else
-            throw new errors.YAMLParseError([offset, offset + 1], code, message);
+            throw new errors.YAMLParseError([offset, offset + 1], code, message2);
         };
         switch (token.type) {
           case "scalar":
@@ -5532,14 +5532,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep2, value }) {
+    function stringifyItem({ start, key, sep: sep3, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep2)
-        for (const st of sep2)
+      if (sep3)
+        for (const st of sep3)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -6478,8 +6478,8 @@ var require_parser = __commonJS({
         }
         const type = cst.tokenType(source);
         if (!type) {
-          const message = `Not a YAML token: ${source}`;
-          yield* this.pop({ type: "error", offset: this.offset, message, source });
+          const message2 = `Not a YAML token: ${source}`;
+          yield* this.pop({ type: "error", offset: this.offset, message: message2, source });
           this.offset += source.length;
         } else if (type === "scalar") {
           this.atNewLine = false;
@@ -6569,8 +6569,8 @@ var require_parser = __commonJS({
       *pop(error) {
         const token = error ?? this.stack.pop();
         if (!token) {
-          const message = "Tried to pop an empty stack";
-          yield { type: "error", offset: this.offset, source: "", message };
+          const message2 = "Tried to pop an empty stack";
+          yield { type: "error", offset: this.offset, source: "", message: message2 };
         } else if (this.stack.length === 0) {
           yield token;
         } else {
@@ -6706,18 +6706,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep2;
+          let sep3;
           if (scalar.end) {
-            sep2 = scalar.end;
-            sep2.push(this.sourceToken);
+            sep3 = scalar.end;
+            sep3.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep2 = [this.sourceToken];
+            sep3 = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep2 }]
+            items: [{ start, key: scalar, sep: sep3 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6870,15 +6870,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep2 = it.sep;
-                  sep2.push(this.sourceToken);
+                  const sep3 = it.sep;
+                  sep3.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep2 }]
+                    items: [{ start: start2, key, sep: sep3 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -7072,13 +7072,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep2 = fc.end.splice(1, fc.end.length);
-            sep2.push(this.sourceToken);
+            const sep3 = fc.end.splice(1, fc.end.length);
+            sep3.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep2 }]
+              items: [{ start, key: fc, sep: sep3 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -7365,8 +7365,8 @@ var AdapterError = class extends Error {
   status;
   /** True when trying the same request again could plausibly succeed. */
   retryable;
-  constructor(kind, message, options) {
-    super(message, options?.cause !== void 0 ? { cause: options.cause } : void 0);
+  constructor(kind, message2, options) {
+    super(message2, options?.cause !== void 0 ? { cause: options.cause } : void 0);
     this.name = "AdapterError";
     this.kind = kind;
     if (options?.status !== void 0) this.status = options.status;
@@ -7550,7 +7550,7 @@ function backoffFor(attempt, response) {
 }
 function delay(ms, deadline) {
   const capped = Math.max(0, Math.min(ms, deadline - Date.now()));
-  return new Promise((resolve3) => setTimeout(resolve3, capped));
+  return new Promise((resolve4) => setTimeout(resolve4, capped));
 }
 async function safeText(response) {
   try {
@@ -7887,6 +7887,15 @@ var import_yaml = __toESM(require_dist(), 1);
 
 // src/engine/types.ts
 var ANY_QUESTION = "any";
+var GATE_SET = "gate";
+var EMPTY_GATE = {
+  tools: [],
+  fastPath: [],
+  hardRules: [],
+  questions: {},
+  probeQuestions: {},
+  rules: []
+};
 
 // src/engine/policy.ts
 var MODES = ["observe", "guard", "full", "seatbelt"];
@@ -7898,6 +7907,7 @@ var HARD_RULE_PREDICATES = [
   "path_labelled",
   "redacts_as"
 ];
+var GATE_ONLY_KEYS = ["tools", "fast_path", "hard_rules"];
 var VERDICTS = ["allow", "ask", "deny"];
 var ON_ERROR = ["passthrough", "deny"];
 var DEFAULT_TIMEOUT_MS = 800;
@@ -7907,8 +7917,8 @@ var DEFAULT_CONFIDENCE_FLOOR = 0.8;
 var DEFAULT_ACCURACY_BAR = 0.85;
 function loadPolicy(source) {
   const diagnostics = [];
-  const error = (path, message) => diagnostics.push({ severity: "error", path, message });
-  const warn = (path, message) => diagnostics.push({ severity: "warning", path, message });
+  const error = (path, message2) => diagnostics.push({ severity: "error", path, message: message2 });
+  const warn = (path, message2) => diagnostics.push({ severity: "warning", path, message: message2 });
   let raw;
   try {
     raw = (0, import_yaml.parse)(source);
@@ -7961,28 +7971,18 @@ function loadPolicy(source) {
   if (confidenceFloor < 0.5) {
     error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
   }
-  const gateRaw = raw["gate"];
-  if (!isRecord(gateRaw)) {
-    error("gate", "missing or not a mapping");
-    return { diagnostics };
-  }
-  const tools = readStringList(gateRaw["tools"], [], "gate.tools", error);
-  if (tools.length === 0) {
-    warn("gate.tools", "no tools listed, so the gate will never run");
-  }
-  const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
-  const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
-  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
-  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
-  for (const name of Object.keys(probeQuestions)) {
-    if (name in questions) {
-      error(
-        `gate.probe_questions.${name}`,
-        `"${name}" is already a question in gate.questions \u2014 answers come back keyed by name, so the two would collide`
-      );
+  const located = locateSets(raw, error);
+  if (located === void 0) return { diagnostics };
+  const sets = {};
+  let gate;
+  for (const { name, path, body } of located) {
+    if (name === GATE_SET) {
+      gate = readGate(body, path, error, warn);
+      sets[name] = gate;
+    } else {
+      sets[name] = readPolicySet(body, path, error, warn);
     }
   }
-  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
   }
@@ -7993,10 +7993,80 @@ function loadPolicy(source) {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, hardRules, questions, probeQuestions, rules },
+    sets,
+    gate: gate ?? EMPTY_GATE,
     calibration: { confidenceFloor, accuracyBar }
   };
   return { policy, diagnostics };
+}
+function locateSets(raw, error) {
+  const policiesRaw = raw["policies"];
+  const gateRaw = raw["gate"];
+  if (policiesRaw !== void 0 && gateRaw !== void 0) {
+    error(
+      "policies",
+      "the file has both a top-level `gate:` and a `policies:` block \u2014 move the gate under `policies:` and delete the top-level one"
+    );
+    return void 0;
+  }
+  if (policiesRaw === void 0) {
+    if (!isRecord(gateRaw)) {
+      error("gate", "missing or not a mapping \u2014 a policy file needs a `gate:` block or a `policies:` block");
+      return void 0;
+    }
+    return [{ name: GATE_SET, path: "gate", body: gateRaw }];
+  }
+  if (!isRecord(policiesRaw)) {
+    error("policies", "must be a mapping of set name to policy set");
+    return void 0;
+  }
+  const located = [];
+  for (const [name, body] of Object.entries(policiesRaw)) {
+    const path = `policies.${name}`;
+    if (!isRecord(body)) {
+      error(path, "must be a mapping with `questions` and `rules`");
+      continue;
+    }
+    located.push({ name, path, body });
+  }
+  if (located.length === 0) {
+    error("policies", "names no policy sets");
+    return void 0;
+  }
+  return located;
+}
+function readGate(raw, path, error, warn) {
+  const tools = readStringList(raw["tools"], [], `${path}.tools`, error);
+  if (tools.length === 0) {
+    warn(`${path}.tools`, "no tools listed, so the gate will never run");
+  }
+  const fastPath = readStringList(raw["fast_path"], [], `${path}.fast_path`, error);
+  const hardRules = readHardRules(raw["hard_rules"], path, error, warn);
+  return { tools, fastPath, hardRules, ...readPolicySet(raw, path, error, warn, true) };
+}
+function readPolicySet(raw, path, error, warn, isGate = false) {
+  if (!isGate) {
+    for (const key of GATE_ONLY_KEYS) {
+      if (raw[key] !== void 0) {
+        error(
+          `${path}.${key}`,
+          `only the \`gate\` set can use \`${key}\` \u2014 it reasons about a tool call, and here it would load correctly and never fire`
+        );
+      }
+    }
+  }
+  const questions = readQuestions(raw["questions"], `${path}.questions`, true, error);
+  const probeQuestions = readQuestions(raw["probe_questions"], `${path}.probe_questions`, false, error);
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `${path}.probe_questions.${name}`,
+        `"${name}" is already a question in ${path}.questions \u2014 answers come back keyed by name, so the two would collide`
+      );
+    }
+  }
+  const rules = readRules(raw["rules"], path, questions, probeQuestions, error, warn);
+  return { questions, probeQuestions, rules };
 }
 function readQuestions(raw, basePath, required, error) {
   const questions = {};
@@ -8046,16 +8116,16 @@ function readQuestions(raw, basePath, required, error) {
   }
   return questions;
 }
-function readHardRules(raw, error, warn) {
+function readHardRules(raw, basePath, error, warn) {
   const rules = [];
   if (raw === void 0) return rules;
   if (!Array.isArray(raw)) {
-    error("gate.hard_rules", "must be a list");
+    error(`${basePath}.hard_rules`, "must be a list");
     return rules;
   }
   const seen = /* @__PURE__ */ new Set();
   raw.forEach((entry, i) => {
-    const path = `gate.hard_rules[${i}]`;
+    const path = `${basePath}.hard_rules[${i}]`;
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
       return;
@@ -8081,7 +8151,7 @@ function readHardRules(raw, error, warn) {
       return;
     }
     if (then === "allow") {
-      error(`${path}.then`, "must be `ask` or `deny`; `gate.fast_path` is where allow-without-judging lives");
+      error(`${path}.then`, `must be \`ask\` or \`deny\`; \`${basePath}.fast_path\` is where allow-without-judging lives`);
       return;
     }
     if (then === "deny") {
@@ -8137,16 +8207,16 @@ function readHardRules(raw, error, warn) {
   });
   return rules;
 }
-function readRules(raw, questions, probeQuestions, error, warn) {
+function readRules(raw, basePath, questions, probeQuestions, error, warn) {
   const rules = [];
   if (!Array.isArray(raw)) {
-    error("gate.rules", "missing or not a list");
+    error(`${basePath}.rules`, "missing or not a list");
     return rules;
   }
   let terminalAt;
   raw.forEach((entry, i) => {
     const index = i + 1;
-    const path = `gate.rules[${i}]`;
+    const path = `${basePath}.rules[${i}]`;
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
       return;
@@ -8187,7 +8257,7 @@ function readRules(raw, questions, probeQuestions, error, warn) {
     if (question !== ANY_QUESTION && !(question in questions)) {
       error(
         `${path}.when.${question}`,
-        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to gate.questions to act on it` : `no question named "${question}" is defined in gate.questions`
+        question in probeQuestions ? `"${question}" is a probe question, and probes are never read by rules \u2014 move it to ${basePath}.questions to act on it` : `no question named "${question}" is defined in ${basePath}.questions`
       );
       return;
     }
@@ -8207,7 +8277,7 @@ function readRules(raw, questions, probeQuestions, error, warn) {
     rules.push({ condition, verdict: then, index });
   });
   if (terminalAt === void 0 && rules.length > 0) {
-    warn("gate.rules", "no `default` rule, so a tool call matching nothing gets no decision");
+    warn(`${basePath}.rules`, "no `default` rule, so an item matching nothing gets no decision");
   }
   return rules;
 }
@@ -8668,10 +8738,10 @@ function pathsIn(token) {
 // src/engine/evaluate.ts
 function shortCircuit(policy, input) {
   if (input.permissionMode !== void 0 && policy.skipPermissionModes.includes(input.permissionMode)) {
-    return decide(policy, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
+    return decide(policy.mode, "allow", { kind: "permission-mode-skipped", permissionMode: input.permissionMode });
   }
   if (!policy.gate.tools.includes(input.tool)) {
-    return decide(policy, "allow", { kind: "tool-not-gated", tool: input.tool });
+    return decide(policy.mode, "allow", { kind: "tool-not-gated", tool: input.tool });
   }
   const hard = matchHardRule(policy.gate.hardRules, input.command);
   if (hard !== void 0) {
@@ -8679,7 +8749,7 @@ function shortCircuit(policy, input) {
   }
   const prefix = matchFastPath(policy.gate.fastPath, input.command);
   if (prefix !== void 0) {
-    return decide(policy, "allow", { kind: "fast-path", prefix });
+    return decide(policy.mode, "allow", { kind: "fast-path", prefix });
   }
   return void 0;
 }
@@ -8691,16 +8761,16 @@ function decideHard(policy, rule) {
     emit: emitFor(policy.mode, rule.verdict, true)
   };
 }
-function evaluate(policy, answers) {
-  for (const rule of policy.gate.rules) {
+function evaluate(set, mode, answers) {
+  for (const rule of set.rules) {
     if (rule.condition === void 0) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: "default", p: Number.NaN });
     }
     const { question, comparison } = rule.condition;
     if (question === ANY_QUESTION) {
       for (const [name, p2] of Object.entries(answers)) {
         if (satisfies(p2, comparison)) {
-          return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
+          return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question: name, p: p2 });
         }
       }
       continue;
@@ -8708,13 +8778,13 @@ function evaluate(policy, answers) {
     const p = answers[question];
     if (p === void 0) continue;
     if (satisfies(p, comparison)) {
-      return decide(policy, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
+      return decide(mode, rule.verdict, { kind: "rule", ruleIndex: rule.index, question, p });
     }
   }
   return { verdict: "allow", reason: { kind: "no-rule-matched" }, emit: void 0 };
 }
-function decide(policy, verdict, reason) {
-  return { verdict, reason, emit: emitFor(policy.mode, verdict) };
+function decide(mode, verdict, reason) {
+  return { verdict, reason, emit: emitFor(mode, verdict) };
 }
 function emitFor(mode, verdict, fromHardRule = false) {
   if (mode === "observe") return void 0;
@@ -8804,7 +8874,7 @@ var import_node_path4 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs2 = require("node:fs");
 var import_node_path3 = require("node:path");
-var CACHE_VERSION = 2;
+var CACHE_VERSION = 3;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -8946,12 +9016,13 @@ function localBackend() {
 var import_node_fs4 = require("node:fs");
 var import_node_path5 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
+var JUDGMENTS_FILE = "judgments.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
-function append(dir, record2) {
+function append(dir, record2, name = LOG_FILE) {
   try {
     (0, import_node_fs4.mkdirSync)(dir, { recursive: true });
     const safe = record2.state !== void 0 ? { ...record2, state: redact(record2.state).text } : record2;
-    const file = (0, import_node_path5.join)(dir, LOG_FILE);
+    const file = (0, import_node_path5.join)(dir, name);
     rotateIfOversized(file);
     (0, import_node_fs4.appendFileSync)(file, `${JSON.stringify(safe)}
 `, "utf8");
@@ -8968,10 +9039,21 @@ function rotateIfOversized(file) {
   if (size < MAX_LOG_BYTES) return;
   (0, import_node_fs4.renameSync)(file, `${file}.1`);
 }
-function tail(dir, count) {
+function parseLog(source) {
+  const records = [];
+  for (const line of source.split("\n")) {
+    if (line.trim().length === 0) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return records;
+}
+function tail(dir, count, name = LOG_FILE) {
   let raw;
   try {
-    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, LOG_FILE), "utf8");
+    raw = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(dir, name), "utf8");
   } catch {
     return [];
   }
@@ -9092,7 +9174,7 @@ async function runPreToolUse(payload, options = {}) {
       if (name in policy.gate.probeQuestions) probes[name] = p;
       else answers[name] = p;
     }
-    const decision = evaluate(policy, answers);
+    const decision = evaluate(policy.gate, policy.mode, answers);
     const escalation = escalationFor(policy.gate, decision, answers, itemId);
     const next = record(breakerState, {
       failed: false,
@@ -9357,7 +9439,7 @@ function explain2(toolUseId) {
 }
 function render(record2) {
   const lines = [];
-  lines.push(`${record2.tool} at ${record2.ts}`);
+  lines.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
   lines.push(`Verdict: ${record2.verdict}${record2.emitted === null ? `  (nothing emitted \u2014 ${record2.mode} mode)` : `  (emitted ${record2.emitted})`}`);
   lines.push(`Because: ${describe(record2)}`);
   if (record2.permission_mode !== void 0) {
@@ -9423,9 +9505,68 @@ function bar(p) {
 
 // src/commands/calibrate.ts
 var import_node_path7 = require("node:path");
+var import_node_fs7 = require("node:fs");
 
 // src/calibrate.ts
 var import_node_fs6 = require("node:fs");
+
+// src/engine/item.ts
+var MAX_ITEM_STATE_BYTES = 16 * 1024;
+var FIELD_LIMIT = 4096;
+var itemState = {
+  kind: "item",
+  build: buildItemState
+};
+function buildItemState(item) {
+  const kinds = /* @__PURE__ */ new Set();
+  const cleaned = cleanValue(item, kinds, 0);
+  const state = isRecord5(cleaned) ? cleaned : { value: cleaned };
+  let text = JSON.stringify(state);
+  let truncated = false;
+  if (Buffer.byteLength(text, "utf8") > MAX_ITEM_STATE_BYTES) {
+    truncated = true;
+    text = JSON.stringify(capStrings(state, FIELD_LIMIT));
+    if (Buffer.byteLength(text, "utf8") > MAX_ITEM_STATE_BYTES) {
+      text = `${text.slice(0, MAX_ITEM_STATE_BYTES - 32)}
+\u2026 [truncated]`;
+    }
+  }
+  return { text, redactedKinds: [...kinds], truncated };
+}
+var MAX_DEPTH = 8;
+function cleanValue(value, kinds, depth) {
+  if (typeof value === "string") {
+    const { text, kinds: found } = redact(value);
+    for (const k of found) kinds.add(k);
+    return text;
+  }
+  if (depth >= MAX_DEPTH) return "\u2026 [too deeply nested]";
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanValue(entry, kinds, depth + 1));
+  }
+  if (isRecord5(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, cleanValue(entry, kinds, depth + 1)])
+    );
+  }
+  return value;
+}
+function capStrings(value, limit) {
+  if (typeof value === "string") {
+    return value.length > limit ? `${value.slice(0, limit)}\u2026 [truncated]` : value;
+  }
+  if (Array.isArray(value)) return value.map((entry) => capStrings(entry, limit));
+  if (isRecord5(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, capStrings(entry, limit)]));
+  }
+  return value;
+}
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/calibrate.ts
+var TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists"];
 var BUCKETS = [
   [0.5, 0.6],
   [0.6, 0.7],
@@ -9439,45 +9580,71 @@ function parseFixtures(source) {
   source.split("\n").forEach((line, i) => {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("//")) return;
-    let parsed;
+    let raw;
     try {
-      parsed = JSON.parse(trimmed);
+      raw = JSON.parse(trimmed);
     } catch (err) {
       throw new Error(`fixture line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
-    for (const field of ["id", "tool", "note"]) {
-      if (typeof parsed[field] !== "string" || parsed[field].length === 0) {
+    for (const field of ["id", "note"]) {
+      if (typeof raw[field] !== "string" || raw[field].length === 0) {
         throw new Error(`fixture line ${i + 1} is missing "${field}"`);
       }
     }
-    if (typeof parsed.expect !== "object" || parsed.expect === null || Object.keys(parsed.expect).length === 0) {
-      throw new Error(`fixture "${parsed.id}" has no expectations, so it scores nothing`);
+    const expect = raw["expect"];
+    if (typeof expect !== "object" || expect === null || Object.keys(expect).length === 0) {
+      throw new Error(`fixture "${String(raw["id"])}" has no expectations, so it scores nothing`);
     }
-    fixtures.push(parsed);
+    const { kind, item } = shapeOf(raw, i + 1);
+    fixtures.push({
+      id: raw["id"],
+      kind,
+      item,
+      expect,
+      note: raw["note"],
+      ...typeof raw["pair"] === "string" ? { pair: raw["pair"] } : {}
+    });
   });
   return fixtures;
+}
+function shapeOf(raw, line) {
+  const declared = raw["kind"];
+  if (declared === void 0) {
+    if (typeof raw["tool"] !== "string" || raw["tool"].length === 0) {
+      throw new Error(`fixture line ${line} has no "kind" and no "tool", so nothing says how to build its state`);
+    }
+    const item2 = {};
+    for (const key of TOOL_CALL_KEYS) {
+      if (raw[key] !== void 0) item2[key] = raw[key];
+    }
+    return { kind: "tool_call", item: item2 };
+  }
+  if (declared !== "tool_call" && declared !== "item") {
+    throw new Error(`fixture line ${line} has kind "${String(declared)}"; expected "tool_call" or "item"`);
+  }
+  const item = raw["item"];
+  if (typeof item !== "object" || item === null || Array.isArray(item)) {
+    throw new Error(`fixture line ${line} declares kind "${declared}" but has no "item" mapping`);
+  }
+  if (declared === "tool_call" && typeof item["tool"] !== "string") {
+    throw new Error(`fixture line ${line} is a tool_call but its item has no "tool"`);
+  }
+  return { kind: declared, item };
 }
 function loadFixtures(path) {
   return parseFixtures((0, import_node_fs6.readFileSync)(path, "utf8"));
 }
-async function score(fixtures, policy, adapter, onProgress) {
-  const questions = {};
-  for (const [name, q] of Object.entries(policy.gate.questions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) {
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
   }
-  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
-  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
-  }
+  const questions = questionsOf(set);
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+  const gateExtras = setName === GATE_SET ? policy.gate : void 0;
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
-    const state = buildState({
-      toolName: fixture.tool,
-      toolInput: fixture.input,
-      cwd: fixture.cwd ?? "/home/user/project",
-      ...fixture.permission_mode !== void 0 ? { permissionMode: fixture.permission_mode } : {},
-      ...fixture.target_exists !== void 0 ? { targetExists: fixture.target_exists } : {}
-    });
+    const state = stateFor(fixture);
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
     const answers = {};
     for (const name of Object.keys(questions)) {
@@ -9485,8 +9652,8 @@ async function score(fixtures, policy, adapter, onProgress) {
       const value = noulProbability(response.answers[name]);
       if (value !== void 0) answers[name] = value;
     }
-    const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
-    const decision = hard === void 0 ? evaluate(policy, answers) : void 0;
+    const hard = gateExtras !== void 0 && fixture.kind === "tool_call" ? matchHardRule(gateExtras.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
+    const decision = hard === void 0 ? evaluate(set, policy.mode, answers) : void 0;
     const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
     const verdictReason = hard !== void 0 ? { question: hard.name, p: Number.NaN, source: "hard_rule" } : {
       question: decision?.reason.kind === "rule" ? decision.reason.question : "default",
@@ -9513,6 +9680,91 @@ async function score(fixtures, policy, adapter, onProgress) {
     onProgress?.(i + 1, fixtures.length);
   }
   return results;
+}
+function questionsOf(set) {
+  const questions = {};
+  for (const source of [set.questions, set.probeQuestions]) {
+    for (const [name, q] of Object.entries(source)) {
+      questions[name] = { type: "noul", instructions: q.instructions, ...q.criteria ? { criteria: q.criteria } : {} };
+    }
+  }
+  return questions;
+}
+function toolCallOf(fixture) {
+  const item = fixture.item;
+  return {
+    tool: typeof item["tool"] === "string" ? item["tool"] : "",
+    input: item["input"] ?? {},
+    ...typeof item["cwd"] === "string" ? { cwd: item["cwd"] } : {},
+    ...typeof item["permission_mode"] === "string" ? { permission_mode: item["permission_mode"] } : {},
+    ...typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {}
+  };
+}
+function stateFor(fixture) {
+  if (fixture.kind === "item") return itemState.build(fixture.item);
+  const call = toolCallOf(fixture);
+  return buildState({
+    toolName: call.tool,
+    toolInput: call.input,
+    cwd: call.cwd ?? "/home/user/project",
+    ...call.permission_mode !== void 0 ? { permissionMode: call.permission_mode } : {},
+    ...call.target_exists !== void 0 ? { targetExists: call.target_exists } : {}
+  });
+}
+function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
+  }
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+  const scored = [];
+  let matched = 0;
+  let unmatched = 0;
+  let unscorable = 0;
+  for (const record2 of parseLog(source)) {
+    const key = record2.item ?? record2.tool_use_id;
+    if (key === void 0) {
+      unscorable += 1;
+      continue;
+    }
+    const fixture = byId.get(key);
+    if (fixture === void 0) {
+      unmatched += 1;
+      continue;
+    }
+    const answers = { ...record2.answers ?? {} };
+    const probes = record2.probes ?? {};
+    if (Object.keys(answers).length === 0) {
+      unscorable += 1;
+      continue;
+    }
+    matched += 1;
+    const decision = evaluate(set, policy.mode, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+      source: "rule"
+    };
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = probeNames.has(question) ? probes[question] : answers[question];
+      if (p === void 0) continue;
+      const predicted = p >= 0.5;
+      scored.push({
+        fixture,
+        question,
+        expected,
+        p,
+        predicted,
+        correct: predicted === expected,
+        confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason,
+        probe: probeNames.has(question)
+      });
+    }
+  }
+  return { scored, matched, unmatched, unscorable };
 }
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
@@ -9699,11 +9951,11 @@ function compare(a, b, calibration) {
   const rows = [...byQuestion.entries()].map(([question, items]) => {
     const side = (i) => items.map((pair) => pair[i]);
     const brierOf = (rows2) => rows2.reduce((sum, r) => sum + (r.p - (r.expected ? 1 : 0)) ** 2, 0) / rows2.length;
-    const accuracyOf = (rows2) => rows2.filter((r) => r.correct).length / rows2.length;
+    const accuracyOf2 = (rows2) => rows2.filter((r) => r.correct).length / rows2.length;
     return {
       question,
       n: items.length,
-      accuracy: [accuracyOf(side(0)), accuracyOf(side(1))],
+      accuracy: [accuracyOf2(side(0)), accuracyOf2(side(1))],
       brier: [brierOf(side(0)), brierOf(side(1))],
       meanDelta: items.reduce((sum, [l, r]) => sum + Math.abs(l.p - r.p), 0) / items.length,
       gate: [gateResult(side(0), calibration), gateResult(side(1), calibration)]
@@ -9805,6 +10057,8 @@ function parseArgs(argv) {
   };
   return {
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
+    ...value("set") !== void 0 ? { set: value("set") } : {},
+    ...value("from") !== void 0 ? { from: value("from") } : {},
     ...value("backend") !== void 0 ? { backend: value("backend") } : {},
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     json: argv.includes("--json")
@@ -9829,6 +10083,9 @@ async function calibrate(args, write3) {
 `);
     return 1;
   }
+  if (args.from !== void 0) {
+    return fromLog(args, resolved.policy, fixtures, write3);
+  }
   const primary = args.backend ?? resolved.policy.backend;
   const names = backendsFor(primary, args.compare);
   const adapters = [];
@@ -9852,7 +10109,15 @@ async function calibrate(args, write3) {
   const runs = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i];
-    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+    let scored;
+    try {
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+    } catch (err) {
+      write3(`${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+    runs.push({ backend: label, scored });
   }
   const [first, second] = runs;
   if (first === void 0) {
@@ -9882,11 +10147,68 @@ async function calibrate(args, write3) {
   }
   return 0;
 }
+function fromLog(args, policy, fixtures, write3) {
+  let source;
+  try {
+    source = (0, import_node_fs7.readFileSync)(args.from, "utf8");
+  } catch (err) {
+    write3(`Cannot read the log at ${args.from}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  let result;
+  try {
+    result = scoreFromLog(source, fixtures, policy, args.set);
+  } catch (err) {
+    write3(`${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  if (result.matched === 0) {
+    write3(
+      `No line in ${args.from} matched a fixture id.
+  ${result.unmatched} lines named an item with no fixture, and ${result.unscorable} carried no answers.
+  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.
+`
+    );
+    return 1;
+  }
+  if (args.json === true) {
+    write3(
+      `${JSON.stringify(
+        {
+          from: args.from,
+          matched: result.matched,
+          unmatched: result.unmatched,
+          unscorable: result.unscorable,
+          reports: report(result.scored, policy.calibration)
+        },
+        null,
+        2
+      )}
+`
+    );
+    return 0;
+  }
+  write3(formatReport(report(result.scored, policy.calibration), `${args.from} (recorded)`, policy.calibration, result.scored));
+  write3(
+    `
+Scored ${result.matched} logged items against their labels. ${result.unmatched} had no fixture; ${result.unscorable} carried no classifier answer (a hard rule, the fast path, or an error).
+`
+  );
+  return 0;
+}
 async function run(fixtures, policy, adapter, label, total, args) {
   const prefix = total > 1 ? `${label}: ` : "";
-  const scored = await score(fixtures, policy, adapter, (done, n) => {
-    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
-  });
+  const scored = await score(
+    fixtures,
+    policy,
+    adapter,
+    (done, n) => {
+      if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+    },
+    args.set
+  );
   if (!args.json) process.stderr.write("\r\x1B[K");
   return scored;
 }
@@ -9909,6 +10231,893 @@ function adapterFor2(backend) {
   return `Unknown backend "${backend}".`;
 }
 async function startIfNeeded(adapter) {
+  const start = adapter.start;
+  if (typeof start !== "function") return void 0;
+  try {
+    await start.call(adapter);
+    return void 0;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+// src/commands/judge.ts
+var import_node_fs9 = require("node:fs");
+var import_node_path9 = require("node:path");
+
+// src/judge.ts
+var DEFAULT_CONCURRENCY2 = 4;
+async function judge(items, options) {
+  const questions = questionsOf(options.set);
+  const probeNames = new Set(Object.keys(options.set.probeQuestions));
+  const started = Date.now();
+  const results = new Array(items.length);
+  let done = 0;
+  let cursor = 0;
+  const worker = async () => {
+    for (; ; ) {
+      const index = cursor++;
+      const entry = items[index];
+      if (entry === void 0) return;
+      results[index] = await judgeOne(entry.id, entry.state, questions, probeNames, options);
+      options.onProgress?.(++done, items.length);
+    }
+  };
+  const width = Math.max(1, Math.min(options.concurrency ?? DEFAULT_CONCURRENCY2, items.length));
+  await Promise.all(Array.from({ length: width }, () => worker()));
+  const escalations = results.flatMap((r) => r.escalation === void 0 ? [] : [r.escalation]);
+  const judgedCount = results.filter((r) => r.error === void 0).length;
+  const tokens = results.reduce(
+    (sum, r) => r.inputTokens === void 0 ? sum : (sum ?? 0) + r.inputTokens,
+    void 0
+  );
+  return {
+    set: options.setName,
+    backend: options.adapter.name,
+    items: results,
+    manifest: manifestOf(escalations, judgedCount),
+    judged: judgedCount,
+    failed: results.length - judgedCount,
+    ...tokens !== void 0 ? { inputTokens: tokens } : {},
+    latencyMs: Date.now() - started
+  };
+}
+async function judgeOne(id, state, questions, probeNames, options) {
+  const base = {
+    id,
+    state: state.text,
+    redactedKinds: state.redactedKinds,
+    truncated: state.truncated
+  };
+  let response;
+  try {
+    response = await options.adapter.decide({
+      state: state.text,
+      questions,
+      timeoutMs: options.timeoutMs
+    });
+  } catch (err) {
+    const kind = err instanceof AdapterError ? err.kind : "unavailable";
+    return {
+      ...base,
+      verdict: "allow",
+      reason: { kind: "no-rule-matched" },
+      answers: {},
+      latencyMs: 0,
+      error: { kind, message: err instanceof Error ? err.message : String(err) }
+    };
+  }
+  const answers = {};
+  const probes = {};
+  for (const name of Object.keys(questions)) {
+    const p = noulProbability(response.answers[name]);
+    if (p === void 0) continue;
+    if (probeNames.has(name)) probes[name] = p;
+    else answers[name] = p;
+  }
+  const decision = evaluate(options.set, options.mode, answers);
+  const escalation = escalationFor(options.set, decision, answers, id);
+  return {
+    ...base,
+    verdict: decision.verdict,
+    reason: decision.reason,
+    answers,
+    ...Object.keys(probes).length > 0 ? { probes } : {},
+    // A standalone manifest sets `state`, because there the item has to be readable on its
+    // own — unlike the gate's, which sits on a log line that already carries the string.
+    ...escalation !== void 0 ? { escalation: { ...escalation, state: state.text } } : {},
+    latencyMs: response.latencyMs,
+    ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {}
+  };
+}
+function tally(run2) {
+  const counts = { allow: 0, ask: 0, deny: 0 };
+  for (const item of run2.items) {
+    if (item.error !== void 0) continue;
+    counts[item.verdict] += 1;
+  }
+  return counts;
+}
+function formatRun(run2) {
+  const lines = [];
+  const counts = tally(run2);
+  const rate = run2.manifest.escalationRate;
+  lines.push(`Set: ${run2.set}   Backend: ${run2.backend}`, "");
+  lines.push(`  judged     ${run2.judged}`);
+  if (run2.failed > 0) lines.push(`  failed     ${run2.failed}`);
+  lines.push(`  allow      ${counts.allow}`);
+  lines.push(`  ask        ${counts.ask}`);
+  if (counts.deny > 0) lines.push(`  deny       ${counts.deny}`);
+  lines.push("");
+  lines.push(`  escalated  ${run2.manifest.items.length} / ${run2.judged}  (${(rate * 100).toFixed(1)}%)`);
+  if (run2.inputTokens !== void 0 && run2.judged > 0) {
+    lines.push(`  tokens in  ${run2.inputTokens} total, ${Math.round(run2.inputTokens / run2.judged)} per item`);
+  }
+  lines.push(`  wall clock ${(run2.latencyMs / 1e3).toFixed(1)}s`);
+  return `${lines.join("\n")}
+`;
+}
+
+// src/io/items.ts
+var import_node_fs8 = require("node:fs");
+var import_node_path8 = require("node:path");
+var MAX_FILE_BYTES = 1024 * 1024;
+var MAX_DEPTH2 = 8;
+function loadItems(path) {
+  const stats = (0, import_node_fs8.statSync)(path);
+  if (stats.isDirectory()) return loadDirectory(path);
+  const source = (0, import_node_fs8.readFileSync)(path, "utf8");
+  return (0, import_node_path8.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
+}
+function loadJsonl(source, path) {
+  const items = [];
+  const skipped = [];
+  source.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      skipped.push({ path: `${path}:${i + 1}`, why: `not valid JSON: ${message(err)}` });
+      return;
+    }
+    if (!isRecord6(parsed)) {
+      skipped.push({ path: `${path}:${i + 1}`, why: "not a JSON object" });
+      return;
+    }
+    items.push({ id: idOf(parsed, `${path}:${i + 1}`), item: unwrapFixture(parsed) });
+  });
+  return { items, skipped };
+}
+function unwrapFixture(line) {
+  const item = line["item"];
+  const kind = line["kind"];
+  if (kind !== "item" && kind !== "tool_call" || !isRecord6(item) || !isRecord6(line["expect"])) return line;
+  return item;
+}
+function loadJsonArray(source, path) {
+  let parsed;
+  try {
+    parsed = JSON.parse(source);
+  } catch (err) {
+    throw new Error(`${path} is not valid JSON: ${message(err)}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${path} holds a ${typeof parsed}, not an array of items`);
+  }
+  const items = [];
+  const skipped = [];
+  parsed.forEach((entry, i) => {
+    if (!isRecord6(entry)) {
+      skipped.push({ path: `${path}[${i}]`, why: "not a JSON object" });
+      return;
+    }
+    items.push({ id: idOf(entry, `${path}[${i}]`), item: entry });
+  });
+  return { items, skipped };
+}
+function loadDirectory(root) {
+  const items = [];
+  const skipped = [];
+  const walk = (dir, depth) => {
+    if (depth > MAX_DEPTH2) {
+      skipped.push({ path: (0, import_node_path8.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
+      return;
+    }
+    for (const entry of (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = (0, import_node_path8.join)(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const id = (0, import_node_path8.relative)(root, full).split(import_node_path8.sep).join("/");
+      let size;
+      try {
+        size = (0, import_node_fs8.statSync)(full).size;
+      } catch (err) {
+        skipped.push({ path: id, why: message(err) });
+        continue;
+      }
+      if (size > MAX_FILE_BYTES) {
+        skipped.push({ path: id, why: `${(size / 1024).toFixed(0)} KB, over the ${MAX_FILE_BYTES / 1024} KB limit` });
+        continue;
+      }
+      let buffer;
+      try {
+        buffer = (0, import_node_fs8.readFileSync)(full);
+      } catch (err) {
+        skipped.push({ path: id, why: message(err) });
+        continue;
+      }
+      if (buffer.subarray(0, 4096).includes(0)) {
+        skipped.push({ path: id, why: "looks binary" });
+        continue;
+      }
+      items.push({ id, item: { path: id, name: entry.name, text: buffer.toString("utf8") } });
+    }
+  };
+  walk(root, 0);
+  return { items, skipped };
+}
+function idOf(item, fallback) {
+  const id = item["id"];
+  if (typeof id === "string" && id.length > 0) return id;
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return fallback;
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function message(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// src/commands/judge.ts
+var VALUE_FLAGS = ["set", "backend", "out", "manifest", "concurrency"];
+function parseArgs2(argv) {
+  const values = /* @__PURE__ */ new Map();
+  let path;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.startsWith("--")) {
+      const name = token.slice(2);
+      if (VALUE_FLAGS.includes(name)) {
+        const value = argv[i + 1];
+        if (value !== void 0) values.set(name, value);
+        i += 1;
+      }
+      continue;
+    }
+    path ??= token;
+  }
+  const concurrency = Number(values.get("concurrency"));
+  return {
+    ...path !== void 0 ? { path } : {},
+    ...values.has("set") ? { set: values.get("set") } : {},
+    ...values.has("backend") ? { backend: values.get("backend") } : {},
+    ...values.has("out") ? { out: values.get("out") } : {},
+    ...values.has("manifest") ? { manifest: values.get("manifest") } : {},
+    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
+    json: argv.includes("--json")
+  };
+}
+async function judge2(args, write3) {
+  if (args.path === void 0) {
+    write3("Usage: bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock]\n");
+    return 1;
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const resolved = resolvePolicy(process.cwd(), root);
+  if (resolved.policy === void 0) {
+    write3(`Cannot judge: ${resolved.source} did not load.
+`);
+    for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
+`);
+    return 1;
+  }
+  const policy = resolved.policy;
+  const setName = args.set ?? GATE_SET;
+  const set = policy.sets[setName];
+  if (set === void 0) {
+    write3(
+      `${resolved.source} defines no set named "${setName}". It has: ${Object.keys(policy.sets).join(", ")}.
+`
+    );
+    return 1;
+  }
+  let batch;
+  try {
+    batch = loadItems((0, import_node_path9.resolve)(args.path));
+  } catch (err) {
+    write3(`Cannot read ${args.path}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  for (const skip of batch.skipped) write3(`  skipped ${skip.path}: ${skip.why}
+`);
+  if (batch.items.length === 0) {
+    write3(`Nothing to judge in ${args.path}.
+`);
+    return 1;
+  }
+  const backend = args.backend ?? policy.backend;
+  const adapter = adapterFor3(backend);
+  if (typeof adapter === "string") {
+    write3(`${adapter}
+`);
+    return 1;
+  }
+  const problem = await startIfNeeded2(adapter);
+  if (problem !== void 0) {
+    write3(`Cannot judge with ${adapter.name}: ${problem}
+`);
+    return 1;
+  }
+  const run2 = await judge(
+    batch.items.map((entry) => ({ id: entry.id, state: itemState.build(entry.item) })),
+    {
+      setName,
+      set,
+      mode: policy.mode,
+      adapter,
+      // A batch is not on anyone's keystroke path, so the hook's timeout is the wrong
+      // budget: it exists to keep a tool call responsive. Give an item room to be a long
+      // document.
+      timeoutMs: Math.max(policy.timeoutMs, 3e4),
+      ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
+      onProgress: (done, total) => {
+        if (!args.json) process.stderr.write(`\r  ${done}/${total} items`);
+      }
+    }
+  );
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  const logPath = args.out ?? (0, import_node_path9.join)(dataDir(), JUDGMENTS_FILE);
+  const manifestPath = args.manifest ?? (0, import_node_path9.join)(dataDir(), "escalations.json");
+  writeLog(logPath, run2, policy);
+  const manifestWritten = writeManifest(manifestPath, run2);
+  if (args.json === true) {
+    write3(`${JSON.stringify({ ...run2, log: logPath, manifest: manifestPath }, null, 2)}
+`);
+    return 0;
+  }
+  write3(formatRun(run2));
+  write3(`
+  judgments  ${logPath}
+`);
+  write3(`  manifest   ${manifestWritten ? manifestPath : "(not written: nothing escalated)"}
+`);
+  return run2.judged === 0 ? 1 : 0;
+}
+function writeLog(path, run2, policy) {
+  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  const ts = (/* @__PURE__ */ new Date()).toISOString();
+  for (const item of run2.items) {
+    append((0, import_node_path9.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
+  }
+}
+function recordFor(item, run2, policy, ts) {
+  return {
+    ts,
+    consumer: "judge",
+    set: run2.set,
+    item: item.id,
+    state_kind: "item",
+    mode: policy.mode,
+    backend: run2.backend,
+    verdict: item.verdict,
+    // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
+    // rather than left out so a reader never has to ask which kind of line it is holding.
+    emitted: null,
+    reason: item.reason,
+    ...item.error === void 0 ? { source: "judge", answers: item.answers } : {},
+    ...item.probes !== void 0 ? { probes: item.probes } : {},
+    // The log line carries the state, so the escalation on it does not repeat it — same
+    // rule as the gate's. The standalone manifest is where the item stands on its own.
+    ...item.escalation !== void 0 ? { escalation: withoutState(item.escalation) } : {},
+    state: item.state,
+    ...item.redactedKinds.length > 0 ? { redacted_kinds: item.redactedKinds } : {},
+    latency_ms: { total: item.latencyMs, adapter: item.latencyMs },
+    ...item.error !== void 0 ? { error: item.error } : {}
+  };
+}
+function withoutState(escalation) {
+  const { state: _state, ...rest } = escalation;
+  return rest;
+}
+function writeManifest(path, run2) {
+  if (run2.manifest.items.length === 0) return false;
+  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs9.writeFileSync)(
+    path,
+    `${JSON.stringify({ set: run2.set, backend: run2.backend, ...run2.manifest }, null, 2)}
+`,
+    "utf8"
+  );
+  return true;
+}
+function basenameOf(path) {
+  return path.split("/").pop() ?? JUDGMENTS_FILE;
+}
+function adapterFor3(backend) {
+  if (backend === "mock") return new MockAdapter();
+  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      return "Cannot judge with jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+  return `Unknown backend "${backend}".`;
+}
+async function startIfNeeded2(adapter) {
+  const start = adapter.start;
+  if (typeof start !== "function") return void 0;
+  try {
+    await start.call(adapter);
+    return void 0;
+  } catch (err) {
+    if (err instanceof AdapterError) return err.message;
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+// src/measure.ts
+async function measure(fixtures, options) {
+  const stated = fixtures.map((f) => ({ id: f.id, state: stateFor(f) }));
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const judgeRun = await judge(stated, {
+    setName: options.setName,
+    set: options.set,
+    mode: options.mode,
+    adapter: options.adapter,
+    timeoutMs: options.timeoutMs,
+    ...options.concurrency !== void 0 ? { concurrency: options.concurrency } : {},
+    onProgress: (done2, total) => options.onProgress?.("judge", done2, total)
+  });
+  const judgeAnswers = new Map(judgeRun.items.map((i) => [i.id, i.answers]));
+  const escalatedIds = new Set(judgeRun.manifest.items.map((i) => i.item));
+  const signalsById = new Map(judgeRun.manifest.items.map((i) => [i.item, i.signals]));
+  const questions = questionsOf(options.set);
+  const reasoning = /* @__PURE__ */ new Map();
+  const failures = [];
+  let done = 0;
+  for (const item of judgeRun.items) {
+    try {
+      reasoning.set(
+        item.id,
+        await options.reasoning.answer({
+          item: item.id,
+          state: item.state,
+          questions,
+          ...signalsById.has(item.id) ? { signals: signalsById.get(item.id) } : {}
+        })
+      );
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
+    }
+    options.onProgress?.("reasoning", ++done, judgeRun.items.length);
+  }
+  const reasoningAnswers = new Map([...reasoning].map(([id, r]) => [id, r.answers]));
+  const cascadeAnswers = new Map(judgeAnswers);
+  for (const id of escalatedIds) {
+    const answers = reasoningAnswers.get(id);
+    if (answers !== void 0) cascadeAnswers.set(id, answers);
+  }
+  const reasoningTokens = sumTokens([...reasoning.values()]);
+  const cascadeTokens = sumTokens([...escalatedIds].flatMap((id) => {
+    const r = reasoning.get(id);
+    return r === void 0 ? [] : [r];
+  }));
+  const passes = [
+    {
+      name: "judge",
+      by: options.adapter.name,
+      ...accuracyOf(byId, judgeAnswers),
+      ...judgeRun.inputTokens !== void 0 ? { inputTokens: judgeRun.inputTokens } : {},
+      items: judgeRun.judged
+    },
+    {
+      name: "reasoning",
+      by: options.reasoning.name,
+      ...accuracyOf(byId, reasoningAnswers),
+      ...reasoningTokens,
+      items: reasoning.size
+    },
+    {
+      name: "cascade",
+      by: `${options.adapter.name} + ${options.reasoning.name}`,
+      ...accuracyOf(byId, cascadeAnswers),
+      // Every item pays the judge; only the escalated ones pay the reasoning model. That
+      // sum is the whole cost argument, so it is added rather than estimated.
+      ...addTokens(
+        judgeRun.inputTokens === void 0 ? {} : { inputTokens: judgeRun.inputTokens },
+        cascadeTokens
+      ),
+      items: judgeRun.judged
+    }
+  ];
+  return {
+    set: options.setName,
+    fixtures: fixtures.length,
+    passes,
+    escalated: judgeRun.manifest.items.length,
+    judged: judgeRun.judged,
+    reasoningFailures: failures.length,
+    ...failures[0] !== void 0 ? { firstReasoningError: failures[0] } : {}
+  };
+}
+function accuracyOf(fixtures, answers) {
+  let n = 0;
+  let correct = 0;
+  let unanswered = 0;
+  for (const [id, fixture] of fixtures) {
+    const given = answers.get(id);
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = given?.[question];
+      if (p === void 0) {
+        unanswered += 1;
+        continue;
+      }
+      n += 1;
+      if (p >= 0.5 === expected) correct += 1;
+    }
+  }
+  return { n, correct, accuracy: n === 0 ? Number.NaN : correct / n, unanswered };
+}
+function sumTokens(responses) {
+  const add = (pick) => responses.reduce((sum, r) => {
+    const value = pick(r);
+    return value === void 0 ? sum : (sum ?? 0) + value;
+  }, void 0);
+  const inputTokens = add((r) => r.inputTokens);
+  const outputTokens = add((r) => r.outputTokens);
+  return {
+    ...inputTokens !== void 0 ? { inputTokens } : {},
+    ...outputTokens !== void 0 ? { outputTokens } : {}
+  };
+}
+function addTokens(left, right) {
+  const both = (a, b) => a === void 0 && b === void 0 ? void 0 : (a ?? 0) + (b ?? 0);
+  const inputTokens = both(left.inputTokens, right.inputTokens);
+  const outputTokens = both(left.outputTokens, right.outputTokens);
+  return {
+    ...inputTokens !== void 0 ? { inputTokens } : {},
+    ...outputTokens !== void 0 ? { outputTokens } : {}
+  };
+}
+function formatMeasurement(m) {
+  const lines = [];
+  const pct = (n) => Number.isNaN(n) ? "     \u2014" : `${(n * 100).toFixed(1).padStart(5)}%`;
+  const num = (n) => n === void 0 ? "\u2014" : n.toLocaleString("en-US");
+  const per = (total, items) => total === void 0 || items === 0 ? "\u2014" : Math.round(total / items).toLocaleString("en-US");
+  const legend = /* @__PURE__ */ new Map();
+  lines.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
+  lines.push("| pass | by | accuracy | n | input | output | in/item |");
+  lines.push("|---|---|---|---|---|---|---|");
+  const atoms = ["judge", "reasoning"].flatMap((n) => {
+    const found = m.passes.find((p) => p.name === n);
+    return found === void 0 ? [] : [found.by];
+  });
+  for (const p of m.passes) {
+    lines.push(
+      `| ${p.name} | ${labelFor(p.by, legend, atoms)} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
+    );
+  }
+  if (legend.size > 0) {
+    lines.push("");
+    for (const [short, full2] of legend) lines.push(`  ${short} = ${full2}`);
+  }
+  lines.push("");
+  lines.push(
+    `Escalated ${m.escalated} of ${m.judged} judged (${m.judged === 0 ? "\u2014" : `${(m.escalated / m.judged * 100).toFixed(1)}%`}) \u2014 the items the cascade row paid the reasoning model for.`
+  );
+  const judgePass = m.passes.find((p) => p.name === "judge");
+  const cascade = m.passes.find((p) => p.name === "cascade");
+  const full = m.passes.find((p) => p.name === "reasoning");
+  if (cascade !== void 0 && full !== void 0 && cascade.inputTokens !== void 0 && full.inputTokens !== void 0 && full.inputTokens > 0) {
+    const ratio = cascade.inputTokens / full.inputTokens;
+    const delta = cascade.accuracy - full.accuracy;
+    const points = `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} points of accuracy against the labels`;
+    lines.push("");
+    if (ratio <= 1) {
+      const saved = (1 - ratio) * 100;
+      const savedText = cascade.inputTokens === 0 ? "100" : saved >= 99.5 ? ">99" : saved.toFixed(0);
+      lines.push(`The cascade used ${savedText}% fewer input tokens than the reasoning pass, at ${points}.`);
+    } else {
+      lines.push(
+        `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
+        `At ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation it is not worth running: either the thresholds are too wide or the questions are not separating the batch.`
+      );
+    }
+    if (judgePass !== void 0 && !Number.isNaN(judgePass.accuracy)) {
+      const worth = cascade.accuracy - judgePass.accuracy;
+      lines.push(
+        worth === 0 ? `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations changed no verdict.` : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`
+      );
+    }
+  }
+  if (m.reasoningFailures > 0) {
+    lines.push(
+      "",
+      `${m.reasoningFailures} reasoning call${m.reasoningFailures === 1 ? "" : "s"} failed and are excluded from the rows above. First error: ${m.firstReasoningError ?? "(none recorded)"}`
+    );
+  }
+  const unanswered = m.passes.reduce((sum, p) => sum + p.unanswered, 0);
+  if (unanswered > 0) {
+    lines.push(`${unanswered} labelled rows went unanswered and are excluded rather than counted wrong.`);
+  }
+  lines.push(
+    "",
+    "Accuracy is agreement with the fixture labels at a 0.5 boundary, not accuracy against",
+    "ground truth. The labels are hand-written judgments about what should be flagged, which",
+    "is the right thing to measure when you also set the thresholds \u2014 but it is what this is."
+  );
+  return `${lines.join("\n")}
+`;
+}
+function moreText(ratio) {
+  const more = (ratio - 1) * 100;
+  return more < 0.5 ? "<1" : more.toFixed(0);
+}
+function labelFor(by, legend, names) {
+  const composed = names.join(" + ");
+  if (by === composed && names.length > 1) {
+    return names.map((name) => shortAtom(name, legend)).join(" + ");
+  }
+  return shortAtom(by, legend);
+}
+var MAX_CELL = 24;
+function shortAtom(atom, legend) {
+  if (atom.length <= MAX_CELL) return atom;
+  const program = (atom.trim().split(/\s/)[0] ?? atom).split("/").pop() ?? atom;
+  const base = program.length > 0 && program.length <= MAX_CELL ? program : atom.slice(0, MAX_CELL);
+  let short = base;
+  for (let n = 2; legend.has(short) && legend.get(short) !== atom; n++) short = `${base}#${n}`;
+  legend.set(short, atom);
+  return short;
+}
+
+// src/io/reasoning.ts
+var import_node_child_process = require("node:child_process");
+var REASONING_CMD_ENV = "BOUNCER_REASONING_CMD";
+var DEFAULT_TIMEOUT_MS2 = 18e4;
+var CommandReasoning = class {
+  name;
+  command;
+  timeoutMs;
+  constructor(command, timeoutMs = DEFAULT_TIMEOUT_MS2) {
+    this.command = command;
+    this.name = command;
+    this.timeoutMs = timeoutMs;
+  }
+  async answer(request) {
+    const payload = JSON.stringify({
+      item: request.item,
+      state: request.state,
+      questions: request.questions,
+      ...request.signals !== void 0 ? { signals: request.signals } : {}
+    });
+    const { stdout } = await this.spawn(payload);
+    return parseResponse2(stdout, request.item);
+  }
+  /**
+   * Runs the command through a shell, because the whole point is that the user writes the
+   * invocation. `claude -p "$(cat)" --output-format json | jq ...` is the shape this is
+   * for, and it is not expressible as an argv array.
+   *
+   * The command comes from the user's own flag or environment, exactly like `$EDITOR`. It
+   * is not attacker-influenced input, and bouncer runs nothing else anywhere.
+   */
+  spawn(input) {
+    return new Promise((resolve4, reject) => {
+      const child = (0, import_node_child_process.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        child.kill("SIGKILL");
+        reject(new Error(`the reasoning command did not answer within ${this.timeoutMs / 1e3}s`));
+      }, this.timeoutMs);
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`the reasoning command exited ${code}: ${stderr.trim().slice(0, 500)}`));
+          return;
+        }
+        resolve4({ stdout });
+      });
+      child.stdin.on("error", () => {
+      });
+      child.stdin.end(input, "utf8");
+    });
+  }
+};
+function parseResponse2(stdout, item) {
+  const json = lastJsonObject(stdout);
+  if (json === void 0) {
+    throw new Error(`the reasoning command printed no JSON object for "${item}"`);
+  }
+  const answersRaw = json["answers"];
+  if (typeof answersRaw !== "object" || answersRaw === null || Array.isArray(answersRaw)) {
+    throw new Error(`the reasoning command's output for "${item}" has no "answers" mapping`);
+  }
+  const answers = {};
+  for (const [name, value] of Object.entries(answersRaw)) {
+    if (typeof value === "boolean") {
+      answers[name] = value ? 1 : 0;
+    } else if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1) {
+      answers[name] = value;
+    } else {
+      throw new Error(
+        `the reasoning command answered "${name}" for "${item}" with ${JSON.stringify(value)}; expected true, false, or a number between 0 and 1`
+      );
+    }
+  }
+  return {
+    answers,
+    ...countOf(json["input_tokens"]) !== void 0 ? { inputTokens: countOf(json["input_tokens"]) } : {},
+    ...countOf(json["output_tokens"]) !== void 0 ? { outputTokens: countOf(json["output_tokens"]) } : {}
+  };
+}
+function countOf(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : void 0;
+}
+function lastJsonObject(stdout) {
+  for (let start = stdout.lastIndexOf("{"); start >= 0; start = stdout.lastIndexOf("{", start - 1)) {
+    const end = stdout.lastIndexOf("}");
+    if (end < start) continue;
+    try {
+      const parsed = JSON.parse(stdout.slice(start, end + 1));
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
+
+// src/commands/measure.ts
+var VALUE_FLAGS2 = ["set", "backend", "reasoning", "concurrency", "fixtures"];
+function parseArgs3(argv) {
+  const values = /* @__PURE__ */ new Map();
+  let positional;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.startsWith("--")) {
+      const name = token.slice(2);
+      if (VALUE_FLAGS2.includes(name)) {
+        const value = argv[i + 1];
+        if (value !== void 0) values.set(name, value);
+        i += 1;
+      }
+      continue;
+    }
+    positional ??= token;
+  }
+  const fixtures = values.get("fixtures") ?? positional;
+  const concurrency = Number(values.get("concurrency"));
+  return {
+    ...fixtures !== void 0 ? { fixtures } : {},
+    ...values.has("set") ? { set: values.get("set") } : {},
+    ...values.has("backend") ? { backend: values.get("backend") } : {},
+    ...values.has("reasoning") ? { reasoning: values.get("reasoning") } : {},
+    ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {},
+    json: argv.includes("--json")
+  };
+}
+async function measure2(args, write3) {
+  if (args.fixtures === void 0) {
+    write3('Usage: bouncer measure <labelled-fixtures> [--set name] [--reasoning "<command>"]\n');
+    return 1;
+  }
+  const command = args.reasoning ?? process.env[REASONING_CMD_ENV];
+  if (command === void 0 || command.trim().length === 0) {
+    write3(
+      `Cannot measure without a reasoning model to compare against.
+  Pass --reasoning "<command>" or set ${REASONING_CMD_ENV}.
+  The command reads one JSON object on stdin and writes one on stdout;
+  the README has a worked example.
+`
+    );
+    return 1;
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const resolved = resolvePolicy(process.cwd(), root);
+  if (resolved.policy === void 0) {
+    write3(`Cannot measure: ${resolved.source} did not load.
+`);
+    for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
+`);
+    return 1;
+  }
+  const setName = args.set ?? GATE_SET;
+  const set = resolved.policy.sets[setName];
+  if (set === void 0) {
+    write3(`${resolved.source} defines no set named "${setName}". It has: ${Object.keys(resolved.policy.sets).join(", ")}.
+`);
+    return 1;
+  }
+  let fixtures;
+  try {
+    fixtures = loadFixtures(args.fixtures);
+  } catch (err) {
+    write3(`Cannot read fixtures at ${args.fixtures}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  if (fixtures.length === 0) {
+    write3(`${args.fixtures} has no fixtures, so there is nothing to measure.
+`);
+    return 1;
+  }
+  const backend = args.backend ?? resolved.policy.backend;
+  const adapter = adapterFor4(backend);
+  if (typeof adapter === "string") {
+    write3(`${adapter}
+`);
+    return 1;
+  }
+  const problem = await startIfNeeded3(adapter);
+  if (problem !== void 0) {
+    write3(`Cannot measure with ${adapter.name}: ${problem}
+`);
+    return 1;
+  }
+  const measurement = await measure(fixtures, {
+    setName,
+    set,
+    mode: resolved.policy.mode,
+    adapter,
+    reasoning: new CommandReasoning(command),
+    timeoutMs: Math.max(resolved.policy.timeoutMs, 3e4),
+    ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {},
+    onProgress: (phase, done, total) => {
+      if (!args.json) process.stderr.write(`\r  ${phase}: ${done}/${total}          `);
+    }
+  });
+  if (!args.json) process.stderr.write("\r\x1B[K");
+  if (args.json === true) {
+    write3(`${JSON.stringify(measurement, null, 2)}
+`);
+    return 0;
+  }
+  write3(formatMeasurement(measurement));
+  return measurement.reasoningFailures === measurement.fixtures ? 1 : 0;
+}
+function adapterFor4(backend) {
+  if (backend === "mock") return new MockAdapter();
+  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "jev") {
+    const key = apiKey();
+    if (key === void 0) {
+      return "Cannot measure with jev: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY.";
+    }
+    return new JevAdapter({ apiKey: key });
+  }
+  return `Unknown backend "${backend}".`;
+}
+async function startIfNeeded3(adapter) {
   const start = adapter.start;
   if (typeof start !== "function") return void 0;
   try {
@@ -9965,7 +11174,7 @@ function parseFrontmatter(text) {
   } catch {
     return {};
   }
-  if (!isRecord5(parsed)) return {};
+  if (!isRecord7(parsed)) return {};
   return {
     ...typeof parsed["name"] === "string" ? { name: parsed["name"] } : {},
     ...typeof parsed["description"] === "string" ? { description: parsed["description"] } : {}
@@ -9975,7 +11184,7 @@ function parsePluginManifest(json) {
   const plugins = arrayUnder(json, "plugins");
   const entries = [];
   for (const value of plugins) {
-    if (!isRecord5(value)) continue;
+    if (!isRecord7(value)) continue;
     const name = value["name"];
     if (typeof name !== "string" || name.length === 0) continue;
     const preference = value["installationPreference"];
@@ -9990,7 +11199,7 @@ function parseSkillsManifest(json) {
   const skills2 = arrayUnder(json, "skills");
   const entries = [];
   for (const value of skills2) {
-    if (!isRecord5(value)) continue;
+    if (!isRecord7(value)) continue;
     const name = value["name"] ?? value["skillId"];
     const description = value["description"];
     if (typeof name !== "string" || name.length === 0) continue;
@@ -10043,18 +11252,18 @@ function arrayUnder(json, key) {
   } catch {
     return [];
   }
-  if (!isRecord5(parsed)) return [];
+  if (!isRecord7(parsed)) return [];
   const value = parsed[key];
   return Array.isArray(value) ? value : [];
 }
-function isRecord5(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // src/io/skills.ts
-var import_node_fs7 = require("node:fs");
+var import_node_fs10 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path8 = require("node:path");
+var import_node_path10 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -10063,7 +11272,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs7.existsSync)(path)) return;
+    if (!(0, import_node_fs10.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -10077,17 +11286,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path8.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path10.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path8.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path8.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path10.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path10.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path8.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path10.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -10098,7 +11307,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -10122,7 +11331,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path8.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path10.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -10148,9 +11357,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path8.join)(installPath, "skills");
+    const dir = (0, import_node_path10.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path8.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path10.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -10158,51 +11367,51 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path8.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs7.existsSync)(root)) return [];
+  const root = (0, import_node_path10.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs10.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path8.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path10.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path8.join)(root, outer, inner);
-      const rpm = (0, import_node_path8.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs7.existsSync)(rpm)) {
+      const session = (0, import_node_path10.join)(root, outer, inner);
+      const rpm = (0, import_node_path10.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs10.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path8.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path10.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path8.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path8.join)(bucket, "manifest.json");
-        if ((0, import_node_fs7.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path10.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path10.join)(bucket, "manifest.json");
+        if ((0, import_node_fs10.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path8.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path10.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path8.join)(dir, outer))) {
-      buckets.push((0, import_node_path8.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path10.join)(dir, outer))) {
+      buckets.push((0, import_node_path10.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs7.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs7.readFileSync)(file, "utf8");
+    return (0, import_node_fs10.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -10215,7 +11424,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs7.statSync)(source);
+      const stat = (0, import_node_fs10.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -10225,13 +11434,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path8.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path10.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs7.existsSync)((0, import_node_path8.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path8.dirname)(current);
+    if ((0, import_node_fs10.existsSync)((0, import_node_path10.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path10.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -10239,7 +11448,7 @@ function findRepoRoot2(from) {
 }
 
 // src/commands/skills.ts
-function parseArgs2(argv) {
+function parseArgs4(argv) {
   return { json: argv.includes("--json"), verbose: argv.includes("--verbose") || argv.includes("-v") };
 }
 function skills(options, cwd = process.cwd()) {
@@ -10321,10 +11530,10 @@ async function readPayload() {
   }
 }
 function readAll() {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const chunks = [];
     process.stdin.on("data", (c) => chunks.push(c));
-    process.stdin.on("end", () => resolve3(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("end", () => resolve4(Buffer.concat(chunks).toString("utf8")));
     process.stdin.on("error", reject);
   });
 }
@@ -10350,8 +11559,12 @@ async function main(argv) {
       return OK;
     case "calibrate":
       return calibrate(parseArgs(argv.slice(3)), (text) => process.stdout.write(text));
+    case "judge":
+      return judge2(parseArgs2(argv.slice(3)), (text) => process.stdout.write(text));
+    case "measure":
+      return measure2(parseArgs3(argv.slice(3)), (text) => process.stdout.write(text));
     case "skills":
-      process.stdout.write(skills(parseArgs2(argv.slice(3))));
+      process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
       process.stdout.write("0.1.0\n");

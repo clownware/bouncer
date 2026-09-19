@@ -189,7 +189,7 @@ export async function runPreToolUse(
       else answers[name] = p;
     }
 
-    const decision = evaluate(policy, answers);
+    const decision = evaluate(policy.gate, policy.mode, answers);
 
     // The escalation manifest item, from the same answers and the same rules. It adds a
     // second pass over a handful of rules and no I/O, and it is what makes "how often did

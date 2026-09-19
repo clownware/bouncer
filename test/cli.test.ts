@@ -142,3 +142,70 @@ describe("the hook binary", () => {
     expect(r.status).toBe(1);
   });
 });
+
+// `bouncer judge` through the real binary: the second entrypoint, docs/adr/009.
+describe("the judge command", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "bouncer-judge-"));
+  const env = {
+    ...process.env,
+    BOUNCER_POLICY: resolve("policy/judge-example.yaml"),
+    BOUNCER_NO_CACHE: "1",
+    CLAUDE_PLUGIN_ROOT: resolve("."),
+    CLAUDE_PLUGIN_DATA: dataDir,
+  };
+
+  const judge = (args: string[]) =>
+    spawnSync(process.execPath, [BIN, "judge", ...args], { encoding: "utf8", env });
+
+  it("judges the example batch and writes both artifacts", () => {
+    const out = join(dataDir, "j.jsonl");
+    const manifest = join(dataDir, "m.json");
+    const r = judge(["fixtures/judge-example.jsonl", "--set", "content", "--backend", "mock", "--out", out, "--manifest", manifest]);
+
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Set: content");
+    expect(r.stdout).toMatch(/escalated +\d+ \/ 14/);
+    expect(existsSync(out)).toBe(true);
+
+    const lines = readFileSync(out, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines).toHaveLength(14);
+    expect(lines[0]?.["consumer"]).toBe("judge");
+    expect(lines[0]?.["set"]).toBe("content");
+    expect(lines[0]?.["item"]).toBe("sourced-stat");
+    // An item is not a tool call, so the line carries no tool. Readers treat that as an
+    // item line rather than a malformed one.
+    expect(lines[0]?.["tool"]).toBeUndefined();
+  });
+
+  it("names the sets that exist when asked for one that does not", () => {
+    const r = judge(["fixtures/judge-example.jsonl", "--set", "nope", "--backend", "mock"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("content");
+  });
+
+  it("says what to do when given no batch", () => {
+    const r = judge(["--backend", "mock"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("Usage:");
+  });
+
+  it("does not mistake a flag's value for the batch path", () => {
+    // `--set content` used to leave the parser reading "content" as the file to judge.
+    const r = judge(["--set", "content", "--backend", "mock", "fixtures/judge-example.jsonl", "--out", join(dataDir, "k.jsonl"), "--manifest", join(dataDir, "k.json")]);
+    expect(r.status).toBe(0);
+  });
+
+  it("reports a batch it cannot read rather than throwing", () => {
+    const r = judge(["/nonexistent/batch.jsonl", "--set", "content", "--backend", "mock"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("Cannot read");
+    expect(r.stderr).toBe("");
+  });
+
+  // The invariant that matters everywhere in this binary.
+  it("never exits 2, whatever it is given", () => {
+    for (const args of [[], ["/nonexistent"], ["--set"], ["fixtures/judge-example.jsonl", "--backend", "nonsense"]]) {
+      expect(judge(args).status).not.toBe(2);
+    }
+  });
+});

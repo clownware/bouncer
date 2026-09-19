@@ -45,7 +45,7 @@ gate:
 
 /** The escalation for a set of answers, via the same `evaluate` the hook calls. */
 function escalate(answers: Record<string, number>, item = "item-1"): EscalationItem | undefined {
-  return escalationFor(GUARD.gate, evaluate(GUARD, answers), answers, item);
+  return escalationFor(GUARD.gate, evaluate(GUARD.gate, GUARD.mode, answers), answers, item);
 }
 
 describe("escalationFor, on what it does and does not escalate", () => {

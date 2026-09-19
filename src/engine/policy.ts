@@ -9,6 +9,8 @@
 import { parse as parseYaml } from "yaml";
 import {
   ANY_QUESTION,
+  EMPTY_GATE,
+  GATE_SET,
   type Comparison,
   type Condition,
   type Diagnostic,
@@ -16,7 +18,9 @@ import {
   type HardRuleWhen,
   type Mode,
   type OnError,
+  type GatePolicy,
   type Policy,
+  type PolicySet,
   type Question,
   type Rule,
   type Verdict,
@@ -39,6 +43,9 @@ const HARD_RULE_PREDICATES = [
   "path_labelled",
   "redacts_as",
 ] as const;
+/** Keys only `policies.gate` may carry. On another set they would load and never fire. */
+const GATE_ONLY_KEYS = ["tools", "fast_path", "hard_rules"] as const;
+
 const VERDICTS: readonly Verdict[] = ["allow", "ask", "deny"];
 const ON_ERROR: readonly OnError[] = ["passthrough", "deny"];
 
@@ -117,36 +124,20 @@ export function loadPolicy(source: string): LoadResult {
     error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 − p)");
   }
 
-  const gateRaw = raw["gate"];
-  if (!isRecord(gateRaw)) {
-    error("gate", "missing or not a mapping");
-    return { diagnostics };
-  }
+  const located = locateSets(raw, error);
+  if (located === undefined) return { diagnostics };
 
-  const tools = readStringList(gateRaw["tools"], [], "gate.tools", error);
-  if (tools.length === 0) {
-    warn("gate.tools", "no tools listed, so the gate will never run");
-  }
+  const sets: Record<string, PolicySet> = {};
+  let gate: GatePolicy | undefined;
 
-  const fastPath = readStringList(gateRaw["fast_path"], [], "gate.fast_path", error);
-  const hardRules = readHardRules(gateRaw["hard_rules"], error, warn);
-
-  const questions = readQuestions(gateRaw["questions"], "gate.questions", true, error);
-  // Probes are optional and, unlike `questions`, an empty block is fine: most policies
-  // will not have any, and a policy with none must behave exactly as it did before they
-  // existed.
-  const probeQuestions = readQuestions(gateRaw["probe_questions"], "gate.probe_questions", false, error);
-
-  for (const name of Object.keys(probeQuestions)) {
-    if (name in questions) {
-      error(
-        `gate.probe_questions.${name}`,
-        `"${name}" is already a question in gate.questions — answers come back keyed by name, so the two would collide`,
-      );
+  for (const { name, path, body } of located) {
+    if (name === GATE_SET) {
+      gate = readGate(body, path, error, warn);
+      sets[name] = gate;
+    } else {
+      sets[name] = readPolicySet(body, path, error, warn);
     }
   }
-
-  const rules = readRules(gateRaw["rules"], questions, probeQuestions, error, warn);
 
   if (diagnostics.some((d) => d.severity === "error")) {
     return { diagnostics };
@@ -159,11 +150,147 @@ export function loadPolicy(source: string): LoadResult {
     timeoutMs,
     onError,
     skipPermissionModes,
-    gate: { tools, fastPath, hardRules, questions, probeQuestions, rules },
+    sets,
+    gate: gate ?? EMPTY_GATE,
     calibration: { confidenceFloor, accuracyBar },
   };
 
   return { policy, diagnostics };
+}
+
+interface LocatedSet {
+  readonly name: string;
+  /** The path as the user spelled it, so a diagnostic points at their own line. */
+  readonly path: string;
+  readonly body: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Finds the named policy sets, whichever way the file spells them.
+ *
+ * Two spellings, both supported for good: a `policies:` mapping of name to set, and a
+ * top-level `gate:`, which is the same thing under the one name the hook looks up. The
+ * alias is not deprecated — every policy file written before v0.3 uses it, and a warning
+ * on a file with nothing to fix is friction with nothing behind it (docs/adr/009).
+ *
+ * Both at once is an error rather than a precedence rule. Which one wins is not guessable,
+ * and guessing would mean judging tool calls against the block the user thought they had
+ * replaced.
+ */
+function locateSets(
+  raw: Readonly<Record<string, unknown>>,
+  error: (path: string, message: string) => void,
+): LocatedSet[] | undefined {
+  const policiesRaw = raw["policies"];
+  const gateRaw = raw["gate"];
+
+  if (policiesRaw !== undefined && gateRaw !== undefined) {
+    error(
+      "policies",
+      "the file has both a top-level `gate:` and a `policies:` block — move the gate under `policies:` and delete the top-level one",
+    );
+    return undefined;
+  }
+
+  if (policiesRaw === undefined) {
+    if (!isRecord(gateRaw)) {
+      error("gate", "missing or not a mapping — a policy file needs a `gate:` block or a `policies:` block");
+      return undefined;
+    }
+    return [{ name: GATE_SET, path: "gate", body: gateRaw }];
+  }
+
+  if (!isRecord(policiesRaw)) {
+    error("policies", "must be a mapping of set name to policy set");
+    return undefined;
+  }
+
+  const located: LocatedSet[] = [];
+  for (const [name, body] of Object.entries(policiesRaw)) {
+    const path = `policies.${name}`;
+    if (!isRecord(body)) {
+      error(path, "must be a mapping with `questions` and `rules`");
+      continue;
+    }
+    located.push({ name, path, body });
+  }
+
+  if (located.length === 0) {
+    error("policies", "names no policy sets");
+    return undefined;
+  }
+
+  return located;
+}
+
+/**
+ * Reads the gate: a policy set plus the three things only a tool call has.
+ *
+ * `tools`, `fast_path` and `hard_rules` reason about a Claude Code tool name or a shell
+ * command, so they belong to this consumer rather than to the engine (docs/adr/008).
+ * `readPolicySet` rejects them anywhere else.
+ */
+function readGate(
+  raw: Readonly<Record<string, unknown>>,
+  path: string,
+  error: (path: string, message: string) => void,
+  warn: (path: string, message: string) => void,
+): GatePolicy {
+  const tools = readStringList(raw["tools"], [], `${path}.tools`, error);
+  if (tools.length === 0) {
+    warn(`${path}.tools`, "no tools listed, so the gate will never run");
+  }
+
+  const fastPath = readStringList(raw["fast_path"], [], `${path}.fast_path`, error);
+  const hardRules = readHardRules(raw["hard_rules"], path, error, warn);
+
+  return { tools, fastPath, hardRules, ...readPolicySet(raw, path, error, warn, true) };
+}
+
+/**
+ * Reads one named set: questions, probe questions, rules.
+ *
+ * This is the engine's unit of work and it knows nothing about tool calls, which is why
+ * `tools`, `fast_path` and `hard_rules` on a non-gate set are an error rather than a
+ * warning. The failure mode is silence: a `hard_rules` block on a content set would load,
+ * read correctly, and never once fire.
+ */
+function readPolicySet(
+  raw: Readonly<Record<string, unknown>>,
+  path: string,
+  error: (path: string, message: string) => void,
+  warn: (path: string, message: string) => void,
+  isGate = false,
+): PolicySet {
+  if (!isGate) {
+    for (const key of GATE_ONLY_KEYS) {
+      if (raw[key] !== undefined) {
+        error(
+          `${path}.${key}`,
+          `only the \`gate\` set can use \`${key}\` — it reasons about a tool call, and here it would load correctly and never fire`,
+        );
+      }
+    }
+  }
+
+  const questions = readQuestions(raw["questions"], `${path}.questions`, true, error);
+  // Probes are optional and, unlike `questions`, an empty block is fine: most policies
+  // will not have any, and a policy with none must behave exactly as it did before they
+  // existed.
+  const probeQuestions = readQuestions(raw["probe_questions"], `${path}.probe_questions`, false, error);
+
+  for (const name of Object.keys(probeQuestions)) {
+    if (name in questions) {
+      error(
+        `${path}.probe_questions.${name}`,
+        `"${name}" is already a question in ${path}.questions — answers come back keyed by name, so the two would collide`,
+      );
+    }
+  }
+
+  const rules = readRules(raw["rules"], path, questions, probeQuestions, error, warn);
+
+  return { questions, probeQuestions, rules };
 }
 
 /**
@@ -249,6 +376,7 @@ function readQuestions(
  */
 function readHardRules(
   raw: unknown,
+  basePath: string,
   error: (path: string, message: string) => void,
   warn: (path: string, message: string) => void,
 ): HardRule[] {
@@ -256,14 +384,14 @@ function readHardRules(
   if (raw === undefined) return rules;
 
   if (!Array.isArray(raw)) {
-    error("gate.hard_rules", "must be a list");
+    error(`${basePath}.hard_rules`, "must be a list");
     return rules;
   }
 
   const seen = new Set<string>();
 
   raw.forEach((entry, i) => {
-    const path = `gate.hard_rules[${i}]`;
+    const path = `${basePath}.hard_rules[${i}]`;
 
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
@@ -297,7 +425,7 @@ function readHardRules(
       return;
     }
     if (then === "allow") {
-      error(`${path}.then`, "must be `ask` or `deny`; `gate.fast_path` is where allow-without-judging lives");
+      error(`${path}.then`, `must be \`ask\` or \`deny\`; \`${basePath}.fast_path\` is where allow-without-judging lives`);
       return;
     }
     if (then === "deny") {
@@ -374,6 +502,7 @@ function readHardRules(
 
 function readRules(
   raw: unknown,
+  basePath: string,
   questions: Readonly<Record<string, Question>>,
   probeQuestions: Readonly<Record<string, Question>>,
   error: (path: string, message: string) => void,
@@ -382,7 +511,7 @@ function readRules(
   const rules: Rule[] = [];
 
   if (!Array.isArray(raw)) {
-    error("gate.rules", "missing or not a list");
+    error(`${basePath}.rules`, "missing or not a list");
     return rules;
   }
 
@@ -390,7 +519,7 @@ function readRules(
 
   raw.forEach((entry, i) => {
     const index = i + 1;
-    const path = `gate.rules[${i}]`;
+    const path = `${basePath}.rules[${i}]`;
 
     if (!isRecord(entry)) {
       error(path, "must be a mapping");
@@ -443,8 +572,8 @@ function readRules(
       error(
         `${path}.when.${question}`,
         question in probeQuestions
-          ? `"${question}" is a probe question, and probes are never read by rules — move it to gate.questions to act on it`
-          : `no question named "${question}" is defined in gate.questions`,
+          ? `"${question}" is a probe question, and probes are never read by rules — move it to ${basePath}.questions to act on it`
+          : `no question named "${question}" is defined in ${basePath}.questions`,
       );
       return;
     }
@@ -468,7 +597,7 @@ function readRules(
   });
 
   if (terminalAt === undefined && rules.length > 0) {
-    warn("gate.rules", "no `default` rule, so a tool call matching nothing gets no decision");
+    warn(`${basePath}.rules`, "no `default` rule, so an item matching nothing gets no decision");
   }
 
   return rules;

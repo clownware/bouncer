@@ -20,6 +20,9 @@ import type { Verdict } from "../engine/types.js";
 
 export const LOG_FILE = "decisions.jsonl";
 
+/** Where `bouncer judge` writes. Same line shape, different consumer — see docs/adr/009. */
+export const JUDGMENTS_FILE = "judgments.jsonl";
+
 /**
  * When the log passes this size it is renamed to `decisions.jsonl.1`, replacing the
  * previous generation, and a fresh file is started. One line is a few hundred bytes, so
@@ -30,9 +33,28 @@ export const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
 export interface DecisionRecord {
   readonly ts: string;
+  /**
+   * Which entrypoint wrote the line: the PreToolUse gate, or the batch judge.
+   *
+   * Absent on every line written before v0.3, all of which are the gate's. Deliberately
+   * NOT folded into `source` below, which already means *which layer decided* and whose
+   * `judge` value means the classifier: overloading it would silently reclassify every
+   * line already on disk and break the one query that field exists for. See docs/adr/009.
+   */
+  readonly consumer?: "gate" | "judge";
+  /** The policy set the item was judged against. Absent means `gate`. */
+  readonly set?: string;
+  /** The item's key, for a judge line: its own id, its path, or `file:line`. */
+  readonly item?: string;
+  /** The `StateBuilder` that produced `state`: `tool_call` or `item`. */
+  readonly state_kind?: string;
   readonly session_id?: string;
   readonly tool_use_id?: string;
-  readonly tool: string;
+  /**
+   * Absent on a judge line, because an item is not a tool call. Every reader treats an
+   * absent `tool` as an item line rather than as a malformed one.
+   */
+  readonly tool?: string;
   readonly permission_mode?: string;
   readonly agent_type?: string;
   readonly mode: string;
@@ -86,14 +108,14 @@ export interface DecisionRecord {
  * A logging failure must not affect the verdict. By the time this runs the decision is
  * already made, and a full disk is not a reason to change what Claude Code is told.
  */
-export function append(dir: string, record: DecisionRecord): void {
+export function append(dir: string, record: DecisionRecord, name: string = LOG_FILE): void {
   try {
     mkdirSync(dir, { recursive: true });
 
     const safe: DecisionRecord =
       record.state !== undefined ? { ...record, state: redact(record.state).text } : record;
 
-    const file = join(dir, LOG_FILE);
+    const file = join(dir, name);
     rotateIfOversized(file);
     appendFileSync(file, `${JSON.stringify(safe)}\n`, "utf8");
   } catch {
@@ -137,10 +159,10 @@ export function parseLog(source: string): DecisionRecord[] {
 }
 
 /** Reads the most recent records, newest first. Returns [] if the log is unreadable. */
-export function tail(dir: string, count: number): DecisionRecord[] {
+export function tail(dir: string, count: number, name: string = LOG_FILE): DecisionRecord[] {
   let raw: string;
   try {
-    raw = readFileSync(join(dir, LOG_FILE), "utf8");
+    raw = readFileSync(join(dir, name), "utf8");
   } catch {
     return [];
   }

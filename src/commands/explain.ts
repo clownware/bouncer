@@ -31,7 +31,9 @@ export function explain(toolUseId?: string): string {
 function render(record: DecisionRecord): string {
   const lines: string[] = [];
 
-  lines.push(`${record.tool} at ${record.ts}`);
+  // A judge line has no tool, because an item is not a tool call. It names its item and
+  // the set it was judged against instead.
+  lines.push(`${record.tool ?? `${record.set ?? "?"}: ${record.item ?? "(item)"}`} at ${record.ts}`);
   lines.push(`Verdict: ${record.verdict}${record.emitted === null ? `  (nothing emitted — ${record.mode} mode)` : `  (emitted ${record.emitted})`}`);
   lines.push(`Because: ${describe(record)}`);
 

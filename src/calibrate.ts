@@ -10,26 +10,45 @@
 // against ground truth. Since the user is also the one setting the thresholds, that is
 // the right thing to measure — but the README has to say so rather than imply otherwise.
 //
-// Fixtures are tool calls rather than pre-built states, so a run exercises the state
-// builder and redaction too. A state-builder regression that stops the classifier seeing
-// a path is a calibration regression, and this is where it should show up.
+// Fixtures are items rather than pre-built states, so a run exercises the state builder and
+// redaction too. A state-builder regression that stops the classifier seeing a path is a
+// calibration regression, and this is where it should show up. Which builder runs is the
+// fixture's `kind`, so the same harness scores tool calls and a batch of documents.
 
 import { readFileSync } from "node:fs";
 import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
 import { buildState, commandOf } from "./engine/state.js";
+import { itemState } from "./engine/item.js";
 import { evaluate } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
-import type { CalibrationPolicy, Policy, Verdict } from "./engine/types.js";
-import type { DecisionRecord } from "./io/log.js";
+import { GATE_SET, type BuiltState, type CalibrationPolicy, type Policy, type PolicySet, type Verdict } from "./engine/types.js";
+import { parseLog, type DecisionRecord } from "./io/log.js";
+
+/**
+ * A fixture is an item with labels, and `kind` says which `StateBuilder` builds it.
+ *
+ * Until v0.3 a fixture *was* a hook payload: `{ tool, input, cwd, permission_mode,
+ * target_exists }` with an `expect` block bolted on. That was the shape ADR-008 named as
+ * the thing the second consumer would have to change, and `bouncer judge` is it.
+ *
+ * The migration is in `parseFixtures`: a line with a top-level `tool` and no `kind` is read
+ * as `kind: "tool_call"` with those five fields lifted into `item` unchanged. So
+ * `fixtures/gate.jsonl` does not change by a byte and neither does what it scores: the
+ * printed report and every scored number are identical to the pre-v0.3 build's, which is
+ * what keeps runs 1 through 8 comparable with whatever comes next. A calibration table
+ * whose fixtures quietly changed shape underneath it is worth nothing.
+ */
+export type FixtureKind = "tool_call" | "item";
 
 export interface Fixture {
   readonly id: string;
-  readonly tool: string;
-  readonly input: Record<string, unknown>;
-  readonly cwd?: string;
-  readonly permission_mode?: string;
-  readonly target_exists?: boolean;
+  readonly kind: FixtureKind;
+  /**
+   * The item itself. For `tool_call`, the hook-payload fields; for `item`, whatever the
+   * user's batch contains.
+   */
+  readonly item: Readonly<Record<string, unknown>>;
   /** Expected answer per question. Questions not listed are not scored. */
   readonly expect: Readonly<Record<string, boolean>>;
   /** Why the label is what it is. Required — an unexplained label cannot be argued with. */
@@ -37,6 +56,18 @@ export interface Fixture {
   /** The fixture this one is the near-miss counterpart of. */
   readonly pair?: string;
 }
+
+/** The hook-payload fields a `tool_call` fixture's item carries. */
+export interface ToolCallItem {
+  readonly tool: string;
+  readonly input: Record<string, unknown>;
+  readonly cwd?: string;
+  readonly permission_mode?: string;
+  readonly target_exists?: boolean;
+}
+
+/** The five keys the legacy spelling kept at the top level. */
+const TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists"] as const;
 
 export interface Scored {
   readonly fixture: Fixture;
@@ -145,26 +176,74 @@ export function parseFixtures(source: string): Fixture[] {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("//")) return;
 
-    let parsed: Fixture;
+    let raw: Record<string, unknown>;
     try {
-      parsed = JSON.parse(trimmed) as Fixture;
+      raw = JSON.parse(trimmed) as Record<string, unknown>;
     } catch (err) {
       throw new Error(`fixture line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    for (const field of ["id", "tool", "note"] as const) {
-      if (typeof parsed[field] !== "string" || parsed[field].length === 0) {
+    for (const field of ["id", "note"] as const) {
+      if (typeof raw[field] !== "string" || (raw[field] as string).length === 0) {
         throw new Error(`fixture line ${i + 1} is missing "${field}"`);
       }
     }
-    if (typeof parsed.expect !== "object" || parsed.expect === null || Object.keys(parsed.expect).length === 0) {
-      throw new Error(`fixture "${parsed.id}" has no expectations, so it scores nothing`);
+
+    const expect = raw["expect"];
+    if (typeof expect !== "object" || expect === null || Object.keys(expect).length === 0) {
+      throw new Error(`fixture "${String(raw["id"])}" has no expectations, so it scores nothing`);
     }
 
-    fixtures.push(parsed);
+    const { kind, item } = shapeOf(raw, i + 1);
+
+    fixtures.push({
+      id: raw["id"] as string,
+      kind,
+      item,
+      expect: expect as Readonly<Record<string, boolean>>,
+      note: raw["note"] as string,
+      ...(typeof raw["pair"] === "string" ? { pair: raw["pair"] } : {}),
+    });
   });
 
   return fixtures;
+}
+
+/**
+ * Reads a fixture's kind and item, migrating the pre-v0.3 spelling.
+ *
+ * A line with a top-level `tool` and no `kind` is the old shape — a hook payload with
+ * labels — and its five payload fields are lifted into `item` unchanged. Nothing about what
+ * it scores changes; see the note on `Fixture`.
+ */
+function shapeOf(raw: Record<string, unknown>, line: number): { kind: FixtureKind; item: Record<string, unknown> } {
+  const declared = raw["kind"];
+
+  if (declared === undefined) {
+    if (typeof raw["tool"] !== "string" || (raw["tool"] as string).length === 0) {
+      throw new Error(`fixture line ${line} has no "kind" and no "tool", so nothing says how to build its state`);
+    }
+    const item: Record<string, unknown> = {};
+    for (const key of TOOL_CALL_KEYS) {
+      if (raw[key] !== undefined) item[key] = raw[key];
+    }
+    return { kind: "tool_call", item };
+  }
+
+  if (declared !== "tool_call" && declared !== "item") {
+    throw new Error(`fixture line ${line} has kind "${String(declared)}"; expected "tool_call" or "item"`);
+  }
+
+  const item = raw["item"];
+  if (typeof item !== "object" || item === null || Array.isArray(item)) {
+    throw new Error(`fixture line ${line} declares kind "${declared}" but has no "item" mapping`);
+  }
+
+  if (declared === "tool_call" && typeof (item as Record<string, unknown>)["tool"] !== "string") {
+    throw new Error(`fixture line ${line} is a tool_call but its item has no "tool"`);
+  }
+
+  return { kind: declared, item: item as Record<string, unknown> };
 }
 
 export function loadFixtures(path: string): Fixture[] {
@@ -176,30 +255,26 @@ export async function score(
   policy: Policy,
   adapter: Adapter,
   onProgress?: (done: number, total: number) => void,
+  setName: string = GATE_SET,
 ): Promise<Scored[]> {
-  const questions: Record<string, Question> = {};
-  for (const [name, q] of Object.entries(policy.gate.questions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) };
+  const set = policy.sets[setName];
+  if (set === undefined) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
   }
 
-  // Probes go in the same fan-out here for the same reason they do in the hook: a run
-  // that asked them separately would not be measuring what production asks. They are
-  // scored only where a fixture labels them, and never enter the verdict below.
-  const probeNames = new Set(Object.keys(policy.gate.probeQuestions));
-  for (const [name, q] of Object.entries(policy.gate.probeQuestions)) {
-    questions[name] = { type: "noul", instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) };
-  }
+  const questions = questionsOf(set);
+
+  // Probes are scored only where a fixture labels them, and never enter the verdict below.
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+
+  // Hard rules and the fast path belong to the gate (ADR-008), so they only apply when the
+  // set being scored is the gate and the fixture is a tool call.
+  const gateExtras = setName === GATE_SET ? policy.gate : undefined;
 
   const results: Scored[] = [];
 
   for (const [i, fixture] of fixtures.entries()) {
-    const state = buildState({
-      toolName: fixture.tool,
-      toolInput: fixture.input,
-      cwd: fixture.cwd ?? "/home/user/project",
-      ...(fixture.permission_mode !== undefined ? { permissionMode: fixture.permission_mode } : {}),
-      ...(fixture.target_exists !== undefined ? { targetExists: fixture.target_exists } : {}),
-    });
+    const state = stateFor(fixture);
 
     const response = await adapter.decide({ state: state.text, questions, timeoutMs: 30_000 });
 
@@ -220,8 +295,11 @@ export async function score(
     // The fast path is deliberately still not modelled here, unchanged from run 7. It
     // would only ever turn an `ask` into an `allow`, and doing it in the same run as this
     // change would make two things move at once.
-    const hard = matchHardRule(policy.gate.hardRules, commandOf(fixture.tool, fixture.input));
-    const decision = hard === undefined ? evaluate(policy, answers) : undefined;
+    const hard =
+      gateExtras !== undefined && fixture.kind === "tool_call"
+        ? matchHardRule(gateExtras.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input))
+        : undefined;
+    const decision = hard === undefined ? evaluate(set, policy.mode, answers) : undefined;
 
     const verdict: Verdict = hard?.verdict ?? decision?.verdict ?? "allow";
     const verdictReason = hard !== undefined
@@ -257,6 +335,141 @@ export async function score(
   }
 
   return results;
+}
+
+/**
+ * The whole fan-out for a set: its questions and its probes, in one call.
+ *
+ * Probes go in the same request as the questions in force, for the same reason they do in
+ * the hook — a run that asked them separately would not be measuring what production asks.
+ */
+export function questionsOf(set: PolicySet): Record<string, Question> {
+  const questions: Record<string, Question> = {};
+  for (const source of [set.questions, set.probeQuestions]) {
+    for (const [name, q] of Object.entries(source)) {
+      questions[name] = { type: "noul", instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) };
+    }
+  }
+  return questions;
+}
+
+/** Reads a `tool_call` fixture's item as the hook payload it is. */
+export function toolCallOf(fixture: Fixture): ToolCallItem {
+  const item = fixture.item as Record<string, unknown>;
+  return {
+    tool: typeof item["tool"] === "string" ? item["tool"] : "",
+    input: (item["input"] ?? {}) as Record<string, unknown>,
+    ...(typeof item["cwd"] === "string" ? { cwd: item["cwd"] } : {}),
+    ...(typeof item["permission_mode"] === "string" ? { permission_mode: item["permission_mode"] } : {}),
+    ...(typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {}),
+  };
+}
+
+/**
+ * Builds a fixture's state with the builder its `kind` names.
+ *
+ * Fixtures are items rather than pre-built states so that a run exercises the state builder
+ * and redaction too: a regression that stops the classifier seeing a path is a calibration
+ * regression, and this is where it should show up.
+ */
+export function stateFor(fixture: Fixture): BuiltState {
+  if (fixture.kind === "item") return itemState.build(fixture.item);
+
+  const call = toolCallOf(fixture);
+  return buildState({
+    toolName: call.tool,
+    toolInput: call.input,
+    cwd: call.cwd ?? "/home/user/project",
+    ...(call.permission_mode !== undefined ? { permissionMode: call.permission_mode } : {}),
+    ...(call.target_exists !== undefined ? { targetExists: call.target_exists } : {}),
+  });
+}
+
+/**
+ * Scores a log's recorded answers against labels, without calling a backend.
+ *
+ * `score()` above asks the classifier; this reads what it already said. That is the whole
+ * point: a live run costs one call per item and, once it has been paid for, re-scoring it
+ * after a relabelling or a threshold change should cost nothing. It is also what makes a
+ * batch run in anger into calibration data — `bouncer judge` writes `item` on every line,
+ * so a judgments log over a fixture file joins to it by id.
+ *
+ * The verdict is recomputed from the recorded probabilities rather than read off the line,
+ * so changing a threshold and re-running this says what the new threshold would have done.
+ * Lines a deterministic path decided carry no answers and are counted as skipped rather
+ * than scored: there is nothing of the classifier's in them to measure.
+ */
+export function scoreFromLog(
+  source: string,
+  fixtures: readonly Fixture[],
+  policy: Policy,
+  setName: string = GATE_SET,
+): { scored: Scored[]; matched: number; unmatched: number; unscorable: number } {
+  const set = policy.sets[setName];
+  if (set === undefined) {
+    throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
+  }
+
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const probeNames = new Set(Object.keys(set.probeQuestions));
+
+  const scored: Scored[] = [];
+  let matched = 0;
+  let unmatched = 0;
+  let unscorable = 0;
+
+  for (const record of parseLog(source)) {
+    // A judge line is keyed on the item; a gate line has only its tool_use_id, so a user
+    // labelling their own history labels by that.
+    const key = record.item ?? record.tool_use_id;
+    if (key === undefined) {
+      unscorable += 1;
+      continue;
+    }
+
+    const fixture = byId.get(key);
+    if (fixture === undefined) {
+      unmatched += 1;
+      continue;
+    }
+
+    const answers = { ...(record.answers ?? {}) };
+    const probes = record.probes ?? {};
+    if (Object.keys(answers).length === 0) {
+      // A hard rule, a fast-path hit or an error line. Nothing of the classifier's in it.
+      unscorable += 1;
+      continue;
+    }
+
+    matched += 1;
+    const decision = evaluate(set, policy.mode, answers);
+    const verdictReason = {
+      question: decision.reason.kind === "rule" ? decision.reason.question : "default",
+      p: decision.reason.kind === "rule" ? decision.reason.p : Number.NaN,
+      source: "rule" as const,
+    };
+
+    for (const [question, expected] of Object.entries(fixture.expect)) {
+      const p = probeNames.has(question) ? probes[question] : answers[question];
+      if (p === undefined) continue;
+
+      const predicted = p >= 0.5;
+      scored.push({
+        fixture,
+        question,
+        expected,
+        p,
+        predicted,
+        correct: predicted === expected,
+        confidence: Math.max(p, 1 - p),
+        verdict: decision.verdict,
+        verdictReason,
+        probe: probeNames.has(question),
+      });
+    }
+  }
+
+  return { scored, matched, unmatched, unscorable };
 }
 
 export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {

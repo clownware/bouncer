@@ -4,7 +4,17 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--backend jev|local|mock] [--compare a,b] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|local|mock] [--compare a,b] [--json]
+//   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
+//
+// `--from` scores a log's recorded answers instead of asking a backend, so re-scoring a run
+// you have already paid for — after a relabelling, or after moving a threshold — costs
+// nothing and calls nothing. It joins the log to the labels by id: `bouncer judge` writes
+// `item` on every line, so a judgments log over a fixture file lines up by construction.
+//
+// `--set` names the policy set to score against, defaulting to `gate`. A fixture file does
+// not name its own set on purpose: the same batch scored against two sets is a thing
+// someone will want to do, and a set baked into every line makes that an edit (docs/adr/009).
 //
 // `--compare` runs two backends over the same fixture set and prints them side by side.
 // Both runs go through the same `score()`, so the comparison is of the backends and not of
@@ -23,6 +33,7 @@ import {
   loadFixtures,
   report,
   score,
+  scoreFromLog,
   type Fixture,
   type Scored,
 } from "../calibrate.js";
@@ -31,6 +42,10 @@ import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
+  /** A decisions or judgments log to score instead of calling a backend. */
+  readonly from?: string;
+  /** The policy set to score against. Defaults to `gate`. */
+  readonly set?: string;
   readonly backend?: string;
   /** One or two backend names. One means "against the backend already selected". */
   readonly compare?: string;
@@ -44,6 +59,8 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
   };
   return {
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
+    ...(value("set") !== undefined ? { set: value("set") as string } : {}),
+    ...(value("from") !== undefined ? { from: value("from") as string } : {}),
     ...(value("backend") !== undefined ? { backend: value("backend") as string } : {}),
     ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
     json: argv.includes("--json"),
@@ -67,6 +84,10 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   } catch (err) {
     write(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
+  }
+
+  if (args.from !== undefined) {
+    return fromLog(args, resolved.policy, fixtures, write);
   }
 
   const primary = args.backend ?? resolved.policy.backend;
@@ -96,7 +117,15 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   const runs: Array<{ backend: string; scored: Scored[] }> = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = names[i] as string;
-    runs.push({ backend: label, scored: await run(fixtures, resolved.policy, adapter, label, names.length, args) });
+    let scored: Scored[];
+    try {
+      scored = await run(fixtures, resolved.policy, adapter, label, names.length, args);
+    } catch (err) {
+      // A set name that is not in the policy is a typo, not a crash. Say which names exist.
+      write(`${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+    runs.push({ backend: label, scored });
   }
 
   const [first, second] = runs;
@@ -134,6 +163,71 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   return 0;
 }
 
+/**
+ * `--from`: score what the classifier already said.
+ *
+ * No adapter is constructed at all, which is deliberate rather than incidental — this path
+ * must work with no API key, no network and no local endpoint, because "re-score the run I
+ * paid for last week" is a thing to do on a plane.
+ */
+function fromLog(
+  args: CalibrateArgs,
+  policy: Policy,
+  fixtures: readonly Fixture[],
+  write: (s: string) => void,
+): number {
+  let source: string;
+  try {
+    source = readFileSync(args.from as string, "utf8");
+  } catch (err) {
+    write(`Cannot read the log at ${args.from}: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+
+  let result;
+  try {
+    result = scoreFromLog(source, fixtures, policy, args.set);
+  } catch (err) {
+    write(`${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+
+  if (result.matched === 0) {
+    // Silence here would print an empty table that reads like a passing run.
+    write(
+      `No line in ${args.from} matched a fixture id.\n` +
+        `  ${result.unmatched} lines named an item with no fixture, and ${result.unscorable} carried no answers.\n` +
+        `  A judgments log written over this fixture file joins by id; a gate log joins on tool_use_id.\n`,
+    );
+    return 1;
+  }
+
+  if (args.json === true) {
+    write(
+      `${JSON.stringify(
+        {
+          from: args.from,
+          matched: result.matched,
+          unmatched: result.unmatched,
+          unscorable: result.unscorable,
+          reports: report(result.scored, policy.calibration),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  }
+
+  write(formatReport(report(result.scored, policy.calibration), `${args.from} (recorded)`, policy.calibration, result.scored));
+  write(
+    `\nScored ${result.matched} logged items against their labels.` +
+      ` ${result.unmatched} had no fixture; ${result.unscorable} carried no classifier answer` +
+      ` (a hard rule, the fast path, or an error).\n`,
+  );
+  return 0;
+}
+
 async function run(
   fixtures: readonly Fixture[],
   policy: Policy,
@@ -145,9 +239,15 @@ async function run(
   // Progress matters here: a live run is one network call per fixture and takes minutes.
   // It goes to stderr so `--json` output stays pipeable.
   const prefix = total > 1 ? `${label}: ` : "";
-  const scored = await score(fixtures, policy, adapter, (done, n) => {
-    if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
-  });
+  const scored = await score(
+    fixtures,
+    policy,
+    adapter,
+    (done, n) => {
+      if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
+    },
+    args.set,
+  );
   if (!args.json) process.stderr.write("\r\x1b[K");
   return scored;
 }

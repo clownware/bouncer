@@ -31,8 +31,13 @@ import { loadPolicy, type LoadResult } from "../engine/policy.js";
  * 1 → 2: `gate.probeQuestions` (ADR/PR #19). The first time this guard fired, and on the
  * commit after the cache landed — a cache entry written by the previous build deserialises
  * into a policy with no probe questions at all, which is silent rather than noisy.
+ *
+ * 2 → 3: `Policy.sets`, the named policy sets of docs/adr/009. A v2 entry deserialises
+ * into a policy with no `sets` at all, so `bouncer judge --set x` would report that the
+ * set does not exist while the file plainly defines it — and would do so only on machines
+ * with a warm cache, which is the worst kind of bug to be told about.
  */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 
 const DIR = "policy-cache";
 
