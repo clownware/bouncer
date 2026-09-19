@@ -199,7 +199,9 @@ recorded reality; the docs are a description of it.
   `package-lock.json`, and the literal `--version` prints in `src/cli.ts`) and
   `test/plugin.test.ts` pins them to each other, `--version` by running the built bundle. The
   marketplace entry deliberately carries no version: `plugin.json` wins over it, so a copy
-  there would be a fifth place to forget. Docs and tests alone do not need a bump.
+  there would be a fifth place to forget. A bump also gets an entry in `CHANGELOG.md` saying
+  what an existing install will notice — that file is for the person deciding whether to
+  update, not a commit list. Docs and tests alone need neither.
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
 - **No real API key in any thread.** Jev calls are stubbed in tests; live calibration runs
