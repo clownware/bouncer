@@ -373,6 +373,14 @@ table from a checkout:
 node bin/bouncer.cjs calibrate
 ```
 
-That makes live calls and needs the key. There is no way to re-score an existing log
-offline today; `calibrate` takes `--fixtures`, `--backend`, `--compare` and `--json`, and
-replays fixtures rather than log lines.
+That makes live calls and needs the key. `calibrate --from <file>` re-scores answers that
+were already paid for, with no key and no network — but it joins a gate log to fixtures on
+`tool_use_id`, so re-scoring real traffic means a fixture file carrying that log's ids.
+`calibrate` also takes `--fixtures`, `--backend`, `--compare`, `--set`, `--out` and
+`--json`.
+
+---
+
+Turning that loop into a measurement — running the same task with and without the plugin
+and comparing the two — is [docs/testing-plan.md](testing-plan.md), which also lists what
+the existing harnesses can and cannot say.
