@@ -194,10 +194,12 @@ describe("the compiled-policy cache", () => {
     expect(loaded.diagnostics).toEqual([]);
     expect(shapeOf(loaded.policy)).toBe(
       "{backend:string,calibration:{accuracyBar:number,confidenceFloor:number}," +
+        "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
         "redactsAs:[string],text:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
+        "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
         "index:number,verdict:string}],tools:[string]}," +
         "mode:string,onError:string," +
@@ -205,10 +207,11 @@ describe("the compiled-policy cache", () => {
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
         "redactsAs:[string],text:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
+        "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(3);
+    expect(CACHE_VERSION).toBe(4);
   });
 });

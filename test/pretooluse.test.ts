@@ -353,6 +353,28 @@ describe("the state handed to the classifier", () => {
     expect(state.action.replaces_existing_file).toBe(false);
   });
 
+  // `jev-latest` is an alias, and a threshold tuned on one version then re-scored against
+  // answers from another is a comparison nobody meant to make. The adapter always read the
+  // version the API reported; nothing ever wrote it down.
+  it("says which model answered and which policy was installed", async () => {
+    await runPreToolUse(payload(), { adapter: harmless });
+
+    const record = logLines()[0];
+    expect(record.model).toBe("mock");
+    expect(record.policy.file).toMatch(/^\d+-[0-9a-f]{8}$/);
+    expect(record.policy.questions).toMatch(/^\d+-[0-9a-f]{8}$/);
+    expect(record.policy.questions).not.toBe(record.policy.file);
+  });
+
+  it("names the policy on a line no model answered, and no model", async () => {
+    await runPreToolUse(payload({ tool_input: { command: "cat .env" } }), { adapter: harmless });
+
+    const record = logLines()[0];
+    expect(record.source).toBe("hard_rule");
+    expect(record.policy.file).toMatch(/^\d+-[0-9a-f]{8}$/);
+    expect(record.model).toBeUndefined();
+  });
+
   it("records a hard-rule hit with its source, its state and no classifier answers", async () => {
     // The log's three jobs — explain a prompt, seed a fixture, re-score after a policy
     // change — all need the command, and this is the one kind of line the classifier never

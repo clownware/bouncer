@@ -21,6 +21,7 @@ import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, type Adapter } from "../adapters/types.js";
+import { questionsOf } from "../calibrate.js";
 import { formatRun, judge as runJudge, type JudgeRun, type JudgedItem } from "../judge.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
@@ -153,7 +154,7 @@ export async function judge(args: JudgeArgs, write: (s: string) => void): Promis
   const manifestPath = args.manifest ?? join(dataDir(), "escalations.json");
 
   writeLog(logPath, run, policy);
-  const manifestWritten = writeManifest(manifestPath, run);
+  const manifestWritten = writeManifest(manifestPath, run, policy);
 
   if (args.json === true) {
     write(`${JSON.stringify({ ...run, log: logPath, manifest: manifestPath }, null, 2)}\n`);
@@ -193,6 +194,8 @@ function recordFor(item: JudgedItem, run: JudgeRun, policy: Policy, ts: string):
     state_kind: "item",
     mode: policy.mode,
     backend: run.backend,
+    ...(item.model !== undefined ? { model: item.model } : {}),
+    policy: identityOf(policy, run.set),
     verdict: item.verdict,
     // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
     // rather than left out so a reader never has to ask which kind of line it is holding.
@@ -215,13 +218,39 @@ function withoutState<T extends { state?: string }>(escalation: T): Omit<T, "sta
   return rest;
 }
 
-/** Returns false when there was nothing to write, so the caller can say so. */
-function writeManifest(path: string, run: JudgeRun): boolean {
+function identityOf(policy: Policy, setName: string): { file: string; questions: string } {
+  return { file: policy.fingerprint, questions: policy.sets[setName]?.questionsFingerprint ?? "" };
+}
+
+/**
+ * Returns false when there was nothing to write, so the caller can say so.
+ *
+ * The manifest is handed to something that has never seen the policy file, so it carries
+ * what that reader needs to ask the same question: every question the set asked, whole —
+ * a signal's `asks` is the instructions alone, and the criteria are half of what the
+ * classifier was told — plus which policy and which models produced it. The models are a
+ * list because `jev-latest` is an alias and a long batch can straddle the day it moves.
+ */
+function writeManifest(path: string, run: JudgeRun, policy: Policy): boolean {
   if (run.manifest.items.length === 0) return false;
+  const set = policy.sets[run.set];
+  const models = [...new Set(run.items.flatMap((i) => (i.model === undefined ? [] : [i.model])))];
+
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(
     path,
-    `${JSON.stringify({ set: run.set, backend: run.backend, ...run.manifest }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        set: run.set,
+        backend: run.backend,
+        ...(models.length > 0 ? { models } : {}),
+        policy: identityOf(policy, run.set),
+        ...(set !== undefined ? { questions: questionsOf(set) } : {}),
+        ...run.manifest,
+      },
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
   return true;

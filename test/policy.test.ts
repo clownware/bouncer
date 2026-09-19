@@ -174,6 +174,49 @@ describe("loadPolicy", () => {
     expect(warnings(source).map((d) => d.path)).not.toContain("on_error");
   });
 
+  // A record carries these so a re-score can tell a moved threshold, which leaves old
+  // answers valid, from a reworded question, which does not.
+  describe("fingerprints", () => {
+    const withPolicy = (threshold: string, instructions: string, extra = "") =>
+      `version: 1\ngate:\n  tools: [Bash]\n  questions:\n${extra}    destructive:\n      instructions: "${instructions}"\n  rules:\n    - when: { destructive: { p: ">=${threshold}" } }\n      then: ask\n    - default: allow\n`;
+
+    const load = (source: string) => {
+      const { policy } = loadPolicy(source);
+      if (policy === undefined) throw new Error("did not load");
+      return policy;
+    };
+
+    it("gives the questions the same fingerprint when only a threshold moved", () => {
+      const before = load(withPolicy("0.70", "It destroys work."));
+      const after = load(withPolicy("0.60", "It destroys work."));
+      expect(after.gate.questionsFingerprint).toBe(before.gate.questionsFingerprint);
+      expect(after.fingerprint).not.toBe(before.fingerprint);
+    });
+
+    it("gives the questions a new fingerprint when one is reworded", () => {
+      const before = load(withPolicy("0.70", "It destroys work."));
+      const after = load(withPolicy("0.70", "It destroys uncommitted work."));
+      expect(after.gate.questionsFingerprint).not.toBe(before.gate.questionsFingerprint);
+    });
+
+    // Questions are answered independently, so where one sits in the file means nothing.
+    it("ignores the order the questions are written in", () => {
+      const other = '    secrets:\n      instructions: "It exposes a credential."\n';
+      const first = load(withPolicy("0.70", "It destroys work.", other));
+      const last = load(
+        'version: 1\ngate:\n  tools: [Bash]\n  questions:\n    destructive:\n      instructions: "It destroys work."\n' +
+          `${other}  rules:\n    - when: { destructive: { p: ">=0.70" } }\n      then: ask\n    - default: allow\n`,
+      );
+      expect(last.gate.questionsFingerprint).toBe(first.gate.questionsFingerprint);
+    });
+
+    it("fingerprints the shipped policy, and the same way twice", () => {
+      const source = readFileSync("policy/default.yaml", "utf8");
+      expect(load(source).fingerprint).toMatch(/^\d+-[0-9a-f]{8}$/);
+      expect(load(source).fingerprint).toBe(load(source).fingerprint);
+    });
+  });
+
   it("reads criteria, including YAML's boolean-looking true and false keys", () => {
     const source = `
 version: 1

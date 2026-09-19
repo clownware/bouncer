@@ -7,6 +7,7 @@
 // naming a question that does not exist.
 
 import { parse as parseYaml } from "yaml";
+import { fingerprint, fingerprintQuestions } from "./fingerprint.js";
 import {
   ANY_QUESTION,
   EMPTY_GATE,
@@ -162,6 +163,7 @@ export function loadPolicy(source: string): LoadResult {
     sets,
     gate: gate ?? EMPTY_GATE,
     calibration: { confidenceFloor, accuracyBar },
+    fingerprint: fingerprint(source),
   };
 
   return { policy, diagnostics };
@@ -299,7 +301,7 @@ function readPolicySet(
 
   const rules = readRules(raw["rules"], path, questions, probeQuestions, error, warn);
 
-  return { questions, probeQuestions, rules };
+  return { questions, probeQuestions, rules, questionsFingerprint: fingerprintQuestions(questions, probeQuestions) };
 }
 
 /**

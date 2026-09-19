@@ -59,6 +59,19 @@ export interface DecisionRecord {
   readonly agent_type?: string;
   readonly mode: string;
   readonly backend: string;
+  /**
+   * The model that answered, as the backend reported it — `jev-1.13.0`, not the
+   * `jev-latest` that was asked for. An alias moves; a threshold tuned against one version
+   * and re-scored against answers from another is a comparison nobody meant to make.
+   * Absent when no model answered, or when the backend does not say.
+   */
+  readonly model?: string;
+  /**
+   * Which policy was installed: `file` is the policy file's fingerprint and `questions` is
+   * the set's. `calibrate --from` reads the second to tell whether these answers are to the
+   * questions it is about to score them against. See `PolicySet.questionsFingerprint`.
+   */
+  readonly policy?: { readonly file: string; readonly questions: string };
   /** What policy concluded. */
   readonly verdict: Verdict;
   /** What was actually put on stdout; null when nothing was emitted. */
