@@ -42,8 +42,12 @@ import { writeAtomic } from "./atomic.js";
  * with neither, and every record written from it would carry no policy identity — silently,
  * and only on the machines that have been running longest, which are the ones whose logs
  * are worth re-scoring.
+ *
+ * 4 → 5: the `token_prefix` hard-rule predicate. A load that failed is cached like one that
+ * worked, so a policy using the predicate that an older bundle had already rejected as
+ * "unknown predicate" would go on being rejected, from the cache, by a bundle that knows it.
  */
-export const CACHE_VERSION = 4;
+export const CACHE_VERSION = 5;
 
 const DIR = "policy-cache";
 

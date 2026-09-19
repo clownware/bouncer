@@ -130,6 +130,39 @@ describe("the bench script", () => {
       expect(r.stdout).toContain("(limit +1%)");
     });
 
+    // The first real change this gate measured added a hard-rule predicate. The base bundle
+    // could not load the new policy, so it stopped enforcing, skipped the decision, and came
+    // back quicker: +8.8% against a 10% limit for a change that cost nothing. A hook that
+    // cannot load its policy exits 0 on purpose, so the exit status says nothing here.
+    describe("an arm that cannot load its policy", () => {
+      const broken = () => {
+        const file = join(home, "broken.yaml");
+        const shipped = readFileSync("policy/default.yaml", "utf8");
+        writeFileSync(file, shipped.replace(/^ {8}tokens: \[git, stash, clear\]$/m, "        no_such_predicate: [x]"), "utf8");
+        expect(readFileSync(file, "utf8")).toContain("no_such_predicate");
+        return file;
+      };
+
+      // A copy, because the bench tells its arms apart by path.
+      const copy = () => {
+        const file = join(home, "copy.cjs");
+        copyFileSync("bin/bouncer.cjs", file);
+        return file;
+      };
+
+      it("is an error, not a fast sample", () => {
+        const r = run("--against", copy(), "--against-policy", broken());
+        expect(r.status).not.toBe(0);
+        expect(r.stderr).toContain("did not load its policy");
+      });
+
+      it("is timed when it is given a policy it can load", () => {
+        const r = run("--against", copy(), "--against-policy", "policy/default.yaml");
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout).toMatch(/paired median diff/);
+      });
+    });
+
     // A gate that cannot be evaluated has to fail. NaN compares false against everything,
     // so a missing value used to be a budget nothing could exceed.
     it.each([

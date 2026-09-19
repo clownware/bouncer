@@ -7925,6 +7925,7 @@ var MODES = ["observe", "guard", "full", "seatbelt"];
 var HARD_RULE_PREDICATES = [
   "first_token",
   "tokens",
+  "token_prefix",
   "not_tokens",
   "text",
   "path_labelled",
@@ -8214,6 +8215,7 @@ function readHardRules(raw, basePath, error, warn) {
     };
     const firstToken = list("first_token");
     const tokens = list("tokens");
+    const tokenPrefix = list("token_prefix");
     const notTokens = list("not_tokens");
     const text = list("text");
     const pathLabelled = list("path_labelled");
@@ -8221,6 +8223,7 @@ function readHardRules(raw, basePath, error, warn) {
     if (failed) return;
     if (firstToken !== void 0) when.firstToken = firstToken;
     if (tokens !== void 0) when.tokens = tokens;
+    if (tokenPrefix !== void 0) when.tokenPrefix = tokenPrefix;
     if (notTokens !== void 0) when.notTokens = notTokens;
     if (text !== void 0) when.text = text;
     if (pathLabelled !== void 0) when.pathLabelled = pathLabelled;
@@ -8760,6 +8763,10 @@ function holds(rule, facts) {
     asserted = true;
     if (!when.tokens.every((t) => facts.tokens.includes(t))) return false;
   }
+  if (when.tokenPrefix !== void 0) {
+    asserted = true;
+    if (!when.tokenPrefix.some((p) => facts.tokens.some((t) => t.startsWith(p)))) return false;
+  }
   if (when.text !== void 0) {
     asserted = true;
     if (!when.text.some((t) => facts.lower.includes(t.toLowerCase()))) return false;
@@ -9017,7 +9024,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 4;
+var CACHE_VERSION = 5;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -11980,7 +11987,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.3\n");
+      process.stdout.write("0.2.4\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

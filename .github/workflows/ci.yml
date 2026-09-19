@@ -116,10 +116,15 @@ jobs:
       # branch, so against `base.sha` the difference is this pull request's and nothing
       # else's; for a push it is the commit the branch was at before.
       #
-      # Skipped when the bundle and the bench are both byte-identical to the base, which is
-      # every docs-only and test-only change: about 15 s of runner time when it does run,
-      # and Actions minutes are a budget. It cannot see a change to policy/default.yaml,
-      # because both arms read this checkout's policy; the line above is what shows that.
+      # Each arm reads the policy it shipped with. They shared this checkout's at first, and
+      # the first change measured that way added a hard-rule predicate the base bundle could
+      # not load: the base arm stopped enforcing, did no work, and the change read as +8.8%
+      # when it cost nothing. The bench now refuses to time an arm in that state, and a
+      # policy that got slower to load is a difference this can see.
+      #
+      # Skipped when the bundle, the policy and the bench are all byte-identical to the base,
+      # which is every docs-only and test-only change: about 15 s of runner time when it
+      # does run, and Actions minutes are a budget.
       #
       # 10, because a byte-identical bundle reads within 1% of itself over 50 pairs and a
       # stray `require("node:crypto")` reads +4.5% on a laptop and more on slower hardware,
@@ -135,10 +140,12 @@ jobs:
             exit 0
           fi
           git show "$BASE_SHA:bin/bouncer.cjs" > "$RUNNER_TEMP/base.cjs"
+          git show "$BASE_SHA:policy/default.yaml" > "$RUNNER_TEMP/base-policy.yaml"
           if cmp -s "$RUNNER_TEMP/base.cjs" bin/bouncer.cjs \
-            && git diff --quiet "$BASE_SHA" -- scripts/bench.mjs; then
-            echo "The bundle and the bench are unchanged from $BASE_SHA; nothing to compare."
+            && git diff --quiet "$BASE_SHA" -- scripts/bench.mjs policy/default.yaml; then
+            echo "The bundle, the policy and the bench are unchanged from $BASE_SHA; nothing to compare."
             exit 0
           fi
-          node scripts/bench.mjs --against "$RUNNER_TEMP/base.cjs" --runs 50 \
+          node scripts/bench.mjs --against "$RUNNER_TEMP/base.cjs" \
+            --against-policy "$RUNNER_TEMP/base-policy.yaml" --runs 50 \
             --max-regression-pct "$MAX_REGRESSION_PCT"

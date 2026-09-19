@@ -141,6 +141,15 @@ function holds(rule: HardRule, facts: CommandFacts): boolean {
     if (!when.tokens.every((t) => facts.tokens.includes(t))) return false;
   }
 
+  // Of this command's own tokens, which is the point of it. `git push origin +main` used to
+  // be found with `text: [" +"]`, and `text` reads the whole line: a commit message saying
+  // "+3%" chained in front of a plain `git push` was a forced push as far as that went, and
+  // in seatbelt the commit was denied along with it (#84).
+  if (when.tokenPrefix !== undefined) {
+    asserted = true;
+    if (!when.tokenPrefix.some((p) => facts.tokens.some((t) => t.startsWith(p)))) return false;
+  }
+
   if (when.text !== undefined) {
     asserted = true;
     if (!when.text.some((t) => facts.lower.includes(t.toLowerCase()))) return false;

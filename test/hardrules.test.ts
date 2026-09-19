@@ -84,6 +84,14 @@ describe("the shipped hard rules", () => {
     // the common one. `--force-with-lease` stays the near-miss: it is the safe form.
     ["git-push-force-short", "git push -f origin main", "git push --force-with-lease origin feature/parser"],
     ["git-push-force-refspec", "git push origin +main", "git push origin main"],
+    // #84. The plus belongs to a different command, or sits in a neighbour's quoted
+    // argument. Both misses were hits while the entry read the whole line with `text`.
+    [
+      "git-push-force-refspec",
+      "git add . && git push origin +refs/heads/main:refs/heads/main",
+      'git commit -m "p95 is +3% worse" && git push origin feature/parser',
+    ],
+    ["git-push-force-refspec", 'git push origin "+main"', 'git push origin feature/parser && echo "a + b"'],
     ["git-branch-force-delete-long", "git branch --delete --force feature/parser", "git branch --delete feature/parser"],
     ["git-branch-force-delete-split", "git branch -d -f feature/parser", "git branch -d feature/parser"],
     ["drop-a-database", "psql $DATABASE_URL -c 'DROP DATABASE analytics'", "psql $DATABASE_URL -c 'DROP TABLE users'"],
