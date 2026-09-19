@@ -15,8 +15,9 @@
 // Unlike the hook, this sends the items themselves. The README says so plainly and
 // docs/adr/009 decision 4 says why that is not a reversal of PRD §9.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { writeAtomic } from "../io/atomic.js";
 import { JevAdapter } from "../adapters/jev.js";
 import { LocalAdapter } from "../adapters/local.js";
 import { MockAdapter } from "../adapters/mock.js";
@@ -156,17 +157,32 @@ export async function judge(args: JudgeArgs, write: (s: string) => void): Promis
   writeLog(logPath, run, policy);
   const manifestWritten = writeManifest(manifestPath, run, policy);
 
+  // Decided once, so `--json` cannot disagree with the text output about it — it used to
+  // return 0 before this was ever looked at. Non-zero when any item went unjudged or
+  // incomplete, not only when all did: a run meant to be left unattended is exactly where
+  // "ninety-nine of a hundred failed" must not exit clean. A failed manifest write counts,
+  // since the file at that path is then some other run's. Never 2.
+  const status = run.judged === 0 || run.failed > 0 || run.incomplete > 0 || !manifestWritten ? 1 : 0;
+
   if (args.json === true) {
-    write(`${JSON.stringify({ ...run, log: logPath, manifest: manifestPath }, null, 2)}\n`);
-    return 0;
+    // `manifest` stays the manifest. It used to be overwritten here with the path, which
+    // dropped the denominator and the items from the one output a script would parse.
+    write(`${JSON.stringify({ ...run, log: logPath, manifestPath, manifestWritten }, null, 2)}\n`);
+    return status;
   }
 
   write(formatRun(run));
   write(`\n  judgments  ${logPath}\n`);
-  write(`  manifest   ${manifestWritten ? manifestPath : "(not written: nothing escalated)"}\n`);
+  write(`  manifest   ${manifestWritten ? manifestPath : `(could not be written to ${manifestPath})`}\n`);
+  if (run.failed > 0 || run.incomplete > 0) {
+    write(
+      `\n${run.failed + run.incomplete} item${run.failed + run.incomplete === 1 ? "" : "s"} settled nothing and` +
+        ` ${run.failed + run.incomplete === 1 ? "is" : "are"} listed in the manifest under \`unjudged\` and \`incomplete\`.` +
+        " Nothing here accepted them.\n",
+    );
+  }
 
-  // A run where nothing could be judged is a failure whatever it printed.
-  return run.judged === 0 ? 1 : 0;
+  return status;
 }
 
 /**
@@ -196,20 +212,25 @@ function recordFor(item: JudgedItem, run: JudgeRun, policy: Policy, ts: string):
     backend: run.backend,
     ...(item.model !== undefined ? { model: item.model } : {}),
     policy: identityOf(policy, run.set),
-    verdict: item.verdict,
+    // Only a judged item has a verdict, and the line says so by not having one. It used to
+    // say `allow` beside an `error`, which is "accepted" to anything that reads one field.
+    ...(item.outcome === "judged" ? { verdict: item.verdict } : {}),
     // Nothing is emitted anywhere: there is no Claude Code here to emit to. Written as null
     // rather than left out so a reader never has to ask which kind of line it is holding.
     emitted: null,
-    reason: item.reason,
-    ...(item.error === undefined ? { source: "judge" as const, answers: item.answers } : {}),
+    reason: item.outcome === "unjudged" ? { kind: "no-rule-matched" } : item.reason,
+    // An incomplete item keeps its answers: they are real, about the head of the item, and
+    // `truncated` beside them is what tells a re-score which kind they are.
+    ...(item.outcome !== "unjudged" ? { source: "judge" as const, answers: item.answers } : {}),
     ...(item.probes !== undefined ? { probes: item.probes } : {}),
     // The log line carries the state, so the escalation on it does not repeat it — same
     // rule as the gate's. The standalone manifest is where the item stands on its own.
-    ...(item.escalation !== undefined ? { escalation: withoutState(item.escalation) } : {}),
+    ...(item.outcome === "judged" && item.escalation !== undefined ? { escalation: withoutState(item.escalation) } : {}),
     state: item.state,
     ...(item.redactedKinds.length > 0 ? { redacted_kinds: item.redactedKinds } : {}),
+    ...(item.truncated ? { truncated: true } : {}),
     latency_ms: { total: item.latencyMs, adapter: item.latencyMs },
-    ...(item.error !== undefined ? { error: item.error } : {}),
+    ...(item.outcome === "unjudged" ? { error: item.error } : {}),
   };
 }
 
@@ -223,7 +244,18 @@ function identityOf(policy: Policy, setName: string): { file: string; questions:
 }
 
 /**
- * Returns false when there was nothing to write, so the caller can say so.
+ * Replaces the manifest with this run's, every time, and reports whether it could.
+ *
+ * It used to return early when nothing escalated, which left the previous run's file where
+ * it was: judge a batch that escalates `old`, then a clean one to the same path, and the
+ * manifest still names `old`. Whatever read it next re-adjudicated an item that was not in
+ * the batch. An empty manifest is a result, and it is written like any other — atomically,
+ * so a reader never sees half of one.
+ *
+ * `unjudged` and `incomplete` are beside `items` rather than in it. `items` goes to the
+ * reasoning pass, and neither belongs there: one has nothing to re-adjudicate and the other
+ * would be sent the same truncated state. They are for a person, and being in the artifact
+ * is what makes them hard to miss.
  *
  * The manifest is handed to something that has never seen the policy file, so it carries
  * what that reader needs to ask the same question: every question the set asked, whole —
@@ -232,12 +264,10 @@ function identityOf(policy: Policy, setName: string): { file: string; questions:
  * list because `jev-latest` is an alias and a long batch can straddle the day it moves.
  */
 function writeManifest(path: string, run: JudgeRun, policy: Policy): boolean {
-  if (run.manifest.items.length === 0) return false;
   const set = policy.sets[run.set];
   const models = [...new Set(run.items.flatMap((i) => (i.model === undefined ? [] : [i.model])))];
 
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(
+  return writeAtomic(
     path,
     `${JSON.stringify(
       {
@@ -247,13 +277,21 @@ function writeManifest(path: string, run: JudgeRun, policy: Policy): boolean {
         policy: identityOf(policy, run.set),
         ...(set !== undefined ? { questions: questionsOf(set) } : {}),
         ...run.manifest,
+        unjudged: needsAPerson(run, "unjudged"),
+        incomplete: needsAPerson(run, "incomplete"),
       },
       null,
       2,
     )}\n`,
-    "utf8",
   );
-  return true;
+}
+
+function needsAPerson(run: JudgeRun, outcome: "unjudged" | "incomplete"): { item: string; because: string }[] {
+  return run.items.flatMap((i) =>
+    i.outcome !== outcome
+      ? []
+      : [{ item: i.id, because: i.outcome === "unjudged" ? `${i.error.kind}: ${i.error.message}` : "truncated" }],
+  );
 }
 
 function basenameOf(path: string): string {

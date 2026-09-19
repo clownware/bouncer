@@ -148,9 +148,10 @@ export async function runPreToolUse(
   const status = breaker.check(breakerState);
 
   if (status.tripped) {
+    // No verdict: nothing was judged. This line and the one in `standDown` used to say
+    // `allow`, and `bouncer status` counted them as allows.
     append(dir, {
       ...base,
-      verdict: "allow",
       emitted: null,
       reason: { kind: "no-rule-matched" },
       latency_ms: { total: now() - started },
@@ -273,7 +274,6 @@ function standDown(
 
   append(dir, {
     ...base,
-    verdict: "allow",
     emitted: denies ? "deny" : null,
     reason: { kind: "no-rule-matched" },
     latency_ms: { total: totalMs },

@@ -209,6 +209,87 @@ describe("the judge command", () => {
     expect((written["items"] as unknown[]).length).toBe(1);
   });
 
+  // Judge a batch that escalates, then a clean one to the same path. The manifest used to
+  // keep naming the first batch's item, because an empty one was never written.
+  it("replaces the manifest on every run, including with an empty one", () => {
+    const manifest = join(dataDir, "replaced.json");
+    const batch = (name: string, text: string) => {
+      const path = join(dataDir, `${name}.jsonl`);
+      writeFileSync(path, `${JSON.stringify({ id: name, kind: "item", item: { text } })}\n`, "utf8");
+      return path;
+    };
+    const gate = (path: string) =>
+      spawnSync(process.execPath, [BIN, "judge", path, "--backend", "mock", "--out", join(dataDir, "r.jsonl"), "--manifest", manifest], {
+        encoding: "utf8",
+        env: { ...env, BOUNCER_POLICY: resolve("policy/default.yaml") },
+      });
+
+    expect(gate(batch("old", "rm -rf ~/Documents")).status).toBe(0);
+    expect((JSON.parse(readFileSync(manifest, "utf8")).items as { item: string }[]).map((i) => i.item)).toEqual(["old"]);
+
+    expect(gate(batch("new", "ls src")).status).toBe(0);
+    const second = JSON.parse(readFileSync(manifest, "utf8"));
+    expect(second.items).toEqual([]);
+    expect(second.itemsJudged).toBe(1);
+    expect(second.unjudged).toEqual([]);
+    expect(second.incomplete).toEqual([]);
+  });
+
+  it("keeps the manifest in --json output, and names the file beside it", () => {
+    const manifest = join(dataDir, "json.json");
+    const r = judge(["fixtures/judge-example.jsonl", "--set", "content", "--backend", "mock", "--out", join(dataDir, "json.jsonl"), "--manifest", manifest, "--json"]);
+
+    const out = JSON.parse(r.stdout) as Record<string, unknown>;
+    expect((out["manifest"] as { itemsJudged: number }).itemsJudged).toBe(14);
+    expect(out["manifestPath"]).toBe(manifest);
+    expect(out["manifestWritten"]).toBe(true);
+  });
+
+  // One item that fits and one over the 16 KB cap, which the mock scores low and the engine
+  // refuses to accept. A per-item classifier failure would take the same path through the
+  // status, but cannot be staged through the binary without a network call; the runner's
+  // own tests cover that one.
+  describe("when an item settles nothing", () => {
+    const mixed = join(dataDir, "mixed.jsonl");
+    const lines = [
+      { id: "fits", kind: "item", item: { text: "A short, sourced draft." } },
+      { id: "too-long", kind: "item", item: { text: `A clean opening. ${"Padding. ".repeat(4000)}Guaranteed results.` } },
+    ];
+
+    const run = (extra: string[]) => {
+      writeFileSync(mixed, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`, "utf8");
+      return judge([mixed, "--set", "content", "--backend", "mock", "--out", join(dataDir, "mixed-out.jsonl"), "--manifest", join(dataDir, "mixed.json"), ...extra]);
+    };
+
+    // One of two items was judged, so the old check — "was anything judged at all" — passed,
+    // and `--json` never reached even that.
+    it("exits 1, with --json the same as without it", () => {
+      expect(run([]).status).toBe(1);
+      expect(run(["--json"]).status).toBe(1);
+    });
+
+    it("says so, and never exits 2", () => {
+      const r = run([]);
+      expect(r.stdout).toMatch(/incomplete +1/);
+      expect(r.stdout).toContain("Nothing here accepted them");
+      expect(r.status).not.toBe(2);
+    });
+
+    it("writes no verdict on that line, keeps its answers, and lists it for a person", () => {
+      run([]);
+      const out = readFileSync(join(dataDir, "mixed-out.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+      const long = out.filter((l) => l["item"] === "too-long").at(-1);
+      expect(long).not.toHaveProperty("verdict");
+      expect(long?.["truncated"]).toBe(true);
+      expect(long?.["answers"]).toBeDefined();
+      expect(out.filter((l) => l["item"] === "fits").at(-1)?.["verdict"]).toBe("allow");
+
+      const manifest = JSON.parse(readFileSync(join(dataDir, "mixed.json"), "utf8")) as Record<string, unknown>;
+      expect(manifest["incomplete"]).toEqual([{ item: "too-long", because: "truncated" }]);
+      expect(manifest["itemsJudged"]).toBe(1);
+    });
+  });
+
   it("names the sets that exist when asked for one that does not", () => {
     const r = judge(["fixtures/judge-example.jsonl", "--set", "nope", "--backend", "mock"]);
     expect(r.status).toBe(1);
