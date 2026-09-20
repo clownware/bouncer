@@ -208,6 +208,74 @@ install in two minutes and watch run, and `judge` is where the token bill goes d
 | **v0.4 — extract core** | `@clownware/bouncer-core` (engine, adapters, policy, calibrate). The hook and the CLI become thin consumers. | Only after v0.3 has bent the interface. ADR-008 decision 3: no `packages/core` until a second consumer has forced it. |
 | **v0.5 — router** | Skill routing on `UserPromptSubmit`, per [ADR-006](adr/006-the-skill-router.md). | Moved out of v0.2. It is the least aligned with the thesis and the hardest thing here to calibrate, so it goes last. |
 
+> **Reprioritised on 2026-09-19.** The table above is the build order and still describes
+> what shipped. It is no longer the priority order. The owner's statement of the goal that
+> day: "safety hasn't been much of an issue, my goal is replace expensive LLM calls with Jev
+> calls in cases where we're figuring out if an agent should take an action, any if/then
+> type prompt, commit to github, validation of outputs, etc."
+>
+> So the gate is a **maintained first consumer** — it ships, it is supported, it is the
+> two-minute demo, and it is the instrument that produced the fixture corpus, the friction
+> numbers and the frozen holdout — and it is not the focus. Two facts behind that, recorded
+> in full in the 2026-09-19 correction to
+> [ADR-008](adr/008-bouncer-is-a-judgment-engine.md): in the `seatbelt` configuration the
+> owner runs, with no `deny` threshold enabled, the classifier alters zero outcomes; and all
+> seven shipped questions are safety questions, so the gate cannot reduce bugs or rework
+> whatever its accuracy. What it buys is recovery from a rare disaster, which is real and is
+> a different ledger.
+>
+> *Maintained* means friction regressions and false denies are still bugs (#84, #87), the
+> calibration gate still holds before enforcement is recommended, and a change to what an
+> installed bouncer does still takes a version bump. It does not mean new gate questions go
+> ahead of the list below.
+
+**The consumers, in priority order**
+
+Each row is a decision someone currently pays a reasoning model to make. Each has an issue
+carrying the question shape it needs, the state it would carry, the labels that already
+exist or how to get them, and what has to be measured before it decides anything.
+
+| # | Consumer | Issue | What earns it a decision |
+|---|---|---|---|
+| C1 | An if/then call inside a pipeline | [#91](https://github.com/clownware/bouncer/issues/91) | `bouncer measure`'s three rows over a batch of the logged calls it replaces; the cascade row landing near the reasoning row at a fraction of its tokens |
+| C2 | Output validation against criteria | [#92](https://github.com/clownware/bouncer/issues/92) | The same three rows, with false accepts reported separately from false rejects |
+| C3 | Commit and push readiness | [#93](https://github.com/clownware/bouncer/issues/93) | Observe beside real pushes, scored against what CI said an hour later; hold rate reported beside accuracy |
+| C4 | Should the agent take this step | [#94](https://github.com/clownware/bouncer/issues/94) | Observe over real sessions: how often it would have stopped a step that turned out fine |
+| C5 | Correctness and rework | [#95](https://github.com/clownware/bouncer/issues/95) | Its own fixtures and calibration gate, then observe; the outcome claim needs the A/B |
+
+**Why this order, when the goal statement named action gating first.** It is ordered by what
+it costs to get a defensible number, not by value. C1 and C2 can be measured now, because
+the reasoning call being replaced has already logged its answers and those answers are the
+label — the claim is that the fast model reaches the same branch, and the batch to prove it
+is already in somebody's logs. C3's labels are downstream and mechanical: CI, a review that
+asked for changes, a revert. C4 is the most valuable of the five and has no cheap label at
+all; agreement with the frontier model measures imitation of the incumbent, which ADR-006
+already withdrew a DoD over. C5 claims an outcome — less debugging — that no fixture score
+can establish, only the A/B designed in [#88](https://github.com/clownware/bouncer/pull/88).
+Nothing stops C4 being started first; the order says which one produces a number that
+survives being argued with.
+
+**What counts as evidence, for all five.** The three numbers `bouncer measure` already
+prints — agreement with labels, escalation rate with its denominator, tokens per item — over
+a real labelled batch, plus the price of the reasoning call being replaced, at prices stated
+and dated. [#75](https://github.com/clownware/bouncer/issues/75) is that gap for the batch
+judge today: every number `measure` has produced so far is synthetic, from a keyword mock
+and a lookup-table oracle. A consumer without a labelled batch has a story, not a claim.
+
+**What does not change.** [ADR-008](adr/008-bouncer-is-a-judgment-engine.md) decisions 1 and
+3 hold, and are what make the reprioritisation cheap: a consumer is a `StateBuilder` and a
+policy set, nothing hook-shaped lives below `src/cli.ts`, and `@clownware/bouncer-core`
+still waits for the consumer that bends the interface. The four moat items are still the
+test a roadmap item has to pass, and every row above points at the first of them — policy as
+YAML the user owns — by being a policy file rather than a feature.
+
+**Where v0.4 and v0.5 sit now.** v0.4 (extract core) is unchanged and still gated on a
+second consumer having bent the interface; C1 or C2 deployed as a real policy set is more
+likely to do that than `judge` has. v0.5 (the router) stays last: it is a C4 with a
+narrower state, it has ADR-006's four unsettled questions in front of it
+([#58](https://github.com/clownware/bouncer/issues/58)), and its evaluation problem is C4's
+evaluation problem.
+
 **v0.1 — Gate, dry-run first (shipped)**
 - Definition of done: installs from a Clownware marketplace on a clean machine; 100 tool
   calls in dry-run with p95 ≤ 600 ms; fixture table published; tests green; ADRs 001–003
