@@ -155,8 +155,9 @@ Three of its rules bind work in this repo:
 
 ## Verified facts, do not re-derive from memory
 
-Both were checked against live sources on 2026-09-18. If something contradicts these,
-re-verify rather than assuming the note is stale.
+The Jev and hook facts were checked against live sources on 2026-09-18, the ecosystem facts
+on 2026-09-23. If something contradicts these, re-verify rather than assuming the note is
+stale.
 
 **Jev** (`POST https://api.typesafe.ai/v1/systemone`, Bearer auth, model `jev-latest`):
 - `questions` is a **map** keyed by caller-chosen names (not an array with `id`); answers
@@ -194,6 +195,24 @@ easily got wrong, all confirmed against captured payloads in `test/fixtures/payl
 
 When a payload question comes up, read a fixture rather than the docs. The fixtures are
 recorded reality; the docs are a description of it.
+
+**The open ecosystem** is what the three-way calibration table compares Jev against, so
+these are the facts that decide which arms can exist and what the README may call them.
+**SemIf** (TheoLeeCJ/SemIf, formerly openjev) reads direct logits off a frozen Qwen3.5-4B,
+and its own `docs/RESULTS.md` puts it at 0.845 against published Jev's 0.883 on TypeSafe's
+public subset: equal-case macro agreement over 102 rows and 20 cases. That is agreement
+with Jev's answers, not calibration against labels, which is the thing our table measures.
+**openjev-sglang** (ekzhang/openjev-sglang) serves `/v1/systemone` in Jev's wire shape from
+Qwen3.6-35B-A3B on SGLang, accepts `jev-latest` as a model alias, and runs unauthenticated
+on its public Modal deploy; its README says its probabilities "are not calibrated estimates
+of correctness", which is exactly the claim `--compare` tests. **`JevAdapter` already takes
+`baseUrl`**, so a Jev-shaped server is a URL and not a new adapter. **Qwen tokenizes `10`
+and `64` as more than one token**, so a label set is only valid for the tokenizer it was
+checked against: labels must be verified single tokens under the model actually served,
+which is ADR-005 step 2 and why the local adapter refuses rather than reading a prefix.
+**Anthropic's API returns no logprobs**, so the LLM one-token-logprob arm is an OpenAI model
+or an open-weights model on vLLM. The README names which, in those words, and never calls
+it "frontier".
 
 ## Conventions
 
