@@ -59,6 +59,7 @@ describe("the hook binary", () => {
       ["no command at all", [], PRETOOLUSE_BASH],
       ["an unknown command", ["nonsense"], PRETOOLUSE_BASH],
       ["a flag that looks like a command", ["--block"], PRETOOLUSE_BASH],
+      ["export pointed at a log that is not there", ["export", "--from", "/nonexistent/decisions.jsonl"], ""],
     ];
 
     it.each(hostileInputs)("%s", (_label, args, input) => {
