@@ -8,6 +8,27 @@ Earlier releases have no entries: 0.2.0 is described in
 [docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
 convention does.
 
+## 0.2.5
+
+**`calibrate` can compare Jev against any server that speaks Jev's wire shape.** Name it
+`jev@<url>`: `bouncer calibrate --compare jev,jev@https://your-endpoint` runs the fixtures
+through TypeSafe's Jev and through that server, with the same adapter on both sides, and
+prints the side-by-side table and the Brier sentence PRD §12 asks for. It was built for
+openjev-sglang, which serves `/v1/systemone` from an open-weights model; a bare origin gets
+that path appended. **Your TypeSafe key is never sent to it**, whatever the environment
+holds, and `jev@https://api.typesafe.ai` is refused because the plain `jev` is the one that
+sends the key. `--backend jev@<url> --out run.jsonl` records a run on its own, under the
+endpoint's name and the model it reported.
+
+Before the first fixture it waits up to ten minutes for the server to answer one real
+question, printing that it is waiting, so an endpoint that scales to zero gets to boot
+instead of failing the run on the 30-second per-fixture timeout. A server that answers in
+some other shape is refused there, with its own error, before any fixture is spent.
+
+**What you will notice:** nothing, unless you run `calibrate`. The hook, `judge` and
+`measure` are unchanged, and the comparison header now says that Jev-shaped servers return
+no confidence either.
+
 ## 0.2.4
 
 **A plus sign somewhere else on the line no longer reads as a forced push** (#84). The

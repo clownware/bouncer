@@ -242,3 +242,65 @@ describe("JevAdapter", () => {
     expect((error as Error).message).not.toContain("Bearer");
   });
 });
+
+// `--compare jev,jev@<url>`: the same adapter pointed at another server's /v1/systemone.
+describe("JevAdapter at a Jev-shaped server", () => {
+  const BASE = "https://openjev.example/v1/systemone";
+
+  it("constructs without a key and sends none", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(200, OK_BODY));
+    const adapter = new JevAdapter({ baseUrl: BASE, fetch: fetchImpl as unknown as typeof globalThis.fetch });
+    await adapter.decide(request);
+
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(BASE);
+    expect(Object.keys(init.headers as Record<string, string>)).not.toContain("authorization");
+    expect(JSON.parse(init.body as string).model).toBe("jev-latest");
+  });
+
+  // Two Jev-shaped backends under one name would be two classifiers logged as one.
+  it("carries the endpoint in its name", () => {
+    expect(new JevAdapter({ baseUrl: BASE }).name).toBe("jev@openjev.example");
+    expect(new JevAdapter({ baseUrl: "http://127.0.0.1:30000/custom" }).name).toBe("jev@127.0.0.1:30000/custom");
+    expect(new JevAdapter({ apiKey: "test-key" }).name).toBe("jev");
+  });
+
+  it("does not warm up TypeSafe itself", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(200, OK_BODY));
+    await new JevAdapter({ apiKey: "test-key", fetch: fetchImpl as unknown as typeof globalThis.fetch }).start();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps asking a cold endpoint until it answers", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => (++calls <= 3 ? jsonResponse(503, { error: "booting" }) : jsonResponse(200, OK_BODY)));
+    const adapter = new JevAdapter({
+      baseUrl: BASE,
+      fetch: fetchImpl as unknown as typeof globalThis.fetch,
+      warmup: { deadlineMs: 5_000, intervalMs: 1 },
+    });
+    await expect(adapter.start()).resolves.toBeUndefined();
+    expect(calls).toBeGreaterThanOrEqual(4);
+  });
+
+  it("refuses at once on an answer that asking again will not change", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { answers: {} }));
+    const adapter = new JevAdapter({
+      baseUrl: BASE,
+      fetch: fetchImpl as unknown as typeof globalThis.fetch,
+      warmup: { deadlineMs: 5_000, intervalMs: 1 },
+    });
+    await expect(adapter.start()).rejects.toMatchObject({ kind: "malformed_response" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up with a sentence when the endpoint never wakes", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(503, { error: "booting" }));
+    const adapter = new JevAdapter({
+      baseUrl: BASE,
+      fetch: fetchImpl as unknown as typeof globalThis.fetch,
+      warmup: { deadlineMs: 50, intervalMs: 5 },
+    });
+    await expect(adapter.start()).rejects.toThrow(/did not answer within/);
+  });
+});

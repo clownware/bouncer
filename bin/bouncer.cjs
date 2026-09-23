@@ -7384,14 +7384,58 @@ var DEFAULT_MODEL = "jev-latest";
 var MAX_ATTEMPTS = 2;
 var BASE_BACKOFF_MS = 120;
 var MIN_REMAINING_FOR_RETRY_MS = 150;
+var WARMUP_DEADLINE_MS = 10 * 6e4;
+var WARMUP_INTERVAL_MS = 5e3;
+var WARMUP_ATTEMPT_MS = 6e4;
 var JevAdapter = class {
-  name = "jev";
+  name;
   options;
   constructor(options) {
-    if (!options.apiKey) {
+    if (!options.apiKey && options.baseUrl === void 0) {
       throw new AdapterError("auth", "no API key: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY");
     }
     this.options = options;
+    this.name = options.baseUrl === void 0 ? "jev" : `jev@${shortEndpoint(options.baseUrl)}`;
+  }
+  /**
+   * Waits for a Jev-shaped server to answer one real question before the first fixture.
+   *
+   * Two jobs. A scaled-to-zero endpoint is woken inside a budget sized for a cold boot
+   * rather than failing fixture 1 on the per-fixture timeout and taking the run with it.
+   * And the answer goes through the same parser as every fixture's, so a server that speaks
+   * a different shape is refused here, with its own error, before any fixture is spent —
+   * the same reason the local adapter probes before it trusts (ADR-005). TypeSafe's own
+   * endpoint needs neither and is not asked.
+   */
+  async start() {
+    if (this.options.baseUrl === void 0) return;
+    const { deadlineMs, intervalMs } = this.options.warmup ?? {
+      deadlineMs: WARMUP_DEADLINE_MS,
+      intervalMs: WARMUP_INTERVAL_MS
+    };
+    const deadline = Date.now() + deadlineMs;
+    let last;
+    while (Date.now() < deadline) {
+      try {
+        await this.decide({
+          state: "The server is being asked whether it is ready.",
+          questions: { ready: { type: "noul", instructions: "The state asks whether the server is ready." } },
+          timeoutMs: Math.max(1, Math.min(WARMUP_ATTEMPT_MS, deadline - Date.now()))
+        });
+        return;
+      } catch (err) {
+        const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
+        if (error.kind !== "timeout" && error.kind !== "unavailable" && error.kind !== "rate_limited") {
+          throw new AdapterError(error.kind, `${this.options.baseUrl} ${error.message}`, error.status !== void 0 ? { status: error.status } : void 0);
+        }
+        last = error;
+      }
+      await delay(intervalMs, deadline);
+    }
+    throw new AdapterError(
+      "unavailable",
+      `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1e3)} s` + (last !== void 0 ? ` (last: ${last.message})` : "")
+    );
   }
   async decide(request) {
     const doFetch = this.options.fetch ?? globalThis.fetch;
@@ -7418,7 +7462,7 @@ var JevAdapter = class {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${this.options.apiKey}`
+            ...this.options.apiKey ? { authorization: `Bearer ${this.options.apiKey}` } : {}
           },
           body,
           signal: controller.signal
@@ -7449,6 +7493,14 @@ var JevAdapter = class {
     throw lastError ?? new AdapterError("unavailable", "exhausted attempts");
   }
 };
+function shortEndpoint(baseUrl) {
+  try {
+    const url = new URL(baseUrl);
+    return url.pathname === "/v1/systemone" ? url.host : `${url.host}${url.pathname}`;
+  } catch {
+    return baseUrl;
+  }
+}
 async function errorFor(response) {
   const detail = await safeText(response);
   const suffix = detail.length > 0 ? `: ${detail.slice(0, 200)}` : "";
@@ -9143,6 +9195,24 @@ function apiKey() {
   }
   return void 0;
 }
+function jevCompatible(backend) {
+  if (!backend.startsWith("jev@")) return void 0;
+  const raw = backend.slice("jev@".length).trim();
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { error: `"${backend}" names no URL: write jev@https://host, for a server that speaks Jev's /v1/systemone.` };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { error: `"${backend}" is not an http or https URL.` };
+  }
+  if (url.hostname === "api.typesafe.ai") {
+    return { error: `"${backend}" is TypeSafe itself: name it jev, which is the backend that sends your key.` };
+  }
+  if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1/systemone";
+  return { baseUrl: url.toString() };
+}
 function errorsIn(diagnostics) {
   return diagnostics.filter((d) => d.severity === "error");
 }
@@ -10206,10 +10276,10 @@ function formatComparison(comparison, calibration) {
     // answers carry no confidence field at all, so there is nothing on that side to put in
     // a confidence column, and a column only the local side could fill would invite exactly
     // the comparison it cannot support.
-    "A noul answer is a bare probability. Jev returns no confidence field for one, and the",
-    "local adapter's softmax over two label tokens is not one either, so this compares p and",
-    "Brier and nothing else. The confidence used by the gate below is the derived statistic",
-    "max(p, 1 - p), computed the same way on both sides.",
+    "A noul answer is a bare probability. Jev, and a server built to its wire shape, return",
+    "no confidence field for one, and the local adapter's softmax over two label tokens is",
+    "not one either, so this compares p and Brier and nothing else. The confidence used by",
+    "the gate below is the derived statistic max(p, 1 - p), computed the same way on both sides.",
     ""
   );
   lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
@@ -10366,7 +10436,12 @@ async function calibrate(args, write3) {
     }
     adapters.push(adapter);
   }
+  const labels = adapters.map((a) => a.name);
   for (const adapter of adapters) {
+    if (adapter.name.startsWith("jev@") && args.json !== true) {
+      process.stderr.write(`Waiting for ${adapter.name} to answer (a server that scales to zero boots first)...
+`);
+    }
     const problem = await startIfNeeded(adapter);
     if (problem !== void 0) {
       write3(`Cannot calibrate against ${adapter.name}: ${problem}
@@ -10377,7 +10452,7 @@ async function calibrate(args, write3) {
   const runs = [];
   const answered = [];
   for (const [i, adapter] of adapters.entries()) {
-    const label = names[i];
+    const label = labels[i];
     let scored;
     try {
       scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
@@ -10573,6 +10648,10 @@ function adapterFor2(backend) {
     return new JevAdapter({ apiKey: key });
   }
   if (backend === "local") return new LocalAdapter(localBackend());
+  const compatible = jevCompatible(backend);
+  if (compatible !== void 0) {
+    return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+  }
   return `Unknown backend "${backend}".`;
 }
 async function startIfNeeded(adapter) {
@@ -11987,7 +12066,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.4\n");
+      process.stdout.write("0.2.5\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

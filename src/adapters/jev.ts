@@ -26,22 +26,90 @@ const BASE_BACKOFF_MS = 120;
 const MIN_REMAINING_FOR_RETRY_MS = 150;
 
 export interface JevOptions {
-  readonly apiKey: string;
+  /**
+   * TypeSafe's key. Required against TypeSafe itself; left out for a Jev-shaped server at
+   * `baseUrl`, which is never sent it (see `jevCompatible` in `src/io/config.ts`).
+   */
+  readonly apiKey?: string;
+  /** The full `/v1/systemone` URL of a Jev-shaped server, for `--compare jev,jev@<url>`. */
   readonly baseUrl?: string;
   readonly model?: string;
   /** Injectable for tests. Defaults to global fetch. */
   readonly fetch?: typeof globalThis.fetch;
+  /** How long `start()` keeps asking a cold endpoint, and how often. Injectable for tests. */
+  readonly warmup?: { readonly deadlineMs: number; readonly intervalMs: number };
 }
 
+/**
+ * A server that scales to zero answers its first request only once a GPU container has
+ * booted and loaded the model, which on openjev-sglang's Modal deploy is minutes, not the
+ * 30 s a calibration fixture is given. These bound the wait, not a verdict.
+ */
+const WARMUP_DEADLINE_MS = 10 * 60_000;
+const WARMUP_INTERVAL_MS = 5_000;
+const WARMUP_ATTEMPT_MS = 60_000;
+
 export class JevAdapter implements Adapter {
-  readonly name = "jev";
+  readonly name: string;
   private readonly options: JevOptions;
 
   constructor(options: JevOptions) {
-    if (!options.apiKey) {
+    // Only TypeSafe's own endpoint needs the key. A Jev-shaped server elsewhere is reached
+    // without one, which is what lets a thread with no key run that arm at all.
+    if (!options.apiKey && options.baseUrl === undefined) {
       throw new AdapterError("auth", "no API key: set BOUNCER_TYPESAFE_API_KEY or TYPESAFE_API_KEY");
     }
     this.options = options;
+    // The name is what a judgments line and a comparison column carry, and two Jev-shaped
+    // backends under one name would be two classifiers reported as one.
+    this.name = options.baseUrl === undefined ? "jev" : `jev@${shortEndpoint(options.baseUrl)}`;
+  }
+
+  /**
+   * Waits for a Jev-shaped server to answer one real question before the first fixture.
+   *
+   * Two jobs. A scaled-to-zero endpoint is woken inside a budget sized for a cold boot
+   * rather than failing fixture 1 on the per-fixture timeout and taking the run with it.
+   * And the answer goes through the same parser as every fixture's, so a server that speaks
+   * a different shape is refused here, with its own error, before any fixture is spent —
+   * the same reason the local adapter probes before it trusts (ADR-005). TypeSafe's own
+   * endpoint needs neither and is not asked.
+   */
+  async start(): Promise<void> {
+    if (this.options.baseUrl === undefined) return;
+
+    const { deadlineMs, intervalMs } = this.options.warmup ?? {
+      deadlineMs: WARMUP_DEADLINE_MS,
+      intervalMs: WARMUP_INTERVAL_MS,
+    };
+    const deadline = Date.now() + deadlineMs;
+    let last: AdapterError | undefined;
+
+    while (Date.now() < deadline) {
+      try {
+        await this.decide({
+          state: "The server is being asked whether it is ready.",
+          questions: { ready: { type: "noul", instructions: "The state asks whether the server is ready." } },
+          timeoutMs: Math.max(1, Math.min(WARMUP_ATTEMPT_MS, deadline - Date.now())),
+        });
+        return;
+      } catch (err) {
+        const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
+        // Still booting looks like a timeout or a 5xx. Anything else is an answer, and it
+        // will not change by asking again.
+        if (error.kind !== "timeout" && error.kind !== "unavailable" && error.kind !== "rate_limited") {
+          throw new AdapterError(error.kind, `${this.options.baseUrl} ${error.message}`, error.status !== undefined ? { status: error.status } : undefined);
+        }
+        last = error;
+      }
+      await delay(intervalMs, deadline);
+    }
+
+    throw new AdapterError(
+      "unavailable",
+      `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1000)} s` +
+        (last !== undefined ? ` (last: ${last.message})` : ""),
+    );
   }
 
   async decide(request: DecideRequest): Promise<DecideResponse> {
@@ -77,7 +145,7 @@ export class JevAdapter implements Adapter {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${this.options.apiKey}`,
+            ...(this.options.apiKey ? { authorization: `Bearer ${this.options.apiKey}` } : {}),
           },
           body,
           signal: controller.signal,
@@ -109,6 +177,20 @@ export class JevAdapter implements Adapter {
     }
 
     throw lastError ?? new AdapterError("unavailable", "exhausted attempts");
+  }
+}
+
+/**
+ * The endpoint as a column header can carry it: host, plus the path only when it is not the
+ * one every Jev-shaped server serves. A comparison table whose header is a full Modal URL
+ * twice over is not one anyone reads.
+ */
+function shortEndpoint(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    return url.pathname === "/v1/systemone" ? url.host : `${url.host}${url.pathname}`;
+  } catch {
+    return baseUrl;
   }
 }
 

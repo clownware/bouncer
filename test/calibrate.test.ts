@@ -1,4 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,6 +23,7 @@ import {
 } from "../src/calibrate.js";
 import { calibrate as calibrateCommand, parseArgs } from "../src/commands/calibrate.js";
 import { loadPolicy } from "../src/engine/policy.js";
+import { jevCompatible } from "../src/io/config.js";
 
 const POLICY = (() => {
   const { policy } = loadPolicy(readFileSync("policy/default.yaml", "utf8"));
@@ -955,5 +958,96 @@ describe("calibrate --out", () => {
     const { code, out } = await run({ backend: "mock", compare: "local", out: join(dir, "run.jsonl") });
     expect(code).toBe(1);
     expect(out).toContain("--out records one run");
+  });
+});
+
+describe("jev@<url>, a second Jev-shaped backend", () => {
+  const table: ReadonlyArray<readonly [string, ReturnType<typeof jevCompatible>]> = [
+    ["jev", undefined],
+    ["local", undefined],
+    ["jev@https://x.modal.direct", { baseUrl: "https://x.modal.direct/v1/systemone" }],
+    ["jev@https://x.modal.direct/", { baseUrl: "https://x.modal.direct/v1/systemone" }],
+    ["jev@http://127.0.0.1:30000/custom", { baseUrl: "http://127.0.0.1:30000/custom" }],
+  ];
+  it.each(table)("reads %s", (name, expected) => {
+    expect(jevCompatible(name)).toEqual(expected);
+  });
+
+  it.each([
+    ["jev@", "names no URL"],
+    ["jev@not a url", "names no URL"],
+    ["jev@ftp://x.example", "not an http or https URL"],
+    // The spelling that sends no key, aimed at the one host that needs it.
+    ["jev@https://api.typesafe.ai", "name it jev"],
+  ])("refuses %s", (name, message) => {
+    const result = jevCompatible(name);
+    expect(result !== undefined && "error" in result ? result.error : "").toContain(message);
+  });
+
+  // A stand-in for openjev-sglang: Jev's wire shape, answered by the mock and bent a little
+  // so the two columns differ. It records every request's headers, which is how the test
+  // sees that the key in the environment never reached it.
+  let server: Server;
+  let url: string;
+  const seen: Array<Record<string, string | string[] | undefined>> = [];
+  const mock = new MockAdapter();
+
+  beforeEach(async () => {
+    seen.length = 0;
+    server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        seen.push(req.headers);
+        const { state, questions } = JSON.parse(body);
+        const response = await mock.decide({ state, questions, timeoutMs: 1000 });
+        const answers = Object.fromEntries(
+          Object.entries(response.answers).map(([k, a]) => [k, { type: "noul", noul: a.type === "noul" ? a.noul ** 2 : 0 }]),
+        );
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ model: "stub-qwen", answers }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    process.env["BOUNCER_POLICY"] = resolve("policy/default.yaml");
+    process.env["TYPESAFE_API_KEY"] = "sentinel";
+  });
+  afterEach(async () => {
+    delete process.env["BOUNCER_POLICY"];
+    delete process.env["TYPESAFE_API_KEY"];
+    await new Promise((r) => server.close(r));
+  });
+
+  it("compares against the default backend over the same fixtures, sending no key", async () => {
+    let out = "";
+    const code = await calibrateCommand(
+      { fixtures: "fixtures/gate.jsonl", backend: "mock", compare: `mock,jev@${url}` },
+      (s) => (out += s),
+    );
+    expect(code).toBe(0);
+    expect(out).toContain(`mock vs jev@${new URL(url).host}`);
+    expect(out).toMatch(/Mean Brier across questions: jev@\S+ is \d\.\d{3} (worse|better) than mock\./);
+    // Warm-up plus one request per fixture, and not one of them carried the key.
+    expect(seen.length).toBe(FIXTURES.length + 1);
+    expect(seen.every((h) => h["authorization"] === undefined)).toBe(true);
+  });
+
+  it("records a run under its endpoint and model, for --from to re-score", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bouncer-jevat-"));
+    try {
+      const path = join(dir, "run.jsonl");
+      const code = await calibrateCommand({ fixtures: "fixtures/gate.jsonl", backend: `jev@${url}`, out: path }, () => {});
+      expect(code).toBe(0);
+      const [first] = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      expect(first.backend).toBe(`jev@${new URL(url).host}`);
+      expect(first.model).toBe("stub-qwen");
+
+      let out = "";
+      expect(await calibrateCommand({ fixtures: "fixtures/gate.jsonl", from: path }, (s) => (out += s))).toBe(0);
+      expect(out).toContain("Answered by stub-qwen.");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

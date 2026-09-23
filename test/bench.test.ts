@@ -124,11 +124,14 @@ describe("the bench script", () => {
     });
 
     it("passes when the bundle is the quicker arm", () => {
-      const slow = "const until = Date.now() + 60; while (Date.now() < until);\n";
+      // Wall-clock, so the stand-in costs the same however loaded the machine is while the
+      // bundle's real work does not. At 60 ms a busy runner (this file shares it with the
+      // rest of the suite) made the bundle the slower arm, and this failed for no change.
+      const slow = "const until = Date.now() + 250; while (Date.now() < until);\n";
       const r = run("--against", arm("slow.cjs", slow), "--max-regression-pct", "1");
       expect(r.status, r.stderr).toBe(0);
       expect(r.stdout).toContain("(limit +1%)");
-    });
+    }, 30_000);
 
     // The first real change this gate measured added a hard-rule predicate. The base bundle
     // could not load the new policy, so it stopped enforcing, skipped the decision, and came

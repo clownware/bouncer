@@ -175,6 +175,39 @@ export function apiKey(): string | undefined {
   return undefined;
 }
 
+/**
+ * A Jev-shaped server named as `jev@<url>`: its endpoint, the sentence to print instead, or
+ * undefined when the name is not of that form.
+ *
+ * The TypeSafe key is never sent to it. The key belongs to one vendor and the URL is
+ * whatever was typed, so forwarding it would hand the key to any host someone pastes;
+ * openjev-sglang's public deploy needs no key, which is also what lets a thread with no key
+ * run this arm. TypeSafe's own host is refused under this spelling for the same reason in
+ * reverse: `jev` is the name that sends the key, and a keyless call there only fails.
+ *
+ * A bare origin gets `/v1/systemone`, the path both TypeSafe and openjev-sglang serve;
+ * anything with a path is taken as the full endpoint.
+ */
+export function jevCompatible(backend: string): { readonly baseUrl: string } | { readonly error: string } | undefined {
+  if (!backend.startsWith("jev@")) return undefined;
+
+  const raw = backend.slice("jev@".length).trim();
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { error: `"${backend}" names no URL: write jev@https://host, for a server that speaks Jev's /v1/systemone.` };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { error: `"${backend}" is not an http or https URL.` };
+  }
+  if (url.hostname === "api.typesafe.ai") {
+    return { error: `"${backend}" is TypeSafe itself: name it jev, which is the backend that sends your key.` };
+  }
+  if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1/systemone";
+  return { baseUrl: url.toString() };
+}
+
 export function errorsIn(diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
   return diagnostics.filter((d) => d.severity === "error");
 }
