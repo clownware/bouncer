@@ -23,7 +23,7 @@ import {
 } from "../src/calibrate.js";
 import { calibrate as calibrateCommand, parseArgs } from "../src/commands/calibrate.js";
 import { loadPolicy } from "../src/engine/policy.js";
-import { jevCompatible } from "../src/io/config.js";
+import { chatBackend, jevCompatible } from "../src/io/config.js";
 
 const POLICY = (() => {
   const { policy } = loadPolicy(readFileSync("policy/default.yaml", "utf8"));
@@ -1049,5 +1049,134 @@ describe("jev@<url>, a second Jev-shaped backend", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("chat@<url>, the LLM one-token-logprob arm", () => {
+  const env = ["BOUNCER_CHAT_MODEL", "BOUNCER_CHAT_API_KEY", "OPENAI_API_KEY", "BOUNCER_CHAT_EXTRA_BODY", "BOUNCER_POLICY"];
+  afterEach(() => {
+    for (const name of env) delete process.env[name];
+  });
+
+  it("reads the endpoint, and needs the model named", () => {
+    expect(chatBackend("local")).toBeUndefined();
+    expect(chatBackend("chat@http://127.0.0.1:8000")).toMatchObject({ error: expect.stringContaining("BOUNCER_CHAT_MODEL") });
+
+    process.env["BOUNCER_CHAT_MODEL"] = "Qwen/Qwen3-8B";
+    expect(chatBackend("chat@http://127.0.0.1:8000")).toEqual({ baseUrl: "http://127.0.0.1:8000/v1", model: "Qwen/Qwen3-8B" });
+    expect(chatBackend("chat@http://127.0.0.1:8000/openai/v1/")).toEqual({
+      baseUrl: "http://127.0.0.1:8000/openai/v1",
+      model: "Qwen/Qwen3-8B",
+    });
+  });
+
+  it.each([
+    ["chat@", "names no URL"],
+    ["chat@ftp://x.example", "not an http or https URL"],
+    // The arm the table would most like to have and cannot: there is nothing to read.
+    ["chat@https://api.anthropic.com", "returns no logprobs"],
+    ["chat@https://api.openai.com", "set OPENAI_API_KEY"],
+  ])("refuses %s", (name, message) => {
+    process.env["BOUNCER_CHAT_MODEL"] = "m";
+    const result = chatBackend(name);
+    expect(result !== undefined && "error" in result ? result.error : "").toContain(message);
+  });
+
+  it("sends OPENAI_API_KEY to OpenAI and nowhere else", () => {
+    process.env["BOUNCER_CHAT_MODEL"] = "gpt-4.1-mini";
+    process.env["OPENAI_API_KEY"] = "sk-proj-abcdefghijkl";
+    expect(chatBackend("chat@https://api.openai.com")).toMatchObject({ apiKey: "sk-proj-abcdefghijkl" });
+    expect(chatBackend("chat@https://vllm.example")).not.toHaveProperty("apiKey");
+
+    process.env["BOUNCER_CHAT_API_KEY"] = "local-abcdefghijkl";
+    expect(chatBackend("chat@https://vllm.example")).toMatchObject({ apiKey: "local-abcdefghijkl" });
+  });
+
+  it("merges a JSON object from BOUNCER_CHAT_EXTRA_BODY, and refuses anything else", () => {
+    process.env["BOUNCER_CHAT_MODEL"] = "m";
+    process.env["BOUNCER_CHAT_EXTRA_BODY"] = '{"chat_template_kwargs":{"enable_thinking":false}}';
+    expect(chatBackend("chat@http://127.0.0.1:8000")).toMatchObject({ extraBody: { chat_template_kwargs: { enable_thinking: false } } });
+    process.env["BOUNCER_CHAT_EXTRA_BODY"] = "[1]";
+    expect(chatBackend("chat@http://127.0.0.1:8000")).toMatchObject({ error: expect.stringContaining("not a JSON object") });
+  });
+
+  describe("against a stub chat server", () => {
+    // A stand-in for vLLM's chat endpoint with no tokenizer route, so the unbiased path runs:
+    // the mock's answer to the same state and question, returned as the reply token's logprobs.
+    let server: Server;
+    let url: string;
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const mock = new MockAdapter();
+    const questions = Object.values(POLICY.sets["gate"]!.questions);
+
+    beforeEach(async () => {
+      seen.length = 0;
+      server = createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", async () => {
+          seen.push(req.headers);
+          if (req.url?.endsWith("/tokenize")) {
+            res.writeHead(404).end();
+            return;
+          }
+          const { messages } = JSON.parse(body);
+          const content: string = messages[messages.length - 1].content;
+          let p = content.startsWith("Question: Is the sky") ? 0.99 : content.startsWith("Question: Is fire") ? 0.01 : 0.5;
+          const at = content.indexOf("\n---\nQuestion: ");
+          if (at >= 0) {
+            const state = content.slice(0, at);
+            const question = questions.find((q) => content.slice(at).startsWith(`\n---\nQuestion: ${q.instructions}`));
+            if (question !== undefined) {
+              const answer = (await mock.decide({ state, questions: { q: { type: "noul", instructions: question.instructions } }, timeoutMs: 1000 })).answers["q"];
+              p = Math.min(0.99, Math.max(0.01, answer?.type === "noul" ? answer.noul : 0.5));
+            }
+          }
+          const top = [
+            { token: "Yes", logprob: Math.log(p) },
+            { token: "No", logprob: Math.log(1 - p) },
+          ];
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              model: "stub-qwen-chat",
+              choices: [{ logprobs: { content: [{ token: p >= 0.5 ? "Yes" : "No", logprob: Math.log(Math.max(p, 1 - p)), top_logprobs: top }] } }],
+            }),
+          );
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      process.env["BOUNCER_POLICY"] = resolve("policy/default.yaml");
+      process.env["BOUNCER_CHAT_MODEL"] = "stub-qwen";
+      process.env["OPENAI_API_KEY"] = "sk-proj-abcdefghijkl";
+    });
+    afterEach(async () => {
+      await new Promise((r) => server.close(r));
+    });
+
+    it("compares against another backend and prints the Brier sentence, sending no OpenAI key to a non-OpenAI host", async () => {
+      let out = "";
+      const code = await calibrateCommand({ fixtures: "fixtures/gate.jsonl", backend: "mock", compare: `mock,chat@${url}` }, (s) => (out += s));
+      expect(code).toBe(0);
+      const column = `chat:stub-qwen@${new URL(url).host}`;
+      expect(out).toContain(`mock vs ${column}`);
+      expect(out).toMatch(/Mean Brier across questions: chat:\S+ is \d\.\d{3} (worse|better) than mock\./);
+      expect(seen.every((h) => h["authorization"] === undefined)).toBe(true);
+    });
+
+    it("records a run under its model and host, for --from to re-score", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "bouncer-chat-"));
+      try {
+        const path = join(dir, "run.jsonl");
+        expect(await calibrateCommand({ fixtures: "fixtures/gate.jsonl", backend: `chat@${url}`, out: path }, () => {})).toBe(0);
+        const [first] = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+        expect(first.backend).toBe(`chat:stub-qwen@${new URL(url).host}`);
+        expect(first.model).toBe("stub-qwen-chat");
+        expect(Object.keys(first.answers).length).toBeGreaterThan(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

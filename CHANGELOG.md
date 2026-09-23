@@ -8,6 +8,23 @@ Earlier releases have no entries: 0.2.0 is described in
 [docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
 convention does.
 
+## 0.2.6
+
+**`calibrate` can read a probability off an LLM's logprobs.** Name it `chat@<url>` with
+the model in `BOUNCER_CHAT_MODEL`: `bouncer calibrate --compare jev,chat@https://api.openai.com`
+asks every fixture's questions as one-token chat turns and reads p off `top_logprobs`, then
+prints the side-by-side table and the Brier sentence PRD §12 asks for. It works against an
+OpenAI model or an open-weights model on vLLM; Anthropic's API returns no logprobs, and
+`chat@https://api.anthropic.com` is refused saying so. Before the first fixture it asks one
+yes probe and one no probe and refuses to run unless each comes back as a single label token
+of the right answer. `OPENAI_API_KEY` goes only to OpenAI's host; `BOUNCER_CHAT_API_KEY` goes
+to whatever `chat@` URL you name; `BOUNCER_CHAT_EXTRA_BODY` is merged into each request, for
+turning a Qwen model's thinking off on vLLM.
+
+**What you will notice:** nothing, unless you run `calibrate`. The hook, `judge` and
+`measure` are unchanged. The `local` backend now reports a 401 from its endpoint as an auth
+error and a 429 as rate limiting, where both used to read as a rejected request.
+
 ## 0.2.5
 
 **`calibrate` can compare Jev against any server that speaks Jev's wire shape.** Name it

@@ -125,6 +125,42 @@ agree" but "would this have prompted me in different places" — and two backend
 by 0.2 on p everywhere and agree on every verdict, or agree closely and diverge at a
 threshold.
 
+## A chat endpoint is a mode, not an adapter (added 2026-09-23)
+
+The third arm of the table is an LLM read the same way: one token, and p off its
+`top_logprobs`. It is `api: "chat"` on this adapter, spelled `chat@<url>` in `calibrate`,
+rather than a new adapter, because everything that makes the number honest is already here
+and is the same code: the question suffix byte for byte, the label surface forms, the
+softmax summed per class, the first question alone before the fan-out. What changes is the
+route (`/v1/chat/completions`), the body (a constant system line and the state plus suffix
+as the user turn, `max_tokens: 1`, `logprobs: true`, `top_logprobs: 20`) and where the
+logprobs sit in the reply (`logprobs.content[0]`). The arm is an OpenAI model or an
+open-weights model on vLLM, because those serve chat with logprobs and Anthropic's API does
+not, and the column is named `chat:<model>@<host>` because which model it is is the arm's
+whole claim.
+
+Step 2 has to survive a server with no tokenizer route, since OpenAI has none. Where
+`/tokenize` answers (vLLM), the ids are resolved and biased and a label with no single-token
+form is refused, exactly as above. Where it does not, nothing is biased, and the proof moves
+into step 3: two probes, one yes and one no, each of which must be answered with a whole
+label token of the right class. A token string that comes back as one entry of
+`top_logprobs` is one token under the served tokenizer, so a label that matches is proven
+single, and a multi-token label can only come back as its prefix, which matches nothing.
+The no probe also catches a model answering in the wrong polarity, and a first token of
+`<think>` is refused with the switch that turns thinking off.
+
+p is the same quantity either way. An equal bias shifts every label logit together and
+softmax over the labels cannot see a shift, so biasing adds only that the reply is always a
+label. Unbiased, the one loss is truncation: a label outside the top 20 counts as zero, and
+anything outside the top 20 has less mass than the twentieth entry. A reply whose token is
+not a label is left out of that fixture's answers rather than ending the run, so it is one
+row dropped from both sides of `--compare` rather than a run lost, and the probes have
+already shown the model answers in format.
+
+It is verified against a stub only: the adapter's own tests, and run 9's committed answers
+replayed through an OpenAI-shaped stub, which gives the same table as `--from` on the same
+file. No real OpenAI or vLLM reply has been read.
+
 ## Consequences and costs
 
 - **Configuration is environment-only for now:** `BOUNCER_LOCAL_URL`, `BOUNCER_LOCAL_MODEL`,

@@ -1,6 +1,6 @@
 ---
 description: Run bouncer's fixtures through its classifier and show the reliability table
-argument-hint: "[--backend jev|local|mock] [--compare a,b] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
+argument-hint: "[--backend jev|jev@<url>|chat@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
 allowed-tools: Bash(node:*)
 ---
 
