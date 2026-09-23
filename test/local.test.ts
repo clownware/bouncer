@@ -313,3 +313,194 @@ describe("LocalAdapter errors", () => {
     expect(s.calls[0]?.url).toBe("http://10.0.0.4:8000/tokenize");
   });
 });
+
+// The chat mode: the LLM one-token-logprob arm. Same adapter, `/v1/chat/completions`, and
+// the reply's `top_logprobs` in the chat shape OpenAI and vLLM share.
+
+/** `logprobs.content[0]` for a reply of `token`, with `top` as its alternatives. */
+function chatReply(token: string, top: Record<string, number>, extra: Record<string, unknown> = {}): unknown {
+  return {
+    model: "gpt-4.1-mini-2025-04-14",
+    choices: [
+      {
+        message: { role: "assistant", content: token },
+        logprobs: {
+          content: [
+            {
+              token,
+              logprob: top[token] ?? -0.01,
+              top_logprobs: Object.entries(top).map(([t, logprob]) => ({ token: t, logprob, bytes: [] })),
+            },
+          ],
+        },
+      },
+    ],
+    usage: { prompt_tokens: 300 },
+    ...extra,
+  };
+}
+
+/**
+ * An OpenAI-shaped chat server. It answers the two probes correctly unless told otherwise,
+ * and every other request with `answer`. `tokenize: false` is OpenAI, which has none.
+ */
+function chatServer(options: {
+  tokenize?: boolean;
+  answer?: (content: string) => unknown;
+  probe?: (content: string) => unknown;
+}) {
+  const calls: Call[] = [];
+  const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const href = String(url);
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    calls.push({ url: href, body, headers: init?.headers } as Call);
+
+    if (href.endsWith("/tokenize")) {
+      if (options.tokenize !== true) return json({ error: "Not found" }, 404);
+      const ids = TOKEN_IDS[String(body["content"] ?? body["prompt"] ?? "")];
+      return ids === undefined ? json({ error: "unknown" }, 400) : json({ tokens: ids });
+    }
+
+    const messages = body["messages"] as Array<{ role: string; content: string }>;
+    const content = messages[messages.length - 1]?.content ?? "";
+    if (content.startsWith("Question: Is the sky")) {
+      return json(options.probe?.(content) ?? chatReply("Yes", { Yes: Math.log(0.99), No: Math.log(0.01) }));
+    }
+    if (content.startsWith("Question: Is fire cold")) {
+      return json(options.probe?.(content) ?? chatReply("No", { No: Math.log(0.98), Yes: Math.log(0.02) }));
+    }
+    return json(options.answer?.(content) ?? chatReply("Yes", { Yes: Math.log(0.7), No: Math.log(0.3) }));
+  });
+
+  const chats = () => calls.filter((c) => c.url.endsWith("/chat/completions"));
+  return { fetchImpl, calls, chats };
+}
+
+const chat = (s: ReturnType<typeof chatServer>, extra: Partial<ConstructorParameters<typeof LocalAdapter>[0]> = {}) =>
+  new LocalAdapter({ api: "chat", baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", fetch: s.fetchImpl, ...extra });
+
+describe("LocalAdapter in chat mode", () => {
+  it("asks for one token on /v1/chat/completions with top_logprobs, the state first in the user turn", async () => {
+    const s = chatServer({});
+    await chat(s).decide(request);
+
+    const asked = s.chats().slice(2); // after the two probes
+    expect(asked).toHaveLength(2);
+    for (const call of asked) {
+      expect(call.url).toBe("https://api.openai.com/v1/chat/completions");
+      expect(call.body).toMatchObject({ model: "gpt-4.1-mini", max_tokens: 1, temperature: 0, logprobs: true, top_logprobs: 20 });
+      const messages = call.body["messages"] as Array<{ role: string; content: string }>;
+      expect(messages.map((m) => m.role)).toEqual(["system", "user"]);
+      expect(messages[1]?.content.startsWith(STATE)).toBe(true);
+      expect(messages[1]?.content).toMatch(/Answer with one word, yes or no\.\nAnswer:$/);
+    }
+  });
+
+  it("reads p as a softmax over the label logprobs, summing surface forms", async () => {
+    const s = chatServer({
+      answer: () => chatReply("Yes", { Yes: Math.log(0.4), yes: Math.log(0.4), No: Math.log(0.15), The: Math.log(0.05) }),
+    });
+    const result = await chat(s).decide(request);
+    // 0.8 / (0.8 + 0.15): the non-label token is not an answer and carries no mass.
+    expect(noulProbability(result.answers["destructive"])).toBeCloseTo(0.8 / 0.95, 6);
+  });
+
+  it("names itself after the model and host, which is the claim its column makes", () => {
+    expect(chat(chatServer({})).name).toBe("chat:gpt-4.1-mini@api.openai.com");
+    expect(new LocalAdapter().name).toBe("local");
+  });
+
+  it("sends no logit_bias where the server cannot tokenize, and asks /tokenize only once", async () => {
+    const s = chatServer({ tokenize: false });
+    await chat(s).decide(request);
+
+    expect(s.chats().every((c) => c.body["logit_bias"] === undefined)).toBe(true);
+    // One label tried, not every label against every shape: OpenAI has no tokenizer to find.
+    expect(s.calls.filter((c) => c.url.endsWith("/tokenize")).length).toBeLessThanOrEqual(4);
+  });
+
+  it("biases the label ids where the server tokenizes (vLLM)", async () => {
+    const s = chatServer({ tokenize: true });
+    await chat(s, { baseUrl: "http://127.0.0.1:8000/v1", model: "Qwen/Qwen3-8B" }).decide(request);
+
+    const bias = s.chats()[0]?.body["logit_bias"] as Record<string, number>;
+    expect(Object.keys(bias).sort()).toEqual(["1738", "2360", "5297", "9891"]);
+    expect(s.calls[0]?.url).toBe("http://127.0.0.1:8000/tokenize");
+  });
+
+  it("sends the key it was given as a bearer token", async () => {
+    const s = chatServer({});
+    await chat(s, { apiKey: "sk-test-abcdefghijkl" }).decide(request);
+    const headers = (s.calls[0] as unknown as { headers: Record<string, string> }).headers;
+    expect(headers["authorization"]).toBe("Bearer sk-test-abcdefghijkl");
+  });
+
+  it("leaves out an answer whose token is not a label, rather than ending the run", async () => {
+    const s = chatServer({
+      answer: (content) =>
+        content.includes("credential") ? chatReply("I", { I: Math.log(0.6), Yes: Math.log(0.3) }) : chatReply("No", { No: 0 }),
+    });
+    const result = await chat(s).decide(request);
+    expect(result.answers["secrets"]).toBeUndefined();
+    expect(noulProbability(result.answers["destructive"])).toBe(0);
+  });
+
+  it("merges the extra body into every request", async () => {
+    const s = chatServer({ tokenize: true });
+    await chat(s, { extraBody: { chat_template_kwargs: { enable_thinking: false } } }).decide(request);
+    expect(s.chats().every((c) => (c.body["chat_template_kwargs"] as Record<string, unknown>)?.["enable_thinking"] === false)).toBe(true);
+  });
+});
+
+describe("LocalAdapter in chat mode refuses to start rather than degrading", () => {
+  const refusal = async (s: ReturnType<typeof chatServer>) => {
+    const error = await chat(s).decide(request).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AdapterError);
+    return error as AdapterError;
+  };
+
+  it("when the endpoint returns no logprobs, as Anthropic's API would not", async () => {
+    const s = chatServer({ probe: () => ({ choices: [{ message: { role: "assistant", content: "Yes" } }] }) });
+    expect((await refusal(s)).message).toMatch(/no logprobs/);
+  });
+
+  it("when a probe's reply is not a single-token label, and says what a <think> means", async () => {
+    const s = chatServer({ probe: () => chatReply("<think>", { "<think>": 0 }) });
+    const error = await refusal(s);
+    expect(error.message).toMatch(/answered "<think>"/);
+    expect(error.message).toMatch(/enable_thinking/);
+  });
+
+  it("when a multi-token label only shows up as its prefix", async () => {
+    // "yes" split as "y" + "es" can only appear as "y", which is no label.
+    const s = chatServer({ probe: () => chatReply("y", { y: Math.log(0.9), n: Math.log(0.1) }) });
+    expect((await refusal(s)).message).toMatch(/not a single-token yes or no/);
+  });
+
+  it("when the served tokenizer splits every form of a label", async () => {
+    // Qwen's case: "10" is two tokens, so it cannot be a label under that tokenizer.
+    const s = chatServer({ tokenize: true });
+    const split = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).endsWith("/tokenize")) return s.fetchImpl(url, init);
+      const text = String(JSON.parse(String(init?.body))["content"]);
+      return json({ tokens: text === "10" ? [16, 15] : [1738] });
+    });
+    const error = await new LocalAdapter({ api: "chat", model: "qwen", fetch: split, trueLabels: ["10"], falseLabels: ["no"] })
+      .decide(request)
+      .catch((e: unknown) => e);
+    expect((error as AdapterError).message).toMatch(/true label is more than one token/);
+  });
+
+  it("when the model answers a probe backwards", async () => {
+    const s = chatServer({ probe: () => chatReply("Yes", { Yes: 0 }) });
+    expect((await refusal(s)).message).toMatch(/answered yes to a probe whose answer is no/);
+  });
+
+  it("reports a refused key as auth", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith("/tokenize") ? json({}, 404) : json({ error: "bad key" }, 401),
+    );
+    const error = await new LocalAdapter({ api: "chat", model: "m", fetch: fetchImpl }).decide(request).catch((e: unknown) => e);
+    expect((error as AdapterError).kind).toBe("auth");
+  });
+});

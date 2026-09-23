@@ -267,6 +267,27 @@ BOUNCER_TYPESAFE_API_KEY=… \
 
 If the endpoint cannot constrain the decode, the adapter refuses to start rather than
 returning an unconstrained number that would look exactly like a real one.
+
+The LLM one-token-logprob arm is the same adapter against a chat endpoint, named
+`chat@<url>`. It is **an OpenAI model or an open-weights model served by vLLM**, because
+Anthropic's API returns no logprobs, so no Claude model can be this arm. It asks each
+question as a chat turn, takes one token, and reads p off that token's `top_logprobs`.
+Before the first fixture it asks two probes, one whose answer is yes and one whose answer is
+no, and refuses to run unless the model answers each with a single yes or no token, which is
+what shows the labels are single tokens under the tokenizer actually served:
+
+```bash
+BOUNCER_CHAT_MODEL=gpt-4.1-mini OPENAI_API_KEY=… BOUNCER_TYPESAFE_API_KEY=… \
+  node bin/bouncer.cjs calibrate --compare jev,chat@https://api.openai.com
+
+BOUNCER_CHAT_MODEL=<served model name> BOUNCER_TYPESAFE_API_KEY=… \
+  node bin/bouncer.cjs calibrate --compare jev,chat@http://127.0.0.1:8000
+```
+
+`OPENAI_API_KEY` is sent to OpenAI's host and nowhere else; `BOUNCER_CHAT_API_KEY` is sent
+to whatever `chat@` URL you name. For a Qwen model on vLLM, turn thinking off with
+`BOUNCER_CHAT_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}'`, or the
+first token is `<think>` and the probe refuses.
 <!-- COMPARE-TABLE:END -->
 
 ## Modes

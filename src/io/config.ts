@@ -208,6 +208,82 @@ export function jevCompatible(backend: string): { readonly baseUrl: string } | {
   return { baseUrl: url.toString() };
 }
 
+/**
+ * An OpenAI-compatible chat endpoint named as `chat@<url>`, the LLM one-token-logprob arm:
+ * the local adapter's options for it, the sentence to print instead, or undefined when the
+ * name is not of that form.
+ *
+ * It is an OpenAI model or an open-weights model on vLLM, because those are what serve chat
+ * with `logprobs`; Anthropic's API returns none. The model is `BOUNCER_CHAT_MODEL` and is
+ * required, since it is the thing the arm's column claims to be.
+ *
+ * Keys follow `jevCompatible`'s rule. `OPENAI_API_KEY` goes to OpenAI's own host and
+ * nowhere else, because the URL is whatever was typed. `BOUNCER_CHAT_API_KEY` goes to any
+ * `chat@` URL, which is what setting it for this means (vLLM's `--api-key`).
+ * `BOUNCER_CHAT_EXTRA_BODY` is a JSON object merged into every request, for switches a
+ * server needs and OpenAI would reject, such as turning a Qwen model's thinking off.
+ *
+ * A bare origin gets `/v1`; anything with a path is taken as the API root.
+ */
+export function chatBackend(
+  backend: string,
+): { readonly baseUrl: string; readonly model: string; readonly apiKey?: string; readonly extraBody?: Record<string, unknown> } | { readonly error: string } | undefined {
+  if (!backend.startsWith("chat@")) return undefined;
+
+  const raw = backend.slice("chat@".length).trim();
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { error: `"${backend}" names no URL: write chat@https://api.openai.com, or chat@http://127.0.0.1:8000 for vLLM.` };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { error: `"${backend}" is not an http or https URL.` };
+  }
+  if (url.hostname === "api.anthropic.com") {
+    return { error: `"${backend}" cannot be an arm: Anthropic's API returns no logprobs, so there is no probability to read.` };
+  }
+
+  const text = (name: string): string | undefined => {
+    const value = process.env[name];
+    return value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
+  };
+
+  const model = text("BOUNCER_CHAT_MODEL");
+  if (model === undefined) {
+    return { error: `"${backend}" needs BOUNCER_CHAT_MODEL: the model the endpoint serves, such as gpt-4.1-mini or the name vLLM was started with.` };
+  }
+
+  const openai = url.hostname === "api.openai.com";
+  const apiKey = text("BOUNCER_CHAT_API_KEY") ?? (openai ? text("OPENAI_API_KEY") : undefined);
+  if (openai && apiKey === undefined) {
+    return { error: `"${backend}" is OpenAI: set OPENAI_API_KEY.` };
+  }
+
+  let extraBody: Record<string, unknown> | undefined;
+  const extra = text("BOUNCER_CHAT_EXTRA_BODY");
+  if (extra !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(extra);
+    } catch {
+      parsed = undefined;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { error: "BOUNCER_CHAT_EXTRA_BODY is not a JSON object." };
+    }
+    extraBody = parsed as Record<string, unknown>;
+  }
+
+  if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1";
+  return {
+    baseUrl: url.toString().replace(/\/$/, ""),
+    model,
+    ...(apiKey !== undefined ? { apiKey } : {}),
+    ...(extraBody !== undefined ? { extraBody } : {}),
+  };
+}
+
 export function errorsIn(diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
   return diagnostics.filter((d) => d.severity === "error");
 }

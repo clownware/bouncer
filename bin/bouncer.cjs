@@ -7620,12 +7620,19 @@ var PREFLIGHT_BUDGET_MS = 1e4;
 var DEFAULT_TRUE_LABELS = ["yes", " yes", "Yes", " Yes"];
 var DEFAULT_FALSE_LABELS = ["no", " no", "No", " No"];
 var FORCE_BIAS = 100;
+var CHAT_TOP_LOGPROBS = 20;
+var CHAT_SYSTEM = "Answer the question about the input with one word: yes or no.";
 var LocalAdapter = class {
-  name = "local";
+  /**
+   * `local`, or for chat `chat:<model>@<host>`: the column name and the `backend` an `--out`
+   * line carries. The model is in it because this arm's whole claim is which model it is.
+   */
+  name;
   options;
   constraint;
   constructor(options = {}) {
     this.options = options;
+    this.name = options.api === "chat" ? `chat:${this.model()}@${hostOf(this.baseUrl())}` : "local";
   }
   /**
    * Resolve the label tokens and prove the endpoint constrains, once.
@@ -7663,6 +7670,7 @@ var LocalAdapter = class {
         deadline,
         request.signal
       );
+      if (result.p === void 0) return;
       answers[name] = { type: "noul", noul: result.p };
       inputTokens += result.inputTokens ?? 0;
       model ??= result.model;
@@ -7688,6 +7696,7 @@ var LocalAdapter = class {
     return this.constraint;
   }
   async preflight(deadline) {
+    if (this.options.api === "chat") return this.chatPreflight(deadline);
     const trueLabels = this.options.trueLabels ?? DEFAULT_TRUE_LABELS;
     const falseLabels = this.options.falseLabels ?? DEFAULT_FALSE_LABELS;
     const bias = {};
@@ -7719,8 +7728,9 @@ var LocalAdapter = class {
   }
   /** One constrained token, and the probability of the true class read off its logprobs. */
   async complete(prompt, constraint, deadline, signal) {
+    if (this.options.api === "chat") return this.chatComplete(prompt, constraint, deadline, signal);
     const body = {
-      model: this.options.model ?? DEFAULT_MODEL2,
+      model: this.model(),
       prompt,
       max_tokens: 1,
       temperature: 0,
@@ -7742,7 +7752,7 @@ var LocalAdapter = class {
     const shapes = [
       { content: text, add_special: false },
       // llama.cpp
-      { model: this.options.model ?? DEFAULT_MODEL2, prompt: text, add_special_tokens: false }
+      { model: this.model(), prompt: text, add_special_tokens: false }
       // vLLM
     ];
     const root = this.baseUrl().replace(/\/v1\/?$/, "");
@@ -7775,7 +7785,10 @@ var LocalAdapter = class {
     try {
       const response = await doFetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...this.options.apiKey !== void 0 ? { authorization: `Bearer ${this.options.apiKey}` } : {}
+        },
         body: JSON.stringify(body),
         signal: controller.signal
       });
@@ -7795,6 +7808,93 @@ var LocalAdapter = class {
   baseUrl() {
     return (this.options.baseUrl ?? DEFAULT_BASE_URL2).replace(/\/$/, "");
   }
+  model() {
+    return this.options.model ?? DEFAULT_MODEL2;
+  }
+  /**
+   * The chat mode's version of steps 1 to 3.
+   *
+   * Ids are resolved and biased where the server tokenizes (vLLM), and a label with no
+   * single-token form is refused exactly as in completions mode. Where it does not (OpenAI
+   * serves no `/tokenize`), nothing is biased, and the probes below are the proof instead.
+   * Either way p is the same quantity: an equal bias on every label token shifts them
+   * together, and softmax over the labels cannot see a shift. What the bias adds is only
+   * that the reply is always a label.
+   */
+  async chatPreflight(deadline) {
+    const trueLabels = this.options.trueLabels ?? DEFAULT_TRUE_LABELS;
+    const falseLabels = this.options.falseLabels ?? DEFAULT_FALSE_LABELS;
+    let bias = {};
+    const tokenizes = await this.tokenize(trueLabels[0] ?? "yes", deadline).then(
+      () => true,
+      (err) => {
+        if (err instanceof AdapterError && err.kind === "timeout") throw err;
+        return false;
+      }
+    );
+    const classes = /* @__PURE__ */ new Map();
+    for (const [labels, truth] of [
+      [trueLabels, true],
+      [falseLabels, false]
+    ]) {
+      let kept = 0;
+      for (const label of labels) {
+        if (tokenizes) {
+          const tokens = await this.tokenize(label, deadline);
+          if (tokens.length !== 1) continue;
+          bias[String(tokens[0])] = FORCE_BIAS;
+        }
+        classes.set(normalise(label), truth);
+        kept += 1;
+      }
+      if (kept === 0) {
+        throw new AdapterError(
+          "invalid_request",
+          `every surface form of the ${truth} label is more than one token under this model's tokenizer, so the decode cannot be constrained to it. Configure single-token labels for this model.`
+        );
+      }
+    }
+    if (!tokenizes) bias = {};
+    const constraint = { bias, classes, topLogprobs: CHAT_TOP_LOGPROBS };
+    for (const [prompt, expected] of [
+      [PROBE_PROMPT, true],
+      [NO_PROBE_PROMPT, false]
+    ]) {
+      const result = await this.chatComplete(prompt, constraint, deadline);
+      const answered = result.token === void 0 ? void 0 : constraint.classes.get(normalise(result.token));
+      if (answered === void 0) {
+        throw new AdapterError(
+          "invalid_request",
+          `asked a yes-or-no probe, ${this.model()} answered ${JSON.stringify(result.token ?? "")}, which is not a single-token yes or no, so no answer can be read off its first token. A reasoning token such as <think> means thinking is on: turn it off for this model (on vLLM, BOUNCER_CHAT_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}').`
+        );
+      }
+      if (answered !== expected) {
+        throw new AdapterError(
+          "invalid_request",
+          `${this.model()} answered ${expected ? "no" : "yes"} to a probe whose answer is ${expected ? "yes" : "no"} (${JSON.stringify(prompt.split("\n")[0])}), so its labels cannot be trusted to mean what they say.`
+        );
+      }
+    }
+    return constraint;
+  }
+  /** One chat turn, one token, and p read off that token's `top_logprobs`. */
+  async chatComplete(prompt, constraint, deadline, signal) {
+    const body = {
+      model: this.model(),
+      messages: [
+        { role: "system", content: CHAT_SYSTEM },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 1,
+      temperature: 0,
+      logprobs: true,
+      top_logprobs: constraint.topLogprobs,
+      ...Object.keys(constraint.bias).length > 0 ? { logit_bias: constraint.bias } : {},
+      ...this.options.extraBody ?? {}
+    };
+    const payload = await this.post(`${this.baseUrl()}/chat/completions`, body, deadline, signal);
+    return { ...readChatAnswer(payload, constraint), ...readUsage(payload) };
+  }
 };
 function suffixFor(question) {
   const lines = ["", "---", `Question: ${question.instructions}`];
@@ -7806,6 +7906,9 @@ function suffixFor(question) {
 var PROBE_PROMPT = `Question: Is the sky sometimes blue?
 Answer with one word, yes or no.
 Answer:`;
+var NO_PROBE_PROMPT = `Question: Is fire cold?
+Answer with one word, yes or no.
+Answer:`;
 function readProbability(payload, constraint) {
   const top = topLogprobs(payload);
   if (top === void 0) {
@@ -7814,10 +7917,21 @@ function readProbability(payload, constraint) {
       "the endpoint returned no top logprobs, so there is no distribution to read a probability from"
     );
   }
+  const { trueMass, falseMass, sawUnknown } = massOf(Object.entries(top), constraint);
+  const total = trueMass + falseMass;
+  if (total <= 0) {
+    throw new AdapterError(
+      "invalid_request",
+      `the endpoint ignored logit_bias: neither label token appears in the returned distribution${sawUnknown !== void 0 ? ` (it offered ${JSON.stringify(sawUnknown)})` : ""}. An unconstrained decode cannot produce a calibrated probability, so the adapter will not run.`
+    );
+  }
+  return { p: trueMass / total };
+}
+function massOf(entries, constraint) {
   let trueMass = 0;
   let falseMass = 0;
   let sawUnknown;
-  for (const [token, logprob] of Object.entries(top)) {
+  for (const [token, logprob] of entries) {
     if (typeof logprob !== "number" || !Number.isFinite(logprob)) continue;
     const truth = constraint.classes.get(normalise(token));
     if (truth === void 0) {
@@ -7827,14 +7941,49 @@ function readProbability(payload, constraint) {
     if (truth) trueMass += Math.exp(logprob);
     else falseMass += Math.exp(logprob);
   }
-  const total = trueMass + falseMass;
-  if (total <= 0) {
+  return { trueMass, falseMass, ...sawUnknown !== void 0 ? { sawUnknown } : {} };
+}
+function readChatAnswer(payload, constraint) {
+  const first = chatContent(payload);
+  if (first === void 0) {
     throw new AdapterError(
-      "invalid_request",
-      `the endpoint ignored logit_bias: neither label token appears in the returned distribution${sawUnknown !== void 0 ? ` (it offered ${JSON.stringify(sawUnknown)})` : ""}. An unconstrained decode cannot produce a calibrated probability, so the adapter will not run.`
+      "malformed_response",
+      "the chat endpoint returned no logprobs for its answer token, so there is no distribution to read a probability from"
     );
   }
-  return { p: trueMass / total };
+  const token = typeof first["token"] === "string" ? first["token"] : void 0;
+  const entries = [];
+  const top = first["top_logprobs"];
+  if (Array.isArray(top)) {
+    for (const e of top) {
+      if (typeof e === "object" && e !== null && typeof e["token"] === "string") {
+        entries.push([e["token"], e["logprob"]]);
+      }
+    }
+  }
+  if (token !== void 0 && !entries.some(([t]) => t === token)) entries.push([token, first["logprob"]]);
+  if (token === void 0 || !constraint.classes.has(normalise(token))) return token !== void 0 ? { token } : {};
+  const { trueMass, falseMass } = massOf(entries, constraint);
+  const total = trueMass + falseMass;
+  return total > 0 ? { p: trueMass / total, token } : { token };
+}
+function chatContent(payload) {
+  if (typeof payload !== "object" || payload === null) return void 0;
+  const choices = payload["choices"];
+  if (!Array.isArray(choices) || choices.length === 0) return void 0;
+  const logprobs = choices[0]["logprobs"];
+  if (typeof logprobs !== "object" || logprobs === null) return void 0;
+  const content = logprobs["content"];
+  if (!Array.isArray(content) || content.length === 0) return void 0;
+  const first = content[0];
+  return typeof first === "object" && first !== null ? first : void 0;
+}
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 function topLogprobs(payload) {
   if (typeof payload !== "object" || payload === null) return void 0;
@@ -7870,6 +8019,12 @@ async function errorFor2(response, url) {
   const suffix = detail.length > 0 ? `: ${detail}` : "";
   if (response.status === 404) {
     return new AdapterError("invalid_request", `${url} is not served by this endpoint (404)${suffix}`, { status: 404 });
+  }
+  if (response.status === 401 || response.status === 403) {
+    return new AdapterError("auth", `${url} refused the key (${response.status})${suffix}`, { status: response.status });
+  }
+  if (response.status === 429) {
+    return new AdapterError("rate_limited", `${url} is rate limiting (429)${suffix}`, { status: 429 });
   }
   if (response.status === 400 || response.status === 422) {
     return new AdapterError("invalid_request", `${url} rejected the request (${response.status})${suffix}`, {
@@ -9212,6 +9367,56 @@ function jevCompatible(backend) {
   }
   if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1/systemone";
   return { baseUrl: url.toString() };
+}
+function chatBackend(backend) {
+  if (!backend.startsWith("chat@")) return void 0;
+  const raw = backend.slice("chat@".length).trim();
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { error: `"${backend}" names no URL: write chat@https://api.openai.com, or chat@http://127.0.0.1:8000 for vLLM.` };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { error: `"${backend}" is not an http or https URL.` };
+  }
+  if (url.hostname === "api.anthropic.com") {
+    return { error: `"${backend}" cannot be an arm: Anthropic's API returns no logprobs, so there is no probability to read.` };
+  }
+  const text = (name) => {
+    const value = process.env[name];
+    return value !== void 0 && value.trim().length > 0 ? value.trim() : void 0;
+  };
+  const model = text("BOUNCER_CHAT_MODEL");
+  if (model === void 0) {
+    return { error: `"${backend}" needs BOUNCER_CHAT_MODEL: the model the endpoint serves, such as gpt-4.1-mini or the name vLLM was started with.` };
+  }
+  const openai = url.hostname === "api.openai.com";
+  const apiKey2 = text("BOUNCER_CHAT_API_KEY") ?? (openai ? text("OPENAI_API_KEY") : void 0);
+  if (openai && apiKey2 === void 0) {
+    return { error: `"${backend}" is OpenAI: set OPENAI_API_KEY.` };
+  }
+  let extraBody;
+  const extra = text("BOUNCER_CHAT_EXTRA_BODY");
+  if (extra !== void 0) {
+    let parsed;
+    try {
+      parsed = JSON.parse(extra);
+    } catch {
+      parsed = void 0;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { error: "BOUNCER_CHAT_EXTRA_BODY is not a JSON object." };
+    }
+    extraBody = parsed;
+  }
+  if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1";
+  return {
+    baseUrl: url.toString().replace(/\/$/, ""),
+    model,
+    ...apiKey2 !== void 0 ? { apiKey: apiKey2 } : {},
+    ...extraBody !== void 0 ? { extraBody } : {}
+  };
 }
 function errorsIn(diagnostics) {
   return diagnostics.filter((d) => d.severity === "error");
@@ -10651,6 +10856,10 @@ function adapterFor2(backend) {
   const compatible = jevCompatible(backend);
   if (compatible !== void 0) {
     return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+  }
+  const chat = chatBackend(backend);
+  if (chat !== void 0) {
+    return "error" in chat ? chat.error : new LocalAdapter({ ...localBackend(), ...chat, api: "chat" });
   }
   return `Unknown backend "${backend}".`;
 }
@@ -12379,7 +12588,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.5\n");
+      process.stdout.write("0.2.6\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

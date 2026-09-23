@@ -4,7 +4,7 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--json]
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //
 // `--out` writes what the classifier said about each fixture, one line per fixture, in the
@@ -30,6 +30,11 @@
 // server's `/v1/systemone`, such as openjev-sglang. `--compare jev,jev@<url>` is therefore
 // one adapter, one wire shape and one parser on both sides, and the only thing that differs
 // is the model answering. It is sent no key (`jevCompatible` says why).
+//
+// `chat@<url>` is the LLM one-token-logprob arm: the local adapter in chat mode against an
+// OpenAI-compatible `/v1/chat/completions`, which means an OpenAI model or an open-weights
+// model on vLLM, since Anthropic's API returns no logprobs. `BOUNCER_CHAT_MODEL` names the
+// model, and the column is `chat:<model>@<host>` (`chatBackend` has the key rules).
 
 import { dirname, join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -52,7 +57,7 @@ import {
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
-import { apiKey, errorsIn, jevCompatible, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import { apiKey, chatBackend, errorsIn, jevCompatible, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
 
 export interface CalibrateArgs {
@@ -427,6 +432,11 @@ function adapterFor(backend: string): Adapter | string {
   const compatible = jevCompatible(backend);
   if (compatible !== undefined) {
     return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+  }
+
+  const chat = chatBackend(backend);
+  if (chat !== undefined) {
+    return "error" in chat ? chat.error : new LocalAdapter({ ...localBackend(), ...chat, api: "chat" });
   }
 
   return `Unknown backend "${backend}".`;
