@@ -189,4 +189,4 @@ unlabelled candidates in this format, which is the way to grow the set from call
 actually made rather than calls somebody imagined.
 
 The set grows, so cite a commit when citing a number measured on it. It is MIT licensed with
-the rest of the repository.
+the rest of the repository ([LICENSE](../LICENSE)).
