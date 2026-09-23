@@ -3989,10 +3989,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep3, value } = collItem;
+        const { start, key, sep: sep4, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep3?.[0],
+          next: key ?? sep4?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -4006,7 +4006,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep3) {
+          if (!keyProps.anchor && !keyProps.tag && !sep4) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -4030,7 +4030,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep3 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep4 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -4046,7 +4046,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep3, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep4, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -4137,7 +4137,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep3 = "";
+        let sep4 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -4151,13 +4151,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep3 + cb;
-              sep3 = "";
+                comment += sep4 + cb;
+              sep4 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep3 += source;
+                sep4 += source;
               hasSpace = true;
               break;
             default:
@@ -4200,18 +4200,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep3, value } = collItem;
+        const { start, key, sep: sep4, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep3?.[0],
+          next: key ?? sep4?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep3 && !value) {
+          if (!props.anchor && !props.tag && !sep4 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -4265,8 +4265,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep3 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep3, null, props, onError);
+        if (!isMap && !sep4 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep4, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -4278,7 +4278,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep3 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep4 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -4289,8 +4289,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep3)
-                for (const st of sep3) {
+              if (sep4)
+                for (const st of sep4) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -4307,7 +4307,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep3, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep4, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4487,7 +4487,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep3 = "";
+      let sep4 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -4504,24 +4504,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep3 + indent.slice(trimIndent) + content;
-          sep3 = "\n";
+          value += sep4 + indent.slice(trimIndent) + content;
+          sep4 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep3 === " ")
-            sep3 = "\n";
-          else if (!prevMoreIndented && sep3 === "\n")
-            sep3 = "\n\n";
-          value += sep3 + indent.slice(trimIndent) + content;
-          sep3 = "\n";
+          if (sep4 === " ")
+            sep4 = "\n";
+          else if (!prevMoreIndented && sep4 === "\n")
+            sep4 = "\n\n";
+          value += sep4 + indent.slice(trimIndent) + content;
+          sep4 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep3 === "\n")
+          if (sep4 === "\n")
             value += "\n";
           else
-            sep3 = "\n";
+            sep4 = "\n";
         } else {
-          value += sep3 + content;
-          sep3 = " ";
+          value += sep4 + content;
+          sep4 = " ";
           prevMoreIndented = false;
         }
       }
@@ -4704,25 +4704,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep3 = " ";
+      let sep4 = " ";
       let pos = line.lastIndex;
       while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep3 === "\n")
-            res += sep3;
+          if (sep4 === "\n")
+            res += sep4;
           else
-            sep3 = "\n";
+            sep4 = "\n";
         } else {
-          res += sep3 + lm;
-          sep3 = " ";
+          res += sep4 + lm;
+          sep4 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep3 + (match?.[1] ?? "");
+      return res + sep4 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -5532,14 +5532,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep3, value }) {
+    function stringifyItem({ start, key, sep: sep4, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep3)
-        for (const st of sep3)
+      if (sep4)
+        for (const st of sep4)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -6706,18 +6706,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep3;
+          let sep4;
           if (scalar.end) {
-            sep3 = scalar.end;
-            sep3.push(this.sourceToken);
+            sep4 = scalar.end;
+            sep4.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep3 = [this.sourceToken];
+            sep4 = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep3 }]
+            items: [{ start, key: scalar, sep: sep4 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6870,15 +6870,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep3 = it.sep;
-                  sep3.push(this.sourceToken);
+                  const sep4 = it.sep;
+                  sep4.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep3 }]
+                    items: [{ start: start2, key, sep: sep4 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -7072,13 +7072,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep3 = fc.end.splice(1, fc.end.length);
-            sep3.push(this.sourceToken);
+            const sep4 = fc.end.splice(1, fc.end.length);
+            sep4.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep3 }]
+              items: [{ start, key: fc, sep: sep4 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -7550,7 +7550,7 @@ function backoffFor(attempt, response) {
 }
 function delay(ms, deadline) {
   const capped = Math.max(0, Math.min(ms, deadline - Date.now()));
-  return new Promise((resolve4) => setTimeout(resolve4, capped));
+  return new Promise((resolve5) => setTimeout(resolve5, capped));
 }
 async function safeText(response) {
   try {
@@ -8634,17 +8634,17 @@ function describeAction(input, clean) {
       };
     }
     default: {
-      const summary = { kind: "other_tool", tool: toolName };
+      const summary2 = { kind: "other_tool", tool: toolName };
       for (const [key, value] of Object.entries(toolInput)) {
         if (typeof value === "number" || typeof value === "boolean") {
-          summary[key] = value;
+          summary2[key] = value;
         } else if (typeof value === "string" && value.length <= 200) {
-          summary[key] = clean(value);
+          summary2[key] = clean(value);
         } else if (typeof value === "string") {
-          summary[`${key}_bytes`] = Buffer.byteLength(value, "utf8");
+          summary2[`${key}_bytes`] = Buffer.byteLength(value, "utf8");
         }
       }
-      return summary;
+      return summary2;
     }
   }
 }
@@ -11337,7 +11337,7 @@ var CommandReasoning = class {
    * is not attacker-influenced input, and bouncer runs nothing else anywhere.
    */
   spawn(input) {
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const child = (0, import_node_child_process.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
@@ -11367,7 +11367,7 @@ var CommandReasoning = class {
           reject(new Error(`the reasoning command exited ${code}: ${stderr.trim().slice(0, 500)}`));
           return;
         }
-        resolve4({ stdout });
+        resolve5({ stdout });
       });
       child.stdin.on("error", () => {
       });
@@ -11938,6 +11938,313 @@ function shorten(signature) {
   return signature.length <= 120 ? signature : `${signature.slice(0, 117)}\u2026`;
 }
 
+// src/commands/export.ts
+var import_node_fs12 = require("node:fs");
+var import_node_path12 = require("node:path");
+
+// src/export.ts
+var UNCARRIED = ["running_as_subagent", "recent_tools", "git_branch", "git_dirty"];
+var OUTSIDE_DIRS = [
+  "/etc",
+  "/tmp",
+  "/srv/elsewhere",
+  "/home/user",
+  "/home/user/.config",
+  "/home/user/.ssh",
+  "/home/user/.aws",
+  "/home/user/.gnupg",
+  "/home/user/.kube",
+  "/home/user/.docker",
+  "/home/user/elsewhere/.git",
+  "/home/user/elsewhere/.github/workflows"
+];
+function exportCandidates(records, options = {}) {
+  const skipped = { notGate: 0, noState: 0, mock: 0, noId: 0, truncated: 0, unrebuildable: 0, duplicate: 0, known: 0 };
+  let redactedOnExport = 0;
+  const knownActions = new Set(
+    (options.known ?? []).filter((f) => f.kind === "tool_call").map((f) => actionKey(stateFor(f).text))
+  );
+  const byState = /* @__PURE__ */ new Map();
+  for (const record2 of records) {
+    if ((record2.consumer ?? "gate") !== "gate" || typeof record2.tool !== "string") {
+      skipped.notGate += 1;
+      continue;
+    }
+    if (record2.state === void 0) {
+      skipped.noState += 1;
+      continue;
+    }
+    if (record2.backend === "mock" && options.keepMock !== true) {
+      skipped.mock += 1;
+      continue;
+    }
+    if (record2.tool_use_id === void 0) {
+      skipped.noId += 1;
+      continue;
+    }
+    if (record2.truncated === true) {
+      skipped.truncated += 1;
+      continue;
+    }
+    const rebuilt = rebuild(record2, record2.tool);
+    if (rebuilt === void 0) {
+      skipped.unrebuildable += 1;
+      continue;
+    }
+    const existing = byState.get(rebuilt.state);
+    if (existing !== void 0) {
+      skipped.duplicate += 1;
+      existing.seen += 1;
+      if (record2.ts > existing.last) existing.last = record2.ts;
+      continue;
+    }
+    if (knownActions.has(actionKey(rebuilt.state))) {
+      skipped.known += 1;
+      continue;
+    }
+    if (rebuilt.redacted) redactedOnExport += 1;
+    byState.set(rebuilt.state, { ...rebuilt.item, id: record2.tool_use_id, seen: 1, first: record2.ts, last: record2.ts });
+  }
+  return { candidates: [...byState.values()], read: records.length, skipped, redactedOnExport };
+}
+function candidateLine(c) {
+  const fixture = {
+    id: c.id,
+    tool: c.tool,
+    ...c.cwd !== void 0 ? { cwd: c.cwd } : {},
+    input: c.input,
+    ...c.permission_mode !== void 0 ? { permission_mode: c.permission_mode } : {},
+    ...c.target_exists !== void 0 ? { target_exists: c.target_exists } : {},
+    expect: {},
+    note: `UNLABELLED. Logged ${c.seen === 1 ? "once" : `${c.seen} times`}, first ${c.first.slice(0, 10)}. Replace with why the label is what it is.`
+  };
+  return `// ${JSON.stringify(fixture)}`;
+}
+var HEADER = `// Candidate fixtures exported from a bouncer decision log by \`bouncer export\`.
+//
+// Every line is commented out because none is labelled yet, and a fixture with no labels
+// scores nothing. To promote one: put the questions it clearly demonstrates in \`expect\`,
+// replace the note with why the label is what it is, and delete the leading \`// \`. A line
+// uncommented with \`expect\` still empty refuses to load and says so.
+//
+// Each line is a real call, rebuilt from the redacted state the log kept, and checked to
+// rebuild the state the classifier was shown. Write and Edit contents are filler of
+// the logged size, because the log never held the contents. A path outside the project is
+// the logged file name under a representative directory with the same labels, because the
+// log kept only the name. The project's directory name is carried over, because the
+// classifier reads it; the subagent type is not, because a fixture has nowhere to put it.
+//
+// The id is the call's tool_use_id, which is what \`calibrate --from\` joins a gate log on,
+// so the answers the log already holds score against these labels with no key:
+//
+//   bouncer calibrate --fixtures <this file> --from <the decision log>
+`;
+function rebuild(record2, tool) {
+  let state;
+  try {
+    state = JSON.parse(record2.state);
+  } catch {
+    return void 0;
+  }
+  if (!isRecord8(state) || !isRecord8(state["action"]) || state["tool"] !== tool) return void 0;
+  const carried = { ...state };
+  for (const key of UNCARRIED) delete carried[key];
+  const expected = redactStrings2(carried);
+  const redacted = canonical(expected) !== canonical(carried);
+  const project = typeof expected["project"] === "string" ? expected["project"] : void 0;
+  const cwd = project !== void 0 ? `/home/user/${project}` : void 0;
+  const context = {
+    ...cwd !== void 0 ? { cwd } : {},
+    ...typeof record2.permission_mode === "string" ? { permission_mode: record2.permission_mode } : {}
+  };
+  for (const shape of shapesFor(tool, expected["action"], cwd)) {
+    const item = { tool, ...shape, ...context };
+    const built = stateFor(asFixture(item));
+    if (built.truncated) continue;
+    if (canonical(JSON.parse(built.text)) === canonical(expected)) {
+      return { item, state: built.text, redacted };
+    }
+  }
+  return void 0;
+}
+function shapesFor(tool, action, cwd) {
+  const str = (key) => typeof action[key] === "string" ? action[key] : void 0;
+  const num = (key) => typeof action[key] === "number" ? action[key] : void 0;
+  const filler = (bytes, char) => bytes === void 0 ? void 0 : char.repeat(bytes);
+  const defined = (record2) => Object.fromEntries(Object.entries(record2).filter(([, v]) => v !== void 0));
+  switch (tool) {
+    case "Bash":
+      return [{ input: defined({ command: str("command"), description: str("stated_intent") }) }];
+    case "Write": {
+      const exists = typeof action["replaces_existing_file"] === "boolean" ? { target_exists: action["replaces_existing_file"] } : {};
+      return pathsFor(action, cwd).map((file_path) => ({
+        input: defined({ file_path, content: filler(num("bytes"), "x") }),
+        ...exists
+      }));
+    }
+    case "Edit":
+      return pathsFor(action, cwd).map((file_path) => ({
+        input: defined({
+          file_path,
+          old_string: filler(num("bytes_removed"), "x"),
+          new_string: filler(num("bytes_added"), "y"),
+          replace_all: action["replaces_every_occurrence"] === true
+        })
+      }));
+    case "NotebookEdit":
+      return pathsFor(action, cwd).map((notebook_path) => ({
+        input: defined({ notebook_path, cell_id: str("cell"), edit_mode: str("edit_mode") })
+      }));
+    default: {
+      const input = {};
+      for (const [key, value] of Object.entries(action)) {
+        if (key === "kind" || key === "tool") continue;
+        if (key.endsWith("_bytes") && typeof value === "number") input[key.slice(0, -"_bytes".length)] = "x".repeat(value);
+        else input[key] = value;
+      }
+      return [{ input }];
+    }
+  }
+}
+function pathsFor(action, cwd) {
+  const path = action["path"];
+  if (typeof path !== "string" || path.length === 0) return [];
+  if (action["inside_project"] === true) return cwd === void 0 ? [] : [`${cwd}/${path}`];
+  if (action["inside_project"] !== false) return [];
+  return [...OUTSIDE_DIRS.map((dir) => `${dir}/${path}`), `/home/${path}`];
+}
+function asFixture(item) {
+  return { id: "", kind: "tool_call", item, expect: {}, note: "" };
+}
+function redactStrings2(value) {
+  if (typeof value === "string") return redact(value).text;
+  if (Array.isArray(value)) return value.map(redactStrings2);
+  if (isRecord8(value)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactStrings2(v)]));
+  return value;
+}
+function actionKey(state) {
+  const parsed = JSON.parse(state);
+  return canonical([parsed["tool"], parsed["action"]]);
+}
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (isRecord8(value)) {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function isRecord8(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/commands/export.ts
+var FLAGS4 = { values: ["from", "out", "fixtures"], switches: [] };
+function parseArgs5(argv) {
+  const { values, error } = parseFlags(argv, FLAGS4);
+  return {
+    ...values.get("from") !== void 0 ? { from: values.get("from") } : {},
+    ...values.get("out") !== void 0 ? { out: values.get("out") } : {},
+    ...values.get("fixtures") !== void 0 ? { fixtures: values.get("fixtures") } : {},
+    ...error !== void 0 ? { error } : {}
+  };
+}
+function exportFixtures(args, write3, report2) {
+  if (args.error !== void 0) {
+    write3(args.error);
+    return 1;
+  }
+  if (args.out !== void 0) {
+    const out = (0, import_node_path12.resolve)(args.out);
+    if (`${out}${import_node_path12.sep}`.includes(`${import_node_path12.sep}test${import_node_path12.sep}holdout${import_node_path12.sep}`)) {
+      write3(`Refusing to write under test/holdout: that corpus is frozen, and a case is added by hand.
+`);
+      return 1;
+    }
+    if ((0, import_node_fs12.existsSync)(out)) {
+      write3(`Refusing to overwrite ${args.out}: it may already hold labels. Name a new file.
+`);
+      return 1;
+    }
+  }
+  const sources = args.from !== void 0 ? [args.from] : [`${(0, import_node_path12.join)(dataDir(), LOG_FILE)}.1`, (0, import_node_path12.join)(dataDir(), LOG_FILE)];
+  const present = sources.filter((path) => args.from !== void 0 || (0, import_node_fs12.existsSync)(path));
+  if (present.length === 0) {
+    write3(`No decision log at ${(0, import_node_path12.join)(dataDir(), LOG_FILE)}. Name one with --from; bouncer status prints where the hook writes.
+`);
+    return 1;
+  }
+  let text = "";
+  for (const path of present) {
+    try {
+      text += `${(0, import_node_fs12.readFileSync)(path, "utf8")}
+`;
+    } catch (err) {
+      write3(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const knownPath = args.fixtures ?? (0, import_node_path12.join)(root, "fixtures", "gate.jsonl");
+  let known = [];
+  if (args.fixtures !== void 0 || (0, import_node_fs12.existsSync)(knownPath)) {
+    try {
+      known = loadFixtures(knownPath);
+    } catch (err) {
+      write3(`Cannot read fixtures at ${knownPath}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+  }
+  const keepMock = resolvePolicy(process.cwd(), root).policy?.backend === "mock";
+  const result = exportCandidates(parseLog(text), { keepMock, known });
+  const file = `${HEADER}
+${result.candidates.map(candidateLine).join("\n")}${result.candidates.length > 0 ? "\n" : ""}`;
+  if (args.out === void 0) {
+    write3(file);
+    report2(summary(result, present, known.length > 0 ? knownPath : void 0));
+    return 0;
+  }
+  try {
+    (0, import_node_fs12.mkdirSync)((0, import_node_path12.dirname)((0, import_node_path12.resolve)(args.out)), { recursive: true });
+    (0, import_node_fs12.writeFileSync)(args.out, file, { encoding: "utf8", flag: "wx" });
+  } catch (err) {
+    write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  write3(summary(result, present, known.length > 0 ? knownPath : void 0));
+  write3(`
+Written to ${args.out}. Label a line, uncomment it, then: bouncer calibrate --fixtures ${args.out} --from <the log>
+`);
+  return 0;
+}
+function summary(result, sources, knownPath) {
+  const s = result.skipped;
+  const lines = [
+    `Read ${result.read} lines from ${sources.join(" and ")}.`,
+    `Exported ${result.candidates.length} candidate fixtures, all unlabelled.`
+  ];
+  const left = [
+    [s.duplicate, "repeated an earlier call's state (counted in its note)"],
+    [s.known, `matched a fixture already in ${knownPath ?? "the known set"}`],
+    [s.noState, "carried no state (fast path or error)"],
+    [s.notGate, "were not gate lines"],
+    [s.mock, "were answered by the mock backend"],
+    [s.truncated, "were over the state cap, so the classifier saw only their head"],
+    [s.noId, "had no tool_use_id to join the logged answers on"],
+    [s.unrebuildable, "did not rebuild to the state the classifier was shown"]
+  ];
+  for (const [n, why] of left) if (n > 0) lines.push(`  ${n} ${why}.`);
+  if (result.redactedOnExport > 0) {
+    lines.push(
+      `${result.redactedOnExport} held text the current redaction patterns catch and the logged line did not; it is redacted in the export, so those candidates differ from what the classifier was shown.`
+    );
+  }
+  return `${lines.join("\n")}
+`;
+}
+
 // src/io/stdin.ts
 async function readPayload() {
   const raw = await readAll2();
@@ -11950,10 +12257,10 @@ async function readPayload() {
   }
 }
 function readAll2() {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const chunks = [];
     process.stdin.on("data", (c) => chunks.push(c));
-    process.stdin.on("end", () => resolve4(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("end", () => resolve5(Buffer.concat(chunks).toString("utf8")));
     process.stdin.on("error", reject);
   });
 }
@@ -11983,6 +12290,12 @@ async function main(argv) {
       return judge2(parseArgs2(argv.slice(3)), (text) => process.stdout.write(text));
     case "measure":
       return measure2(parseArgs3(argv.slice(3)), (text) => process.stdout.write(text));
+    case "export":
+      return exportFixtures(
+        parseArgs5(argv.slice(3)),
+        (text) => process.stdout.write(text),
+        (text) => process.stderr.write(text)
+      );
     case "skills":
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;

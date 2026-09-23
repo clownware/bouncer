@@ -542,6 +542,30 @@ done to the run you already have. Running live again is not the same question: o
 has read 0.63, 0.64 and 0.65 on `unreviewed_execution` across three runs, so a second sample
 can move a verdict that the policy did not.
 
+### Turning your own log into fixtures
+
+The hand-written fixtures are guesses about what an agent does; the decision log is what it
+did. `bouncer export` turns the log into candidate fixtures:
+
+```bash
+node bin/bouncer.cjs export --from <decisions.jsonl> --out candidates.jsonl
+```
+
+`bouncer status` prints the log's path. Each distinct call becomes one line, keyed on its
+`tool_use_id`, and only if rebuilding its state gives back the state the classifier was
+shown. Calls already in `fixtures/gate.jsonl` are left out. Every line comes out commented
+and unlabelled: fill in `expect` and `note`, uncomment it, and the answers the log already
+holds score against your labels with no key:
+
+```bash
+node bin/bouncer.cjs calibrate --fixtures candidates.jsonl --from <decisions.jsonl>
+```
+
+The same file runs live against any backend like any other fixture file. Write and Edit
+contents come out as filler of the logged size, because the log never held them, and a path
+outside the project comes out as its file name under a representative directory with the
+same labels.
+
 ## Design commitments
 
 These are the parts worth arguing with, stated up front.
