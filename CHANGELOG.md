@@ -5,8 +5,8 @@ only when `version` in `.claude-plugin/plugin.json` moves, so every entry here i
 someone can actually be running.
 
 Earlier releases have no entries: 0.2.0 is described in
-[docs/announcement-v0.2.md](docs/announcement-v0.2.md), and this file starts where the
-convention does.
+[the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
+and this file starts where the convention does.
 
 ## 0.2.6
 
