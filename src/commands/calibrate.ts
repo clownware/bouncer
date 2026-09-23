@@ -4,7 +4,7 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|local|mock] [--compare a,b] [--out run.jsonl] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--json]
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //
 // `--out` writes what the classifier said about each fixture, one line per fixture, in the
@@ -25,6 +25,11 @@
 // `--compare` runs two backends over the same fixture set and prints them side by side.
 // Both runs go through the same `score()`, so the comparison is of the backends and not of
 // two code paths that happen to agree.
+//
+// `jev@<url>` is a second Jev-shaped backend: the same `JevAdapter` pointed at another
+// server's `/v1/systemone`, such as openjev-sglang. `--compare jev,jev@<url>` is therefore
+// one adapter, one wire shape and one parser on both sides, and the only thing that differs
+// is the model answering. It is sent no key (`jevCompatible` says why).
 
 import { dirname, join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,7 +52,7 @@ import {
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
-import { apiKey, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import { apiKey, errorsIn, jevCompatible, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
 
 export interface CalibrateArgs {
@@ -133,11 +138,18 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     }
     adapters.push(adapter);
   }
+  // Columns and `--out` lines carry the adapter's own name, which for `jev@` is the endpoint
+  // it will actually call rather than however the flag happened to be typed.
+  const labels = adapters.map((a) => a.name);
 
   // Preflight before the first fixture, not on it. The local adapter refuses to start when
   // the endpoint cannot constrain its decode, and finding that out 40 fixtures into a run
   // wastes the run and reads like a flake.
   for (const adapter of adapters) {
+    if (adapter.name.startsWith("jev@") && args.json !== true) {
+      // Otherwise a cold endpoint is minutes of a silent terminal.
+      process.stderr.write(`Waiting for ${adapter.name} to answer (a server that scales to zero boots first)...\n`);
+    }
     const problem = await startIfNeeded(adapter);
     if (problem !== undefined) {
       write(`Cannot calibrate against ${adapter.name}: ${problem}\n`);
@@ -148,7 +160,7 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   const runs: Array<{ backend: string; scored: Scored[] }> = [];
   const answered: Answered[] = [];
   for (const [i, adapter] of adapters.entries()) {
-    const label = names[i] as string;
+    const label = labels[i] as string;
     let scored: Scored[];
     try {
       scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
@@ -411,6 +423,11 @@ function adapterFor(backend: string): Adapter | string {
   }
 
   if (backend === "local") return new LocalAdapter(localBackend());
+
+  const compatible = jevCompatible(backend);
+  if (compatible !== undefined) {
+    return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+  }
 
   return `Unknown backend "${backend}".`;
 }

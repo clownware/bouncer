@@ -937,10 +937,10 @@ export function formatComparison(comparison: Comparison, calibration: Calibratio
     // answers carry no confidence field at all, so there is nothing on that side to put in
     // a confidence column, and a column only the local side could fill would invite exactly
     // the comparison it cannot support.
-    "A noul answer is a bare probability. Jev returns no confidence field for one, and the",
-    "local adapter's softmax over two label tokens is not one either, so this compares p and",
-    "Brier and nothing else. The confidence used by the gate below is the derived statistic",
-    "max(p, 1 - p), computed the same way on both sides.",
+    "A noul answer is a bare probability. Jev, and a server built to its wire shape, return",
+    "no confidence field for one, and the local adapter's softmax over two label tokens is",
+    "not one either, so this compares p and Brier and nothing else. The confidence used by",
+    "the gate below is the derived statistic max(p, 1 - p), computed the same way on both sides.",
     "",
   );
 

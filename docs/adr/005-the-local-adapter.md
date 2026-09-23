@@ -103,6 +103,22 @@ Rows are **paired** on (fixture, question): an answer one backend did not produc
 dropped from both. Comparing a 94-row mean against an 89-row mean and calling the
 difference a backend difference is the quiet way for this table to lie.
 
+**A Jev-shaped server is a URL, not an adapter** (added 2026-09-23). `--compare
+jev,jev@<url>` points the same `JevAdapter` at another server's `/v1/systemone`, which is
+the cheapest first real comparison: openjev-sglang serves Jev's wire shape from an
+open-weights model, so both columns go through one request builder and one parser, and the
+only thing that differs is the model. It is the second arm of the three-way table, not a
+substitute for this adapter — it reads whatever that server computes, and this ADR's
+refusals (single-token labels, a proven constraint) are the server's business there, not
+ours. Three choices ride on it. The TypeSafe key is never sent to a `jev@` URL, since the
+URL is whatever was typed. Before the first fixture the adapter asks one real question and
+waits up to ten minutes for an answer, because a scaled-to-zero GPU endpoint boots for
+longer than a fixture's 30 s and a timeout on fixture 1 ends the run; the answer goes
+through the fixture parser, so a server in the wrong shape is refused there, the same
+reason step 3 probes. And the column is named `jev@<host>`, because it is the name the
+`--out` line and any judgments line carry, and two Jev-shaped backends under one name
+would be two classifiers reported as one.
+
 The table also reports how many fixtures reach the **same verdict** under each backend.
 That is the number a user swapping backends actually feels — not "do the probabilities
 agree" but "would this have prompted me in different places" — and two backends can differ
