@@ -161,6 +161,47 @@ It is verified against a stub only: the adapter's own tests, and run 9's committ
 replayed through an OpenAI-shaped stub, which gives the same table as `--from` on the same
 file. No real OpenAI or vLLM reply has been read.
 
+## Prior art (added 2026-09-23)
+
+Jev was announced on 2026-09-16 and open replicas followed within the week. None of them is
+a reason to change a decision above, and each is the reason for one of them or for an arm
+of the table, so they are recorded here rather than rediscovered.
+
+- **The one-token trick.** Sean Goedecke's
+  ["Jev means structured output is interesting again"](https://www.seangoedecke.com/jev-means-structured-output-is-interesting-again/)
+  (2026-09-16) prefills the response and generates one token restricted to the allowed
+  choices, and reports a 2x to 3x speedup over unprefixed structured output on
+  Qwen2.5-1.5B-Instruct. It measures speed and says nothing about whether the probabilities
+  mean anything. The `chat@` arm is that technique with the question it leaves open: scored
+  on Brier against hand labels, is p off one token's `top_logprobs` calibrated?
+- **SemIf** ([TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf), formerly openjev) reads
+  direct logits off a frozen Qwen3.5-4B, which is this adapter's approach. Its own
+  `docs/RESULTS.md` puts it at 0.845 against published Jev's 0.883 on TypeSafe's public
+  subset, as equal-case macro agreement over 102 rows and 20 cases. That is agreement with
+  Jev's answers, not calibration against labels, so it cannot say whether SemIf's p can
+  carry a threshold. The fixture Brier score is that claim, and it is the one PRD §12's bar
+  is written in.
+- **openjev-sglang** ([ekzhang/openjev-sglang](https://github.com/ekzhang/openjev-sglang))
+  serves `/v1/systemone` in Jev's wire shape from Qwen3.6-35B-A3B on SGLang, accepts
+  `jev-latest` as a model alias, and runs unauthenticated on its public Modal deploy. Its
+  README says its probabilities "are not calibrated estimates of correctness", which is
+  exactly what `--compare` tests. Because `JevAdapter` already takes a base URL, this is the
+  `jev@<url>` arm and cost no new adapter.
+- **Labels are per tokenizer.** Qwen tokenizes `10` and `64` as more than one token, so a
+  label set checked against one model's tokenizer proves nothing about another's. That is
+  step 2 above, and it is why the adapter refuses a multi-token label rather than reading
+  the probability of its prefix. It bites hardest on a `score` question, whose levels are
+  numbers, but a `noul`'s `yes` and `no` still have to be shown single under the model
+  actually served, on every run, rather than assumed.
+- **Anthropic's API returns no logprobs.** So the LLM one-token-logprob arm is an OpenAI
+  model or an open-weights model on vLLM, `chat@https://api.anthropic.com` is refused saying
+  so, and anything published from this table names the model in those words rather than
+  calling it "frontier".
+
+What none of these publishes is calibration against hand labels on a gate workload, with
+the answers committed so the scoring can be checked. The three-way table on
+[`fixtures/gate.jsonl`](../../fixtures/README.md) is that.
+
 ## Consequences and costs
 
 - **Configuration is environment-only for now:** `BOUNCER_LOCAL_URL`, `BOUNCER_LOCAL_MODEL`,
