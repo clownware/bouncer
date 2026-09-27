@@ -46,8 +46,12 @@ import { writeAtomic } from "./atomic.js";
  * 4 → 5: the `token_prefix` hard-rule predicate. A load that failed is cached like one that
  * worked, so a policy using the predicate that an older bundle had already rejected as
  * "unknown predicate" would go on being rejected, from the cache, by a bundle that knows it.
+ *
+ * 5 → 6: `CalibrationPolicy.brierWithin`, `agreementFloor` and `noFalseAllows`. A v5 entry
+ * deserialises with none of them, so `calibrate --compare` would report every gate as not
+ * evaluated under a policy that plainly sets them, and only on machines with a warm cache.
  */
-export const CACHE_VERSION = 5;
+export const CACHE_VERSION = 6;
 
 const DIR = "policy-cache";
 

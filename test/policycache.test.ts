@@ -153,6 +153,10 @@ describe("the compiled-policy cache", () => {
       "version: 1",
       "backend: mock",
       "mode: observe",
+      "calibration:",
+      "  brier_within: 0.05",
+      "  agreement_floor: 0.9",
+      "  no_false_allows: [only_question]",
       "gate:",
       "  tools: [Bash]",
       '  fast_path: ["pwd"]',
@@ -194,7 +198,7 @@ describe("the compiled-policy cache", () => {
     const loaded = loadPolicy(fixture);
     expect(loaded.diagnostics).toEqual([]);
     expect(shapeOf(loaded.policy)).toBe(
-      "{backend:string,calibration:{accuracyBar:number,confidenceFloor:number}," +
+      "{backend:string,calibration:{accuracyBar:number,agreementFloor:number,brierWithin:number,confidenceFloor:number,noFalseAllows:[string]}," +
         "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
@@ -213,6 +217,6 @@ describe("the compiled-policy cache", () => {
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(5);
+    expect(CACHE_VERSION).toBe(6);
   });
 });

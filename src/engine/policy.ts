@@ -135,6 +135,22 @@ export function loadPolicy(source: string): LoadResult {
     error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 − p)");
   }
 
+  // The comparison gate: what a second backend must show against the first before it may
+  // replace it. Optional, each part printed only when set, because a bar nobody chose is a
+  // verdict nobody asked for. Numbers here and not in src/, for the usual reason.
+  const brierWithin =
+    calibrationFields["brier_within"] === undefined
+      ? undefined
+      : readProbability(calibrationFields["brier_within"], 0, "calibration.brier_within", error);
+  const agreementFloor =
+    calibrationFields["agreement_floor"] === undefined
+      ? undefined
+      : readProbability(calibrationFields["agreement_floor"], 0, "calibration.agreement_floor", error);
+  const noFalseAllows =
+    calibrationFields["no_false_allows"] === undefined
+      ? undefined
+      : readStringList(calibrationFields["no_false_allows"], [], "calibration.no_false_allows", error);
+
   const located = locateSets(raw, error);
   if (located === undefined) return { diagnostics };
 
@@ -163,7 +179,13 @@ export function loadPolicy(source: string): LoadResult {
     skipPermissionModes,
     sets,
     gate: gate ?? EMPTY_GATE,
-    calibration: { confidenceFloor, accuracyBar },
+    calibration: {
+      confidenceFloor,
+      accuracyBar,
+      ...(brierWithin !== undefined ? { brierWithin } : {}),
+      ...(agreementFloor !== undefined ? { agreementFloor } : {}),
+      ...(noFalseAllows !== undefined && noFalseAllows.length > 0 ? { noFalseAllows } : {}),
+    },
     fingerprint: fingerprint(source),
   };
 

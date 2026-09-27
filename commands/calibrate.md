@@ -1,6 +1,6 @@
 ---
 description: Run bouncer's fixtures through its classifier and show the reliability table
-argument-hint: "[--backend jev|jev@<url>|chat@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
+argument-hint: "[--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b,...] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
 allowed-tools: Bash(node:*)
 ---
 
@@ -25,6 +25,19 @@ after the two reports. It compares `p` and Brier only: a noul answer has no conf
 field on either backend, and the confidence in the gate table is the derived statistic
 max(p, 1 - p). The row worth reading first is how many fixtures reach the same verdict
 under both, since that is what the user would actually feel.
+
+`--compare` takes any number of backends, each optionally named (`name=backend`), and
+compares every one after the first against the first. Before the comparisons it prints an
+**Arms** table: accuracy, Brier, ECE, false allows (fixtures labelled true and allowed),
+false asks (fixtures labelled false everywhere and asked about), p50/p95 latency, cost per
+decision, and how many requests the server reported truncating. Under each comparison it
+prints two gates, each only as far as the policy's `calibration` block sets thresholds for
+it: the **Brier gate** (`brier_within`, plus every question meeting the accuracy bar) and the
+**safety gate** (`no_false_allows`, plus `agreement_floor`). An unset threshold is reported
+as not set, never assumed. When presenting a run, lead with the false allows on the
+questions `no_false_allows` names; that is the number a routing decision turns on. A
+"truncation flip" is a fixture whose verdict differs from the first backend's while the
+server said it cut the state, so the difference may be the cut rather than the model.
 
 `--out run.jsonl` keeps what the classifier said about every fixture, and `--from run.jsonl`
 scores that file instead of calling a backend — no key, no network. Reach for the pair when

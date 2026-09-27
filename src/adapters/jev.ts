@@ -201,7 +201,9 @@ export class JevAdapter implements Adapter {
           throw error;
         }
 
-        return parseResponse(await response.json(), Date.now() - started);
+        const parsed = parseResponse(await response.json(), Date.now() - started);
+        const truncation = serverTruncation(response.headers);
+        return truncation === undefined ? parsed : { ...parsed, serverTruncation: truncation };
       } catch (err) {
         const error = asAdapterError(err, request.timeoutMs);
         if (error.retryable && error.kind !== "timeout" && attempt < MAX_ATTEMPTS && deadline - Date.now() > MIN_REMAINING_FOR_RETRY_MS) {
@@ -218,6 +220,22 @@ export class JevAdapter implements Adapter {
 
     throw lastError ?? new AdapterError("unavailable", "exhausted attempts");
   }
+}
+
+/**
+ * `X-Clownbot-Truncated: <original>-to-<kept>`, from a Jev-shaped server that cut the state.
+ *
+ * Clownbot's local-decision seat serves a 1K window with a 760-token state budget and cuts
+ * explicitly rather than letting the model clip silently, saying so in this header (clownbot
+ * ADR-0036 decision 10). TypeSafe sends no such header, and a malformed value is ignored
+ * rather than guessed at: this is a report, and a made-up count is worse than none.
+ */
+export function serverTruncation(headers: Headers): { from: number; to: number } | undefined {
+  const match = /^\s*(\d+)\s*-to-\s*(\d+)\s*$/.exec(headers.get("x-clownbot-truncated") ?? "");
+  if (match === null) return undefined;
+  const from = Number(match[1]);
+  const to = Number(match[2]);
+  return to < from ? { from, to } : undefined;
 }
 
 /**

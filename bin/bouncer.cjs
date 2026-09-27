@@ -7512,7 +7512,9 @@ var JevAdapter = class _JevAdapter {
           }
           throw error;
         }
-        return parseResponse(await response.json(), Date.now() - started);
+        const parsed = parseResponse(await response.json(), Date.now() - started);
+        const truncation = serverTruncation(response.headers);
+        return truncation === void 0 ? parsed : { ...parsed, serverTruncation: truncation };
       } catch (err) {
         const error = asAdapterError(err, request.timeoutMs);
         if (error.retryable && error.kind !== "timeout" && attempt < MAX_ATTEMPTS && deadline - Date.now() > MIN_REMAINING_FOR_RETRY_MS) {
@@ -7529,6 +7531,13 @@ var JevAdapter = class _JevAdapter {
     throw lastError ?? new AdapterError("unavailable", "exhausted attempts");
   }
 };
+function serverTruncation(headers) {
+  const match = /^\s*(\d+)\s*-to-\s*(\d+)\s*$/.exec(headers.get("x-clownbot-truncated") ?? "");
+  if (match === null) return void 0;
+  const from = Number(match[1]);
+  const to = Number(match[2]);
+  return to < from ? { from, to } : void 0;
+}
 function shortEndpoint(baseUrl) {
   try {
     const url = new URL(baseUrl);
@@ -8285,6 +8294,9 @@ function loadPolicy(source) {
   if (confidenceFloor < 0.5) {
     error("calibration.confidence_floor", "must be at least 0.5, since confidence is max(p, 1 \u2212 p)");
   }
+  const brierWithin = calibrationFields["brier_within"] === void 0 ? void 0 : readProbability2(calibrationFields["brier_within"], 0, "calibration.brier_within", error);
+  const agreementFloor = calibrationFields["agreement_floor"] === void 0 ? void 0 : readProbability2(calibrationFields["agreement_floor"], 0, "calibration.agreement_floor", error);
+  const noFalseAllows = calibrationFields["no_false_allows"] === void 0 ? void 0 : readStringList(calibrationFields["no_false_allows"], [], "calibration.no_false_allows", error);
   const located = locateSets(raw, error);
   if (located === void 0) return { diagnostics };
   const sets = {};
@@ -8309,7 +8321,13 @@ function loadPolicy(source) {
     skipPermissionModes,
     sets,
     gate: gate ?? EMPTY_GATE,
-    calibration: { confidenceFloor, accuracyBar },
+    calibration: {
+      confidenceFloor,
+      accuracyBar,
+      ...brierWithin !== void 0 ? { brierWithin } : {},
+      ...agreementFloor !== void 0 ? { agreementFloor } : {},
+      ...noFalseAllows !== void 0 && noFalseAllows.length > 0 ? { noFalseAllows } : {}
+    },
     fingerprint: fingerprint(source)
   };
   return { policy, diagnostics };
@@ -9308,7 +9326,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 5;
+var CACHE_VERSION = 6;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -10232,7 +10250,9 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
       probes,
       latencyMs: response.latencyMs,
       ...response.model !== void 0 ? { model: response.model } : {},
-      ...state.truncated ? { truncated: true } : {}
+      ...response.inputTokens !== void 0 ? { inputTokens: response.inputTokens } : {},
+      ...state.truncated ? { truncated: true } : {},
+      ...response.serverTruncation !== void 0 ? { serverTruncation: response.serverTruncation } : {}
     };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
     onProgress?.(i + 1, fixtures.length, answered);
@@ -10266,7 +10286,8 @@ function scoreAnswered(answered, policy, set, setName) {
       confidence: Math.max(p, 1 - p),
       verdict,
       verdictReason,
-      probe
+      probe,
+      ...answered.serverTruncation !== void 0 ? { serverTruncation: answered.serverTruncation } : {}
     });
   }
   return { rows, verdict, reason };
@@ -10339,7 +10360,11 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
     if (record2.policy !== void 0 && record2.policy.questions !== set.questionsFingerprint) reworded += 1;
     if (record2.model !== void 0) models.add(record2.model);
     const truncated = record2.truncated === true ? { truncated: true } : {};
-    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated }, policy, set, setName).rows);
+    const cut = record2.server_truncated;
+    const serverTruncation2 = cut !== void 0 && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
+    scored.push(
+      ...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated, ...serverTruncation2 }, policy, set, setName).rows
+    );
   }
   return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
 }
@@ -10422,6 +10447,13 @@ function probeReport(scored) {
     brier: items.reduce((sum, i) => sum + (i.p - (i.expected ? 1 : 0)) ** 2, 0) / items.length,
     misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence)
   })).sort((a, b) => a.question.localeCompare(b.question));
+}
+function describeReason(s) {
+  const { source, question, p } = s.verdictReason;
+  if (source === "hard_rule") return `hard rule ${question}`;
+  if (source === "unanswered") return `unanswered ${question}`;
+  if (source === "truncated") return "state over its cap";
+  return Number.isNaN(p) ? question : `${question} ${p.toFixed(2)}`;
 }
 function describeSource(d) {
   return Number.isNaN(d.p) ? `hard rule ${d.question}` : `${d.question} ${d.p.toFixed(2)}`;
@@ -10546,7 +10578,12 @@ function compare(a, b, calibration) {
   const differing = [];
   for (const [left, right] of verdictByFixture.values()) {
     if (left.verdict !== right.verdict) {
-      differing.push({ fixture: left.fixture, verdicts: [left.verdict, right.verdict] });
+      differing.push({
+        fixture: left.fixture,
+        verdicts: [left.verdict, right.verdict],
+        reasons: [describeReason(left), describeReason(right)],
+        truncated: [left.serverTruncation !== void 0, right.serverTruncation !== void 0]
+      });
     }
   }
   differing.sort((x, y) => x.fixture.id.localeCompare(y.fixture.id));
@@ -10605,10 +10642,12 @@ function formatComparison(comparison, calibration) {
   lines.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
   if (differing.length > 0) {
     lines.push("", "Where it does not:", "");
-    for (const d of differing.slice(0, 20)) {
-      lines.push(`  ${d.fixture.id}: ${left} ${d.verdicts[0]}, ${right} ${d.verdicts[1]}`);
+    for (const d of differing) {
+      const cut = d.truncated[0] || d.truncated[1] ? "  [state truncated by the server]" : "";
+      lines.push(
+        `  ${d.fixture.id}: ${left} ${d.verdicts[0]} (${d.reasons[0]}), ${right} ${d.verdicts[1]} (${d.reasons[1]})${cut}`
+      );
     }
-    if (differing.length > 20) lines.push(`  ... and ${differing.length - 20} more.`);
   }
   const widest = comparison.widest.filter((w) => Math.abs(w.p[0] - w.p[1]) >= 0.2).slice(0, 15);
   if (widest.length > 0) {
@@ -10625,6 +10664,172 @@ function formatComparison(comparison, calibration) {
 function meanOf(values) {
   if (values.length === 0) return Number.NaN;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+var JEV_USD_PER_INPUT_TOKEN = 0.042 / 1e6;
+function summarise(arm, calibration) {
+  const rows = arm.scored.filter((s) => !s.probe);
+  const byFixture = /* @__PURE__ */ new Map();
+  for (const s of rows) {
+    const list = byFixture.get(s.fixture.id) ?? [];
+    list.push(s);
+    byFixture.set(s.fixture.id, list);
+  }
+  const byQuestion = {};
+  let falseAllows = 0;
+  let falseAsks = 0;
+  let allFalse = 0;
+  for (const items of byFixture.values()) {
+    const first = items[0];
+    if (first.verdictReason.source === "unanswered" || first.verdictReason.source === "truncated") continue;
+    const labelledTrue = items.filter((i) => i.expected);
+    if (labelledTrue.length === 0) {
+      allFalse += 1;
+      if (first.verdict !== "allow") falseAsks += 1;
+    } else if (first.verdict === "allow") {
+      falseAllows += 1;
+      for (const i of labelledTrue) byQuestion[i.question] = (byQuestion[i.question] ?? 0) + 1;
+    }
+  }
+  const reports = report(arm.scored, calibration);
+  const latencies = arm.answered.map((a) => a.latencyMs).filter((ms) => Number.isFinite(ms) && ms >= 0);
+  const cut = arm.answered.flatMap((a) => a.serverTruncation !== void 0 ? [a.serverTruncation] : []);
+  const cost = costPerDecision(arm);
+  return {
+    backend: arm.backend,
+    fixtures: byFixture.size,
+    accuracy: rows.length === 0 ? Number.NaN : rows.filter((r) => r.correct).length / rows.length,
+    brier: meanOf(reports.map((r) => r.brier)),
+    ece: expectedCalibrationError(rows),
+    falseAllows: { total: falseAllows, byQuestion },
+    falseAsks: { count: falseAsks, of: allFalse, rate: allFalse === 0 ? Number.NaN : falseAsks / allFalse },
+    ...latencies.length > 0 ? { latency: { p50: nearestRank(latencies, 0.5), p95: nearestRank(latencies, 0.95) } } : {},
+    ...cost !== void 0 ? { costPerDecision: cost } : {},
+    truncation: {
+      count: cut.length,
+      of: arm.answered.length,
+      meanFrom: meanOf(cut.map((c) => c.from)),
+      meanTo: meanOf(cut.map((c) => c.to))
+    }
+  };
+}
+function expectedCalibrationError(rows) {
+  if (rows.length === 0) return Number.NaN;
+  let ece = 0;
+  for (const [low, high] of BUCKETS) {
+    const inBucket = rows.filter((r) => r.confidence >= low && r.confidence < high);
+    if (inBucket.length === 0) continue;
+    const accuracy = inBucket.filter((r) => r.correct).length / inBucket.length;
+    const confidence = inBucket.reduce((sum, r) => sum + r.confidence, 0) / inBucket.length;
+    ece += inBucket.length / rows.length * Math.abs(accuracy - confidence);
+  }
+  return ece;
+}
+function nearestRank(values, p) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))];
+}
+function costPerDecision(arm) {
+  if (arm.backend === "jev") {
+    const tokens = arm.answered.flatMap((a) => a.inputTokens !== void 0 ? [a.inputTokens] : []);
+    return tokens.length === 0 ? void 0 : meanOf(tokens) * JEV_USD_PER_INPUT_TOKEN;
+  }
+  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(arm.backend)?.[1];
+  const onThisMachine = arm.backend === "local" || host !== void 0 && ["127.0.0.1", "localhost", "[::1]"].includes(host);
+  return onThisMachine ? 0 : void 0;
+}
+function gates(comparison, arm, calibration) {
+  const out = {};
+  if (calibration.brierWithin !== void 0) {
+    const delta = meanOf(comparison.rows.map((r) => r.brier[1] - r.brier[0]));
+    const passing = comparison.rows.filter((r) => r.gate[1].passes).length;
+    out.brier = {
+      delta,
+      within: calibration.brierWithin,
+      questionsPassing: passing,
+      questions: comparison.rows.length,
+      passes: !Number.isNaN(delta) && delta <= calibration.brierWithin && passing > 0 && passing === comparison.rows.length
+    };
+  }
+  let falseAllows;
+  if (calibration.noFalseAllows !== void 0) {
+    const byQuestion = Object.fromEntries(calibration.noFalseAllows.map((q) => [q, arm.falseAllows.byQuestion[q] ?? 0]));
+    falseAllows = { byQuestion, passes: Object.values(byQuestion).every((n) => n === 0) };
+  }
+  const { same, total } = comparison.verdicts;
+  const agreement = calibration.agreementFloor === void 0 || total === 0 ? void 0 : { rate: same / total, floor: calibration.agreementFloor, passes: same / total >= calibration.agreementFloor };
+  if (falseAllows !== void 0 || agreement !== void 0) {
+    out.safety = {
+      ...falseAllows !== void 0 ? { falseAllows } : {},
+      ...agreement !== void 0 ? { agreement } : {},
+      ...falseAllows !== void 0 && agreement !== void 0 ? { passes: falseAllows.passes && agreement.passes } : {}
+    };
+  }
+  return out;
+}
+function formatArms(summaries) {
+  const pct = (n) => Number.isNaN(n) ? "\u2014" : `${(n * 100).toFixed(1)}%`;
+  const num = (n) => Number.isNaN(n) ? "\u2014" : n.toFixed(3);
+  const usd = (n) => n === void 0 ? "unpriced" : n === 0 ? "$0 (local)" : `$${n.toPrecision(2)}`;
+  const ms = (n) => n === void 0 ? "\u2014" : String(Math.round(n));
+  const lines = ["Arms", ""];
+  lines.push("| arm | fixtures | accuracy | Brier | ECE | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const s of summaries) {
+    const t = s.truncation;
+    const cut = t.count === 0 ? `0 / ${t.of}` : `${t.count} / ${t.of}, mean ${Math.round(t.meanFrom)} \u2192 ${Math.round(t.meanTo)} tokens`;
+    lines.push(
+      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${s.falseAllows.total} | ${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ${usd(s.costPerDecision)} | ${cut} |`
+    );
+  }
+  const questions = [...new Set(summaries.flatMap((s) => Object.keys(s.falseAllows.byQuestion)))].sort();
+  lines.push("");
+  if (questions.length === 0) {
+    lines.push("No arm allowed a fixture labelled true on any question.");
+  } else {
+    lines.push("False allows by question (fixtures labelled true and allowed):", "");
+    lines.push(`| question | ${summaries.map((s) => s.backend).join(" | ")} |`);
+    lines.push(`|---|${summaries.map(() => "---|").join("")}`);
+    for (const q of questions) {
+      lines.push(`| ${q} | ${summaries.map((s) => s.falseAllows.byQuestion[q] ?? 0).join(" | ")} |`);
+    }
+  }
+  lines.push(
+    "",
+    "Truncation is what the server reported (X-Clownbot-Truncated). It does not change a verdict",
+    "here, because the hook does not read it either."
+  );
+  return `${lines.join("\n")}
+`;
+}
+function formatGates(verdicts, comparison) {
+  const [first, arm] = comparison.backends;
+  const result = (b2) => b2 ? "passes" : "fails";
+  const { same, total, differing } = comparison.verdicts;
+  const agreement = total === 0 ? "no fixture in common" : `${same} of ${total} (${(same / total * 100).toFixed(1)}%)`;
+  const lines = [`Gates for ${arm} against ${first}:`, ""];
+  const b = verdicts.brier;
+  if (b === void 0) {
+    lines.push("  Brier gate: not evaluated; set calibration.brier_within.");
+  } else {
+    const delta = Number.isNaN(b.delta) ? "\u2014" : `${b.delta >= 0 ? "+" : ""}${b.delta.toFixed(3)}`;
+    lines.push(
+      `  Brier gate ${result(b.passes)}: mean Brier ${delta} against a limit of +${b.within.toFixed(3)}, and ${b.questionsPassing} of ${b.questions} questions meet the calibration block.`
+    );
+  }
+  const s = verdicts.safety;
+  if (s === void 0) {
+    lines.push(`  Safety gate: not evaluated; set calibration.no_false_allows and calibration.agreement_floor. Agreement is ${agreement}.`);
+  } else {
+    const parts = [
+      s.falseAllows === void 0 ? "no_false_allows not set" : `false allows ${Object.entries(s.falseAllows.byQuestion).map(([q, n]) => `${q} ${n}`).join(", ")} (each must be 0)`,
+      s.agreement === void 0 ? `agreement ${agreement}, agreement_floor not set` : `agreement ${agreement} against a floor of ${(s.agreement.floor * 100).toFixed(1)}%`
+    ];
+    lines.push(`  ${s.passes === void 0 ? "Safety gate incomplete" : `Safety gate ${result(s.passes)}`}: ${parts.join("; ")}.`);
+  }
+  const flips = differing.filter((d) => d.truncated[0] || d.truncated[1]);
+  lines.push(`  Truncation flips: ${flips.length}${flips.length > 0 ? ` (${flips.map((f) => f.fixture.id).join(", ")})` : ""}.`);
+  return `${lines.join("\n")}
+`;
 }
 
 // src/commands/args.ts
@@ -10757,9 +10962,9 @@ async function calibrate(args, write3) {
     }
   }
   const runs = [];
-  const answered = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = labels[i];
+    const answered = [];
     let scored;
     try {
       scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
@@ -10768,16 +10973,22 @@ async function calibrate(args, write3) {
 `);
       return 1;
     }
-    runs.push({ backend: label, scored });
+    runs.push({ backend: label, scored, answered });
   }
   const [first, second] = runs;
   if (first === void 0) {
     write3("No backend to run.\n");
     return 1;
   }
+  const calibration = resolved.policy.calibration;
+  const summaries = runs.map((r) => summarise(r, calibration));
+  const pairs = runs.slice(1).map((r, i) => {
+    const comparison = compare(first, r, calibration);
+    return { comparison, gates: gates(comparison, summaries[i + 1], calibration) };
+  });
   if (args.out !== void 0) {
     try {
-      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, adapters[0].name);
+      writeAnswers(args.out, first.answered, resolved.policy, args.set ?? GATE_SET, adapters[0].name);
     } catch (err) {
       write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -10785,15 +10996,16 @@ async function calibrate(args, write3) {
     }
   }
   if (args.json === true) {
-    const payload = second === void 0 ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) } : {
-      backends: [first.backend, second.backend],
+    const payload = second === void 0 ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, calibration) } : {
+      backends: runs.map((r) => r.backend),
       policy: resolved.source,
       fixtures: fixtures.length,
-      reports: {
-        [first.backend]: report(first.scored, resolved.policy.calibration),
-        [second.backend]: report(second.scored, resolved.policy.calibration)
-      },
-      comparison: compare(first, second, resolved.policy.calibration)
+      reports: Object.fromEntries(runs.map((r) => [r.backend, report(r.scored, calibration)])),
+      arms: summaries,
+      // The first pair under the key it has always had, so a reader of the two-arm
+      // shape keeps working; every pair, keyed by the arm compared, beside it.
+      comparison: pairs[0].comparison,
+      comparisons: Object.fromEntries(pairs.map((p) => [p.comparison.backends[1], p]))
     };
     write3(`${JSON.stringify(payload, null, 2)}
 `);
@@ -10802,11 +11014,17 @@ async function calibrate(args, write3) {
   write3(`Policy: ${resolved.source}
 `);
   for (const r of runs) {
-    write3(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
+    write3(formatReport(report(r.scored, calibration), r.backend, calibration, r.scored));
     write3("\n");
   }
   if (second !== void 0) {
-    write3(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
+    write3(formatArms(summaries));
+    for (const pair of pairs) {
+      write3("\n");
+      write3(formatComparison(pair.comparison, calibration));
+      write3("\n");
+      write3(formatGates(pair.gates, pair.comparison));
+    }
   }
   if (args.out !== void 0) {
     write3(`
@@ -10841,6 +11059,7 @@ function writeAnswers(path, answered, policy, setName, backend) {
       // `--from` reads this back, and without it re-scoring the file would approve what the
       // run itself refused.
       ...a.truncated === true ? { truncated: true } : {},
+      ...a.serverTruncation !== void 0 ? { server_truncated: a.serverTruncation } : {},
       ...Object.keys(a.probes).length > 0 ? { probes: a.probes } : {},
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
     };
@@ -10942,8 +11161,8 @@ async function run(fixtures, policy, adapter, label, total, args, answered) {
 function backendsFor(primary, compare2) {
   if (compare2 === void 0 || compare2.trim().length === 0) return [primary];
   const named = compare2.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-  const pair = named.length >= 2 ? named.slice(0, 2) : [primary, ...named];
-  return pair[0] === pair[1] ? [pair[0]] : pair;
+  const arms = named.length >= 2 ? named : [primary, ...named];
+  return [...new Set(arms)];
 }
 function labelled(spec) {
   const match = /^([a-z][a-z0-9-]*)=(.+)$/.exec(spec.trim());
@@ -12700,7 +12919,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.7\n");
+      process.stdout.write("0.2.8\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

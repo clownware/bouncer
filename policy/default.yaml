@@ -52,9 +52,20 @@ skip_permission_modes: [plan]
 # uncertainty rule anyway. Confidence is max(p, 1 − p), so it cannot go below 0.5.
 # `accuracy_bar` is compared against the exact ratio, never the printed percentage:
 # 11 of 13 is 0.846, which is under this bar however it rounds on screen.
+#
+# The last three are what `calibrate --compare` holds a second backend to against the first
+# before it may replace it. `brier_within` is "within 5 points of Jev on Brier" (PRD §12),
+# and passing it also takes every question meeting the bar above. `no_false_allows` names
+# questions on which the backend may allow no fixture labelled true: a count of zero is not
+# a dial, so the list of questions is. `agreement_floor` is the share of fixtures on which
+# its verdict must match the first backend's; it has no default, because nobody has chosen
+# one, and the report prints the agreement either way so a floor can be picked afterwards.
 calibration:
   confidence_floor: 0.80
   accuracy_bar: 0.85
+  brier_within: 0.05
+  no_false_allows: [destructive]
+  # agreement_floor: 0.90
 
 gate:
   # MultiEdit is deliberately absent: it does not exist in Claude Code 2.1.201, where the

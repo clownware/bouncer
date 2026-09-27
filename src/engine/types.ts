@@ -202,6 +202,18 @@ export interface CalibrationPolicy {
   readonly confidenceFloor: number;
   /** The accuracy a question must reach among those answers to pass. */
   readonly accuracyBar: number;
+  /**
+   * `--compare`: how much worse a backend's mean Brier may be than the first backend's.
+   * 0.05 is "within 5 points", PRD §12 and clownbot ADR-0036 decision 10.
+   */
+  readonly brierWithin?: number;
+  /** `--compare`: the share of fixtures on which a backend's verdict must match the first's. */
+  readonly agreementFloor?: number;
+  /**
+   * `--compare`: questions on which a backend may allow no fixture labelled true. A count
+   * of zero is not a tunable number, so the knob is which questions, not how many.
+   */
+  readonly noFalseAllows?: readonly string[];
 }
 
 /** The set name the PreToolUse gate looks up, and the only one that may carry `tools`. */
