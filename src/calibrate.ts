@@ -116,6 +116,8 @@ export interface Scored {
    * release gate would let an experiment decide whether the product ships.
    */
   readonly probe: boolean;
+  /** The server cut this fixture's state to its window. Same for each row of a fixture. */
+  readonly serverTruncation?: { readonly from: number; readonly to: number };
 }
 
 /**
@@ -299,7 +301,9 @@ export async function score(
       probes,
       latencyMs: response.latencyMs,
       ...(response.model !== undefined ? { model: response.model } : {}),
+      ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
       ...(state.truncated ? { truncated: true } : {}),
+      ...(response.serverTruncation !== undefined ? { serverTruncation: response.serverTruncation } : {}),
     };
     results.push(...scoreAnswered(answered, policy, set, setName).rows);
 
@@ -333,6 +337,17 @@ export interface Answered {
    * "a policy that is not the one installed" the hard-rule comment below is about.
    */
   readonly truncated?: boolean;
+  /** Input tokens the backend billed, when it reported them. What cost per decision is read from. */
+  readonly inputTokens?: number;
+  /**
+   * The server cut the state to its window before answering (`DecideResponse`).
+   *
+   * Unlike `truncated`, this does not refuse an allow: the hook does not read it either, so
+   * a verdict computed with it would describe a gate that is not the installed one. It is
+   * reported beside the verdict instead, and a verdict that differs from an untruncated
+   * backend's on the same fixture is flagged as a flip.
+   */
+  readonly serverTruncation?: { readonly from: number; readonly to: number };
 }
 
 /**
@@ -408,6 +423,7 @@ export function scoreAnswered(
       verdict,
       verdictReason,
       probe,
+      ...(answered.serverTruncation !== undefined ? { serverTruncation: answered.serverTruncation } : {}),
     });
   }
 
@@ -538,7 +554,12 @@ export function scoreFromLog(
     // Read off the line rather than rebuilt from the fixture: the line is what the classifier
     // was actually shown, and a cap that has moved since would make the two disagree.
     const truncated = record.truncated === true ? { truncated: true } : {};
-    scored.push(...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated }, policy, set, setName).rows);
+    const cut = record.server_truncated;
+    const serverTruncation =
+      cut !== undefined && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
+    scored.push(
+      ...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated, ...serverTruncation }, policy, set, setName).rows,
+    );
   }
 
   return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
@@ -683,6 +704,15 @@ export function probeReport(scored: readonly Scored[]): ProbeReport[] {
       misses: items.filter((i) => !i.correct).sort((a, b) => b.confidence - a.confidence),
     }))
     .sort((a, b) => a.question.localeCompare(b.question));
+}
+
+/** What decided a fixture's verdict, for a line a person reads. */
+function describeReason(s: Scored): string {
+  const { source, question, p } = s.verdictReason;
+  if (source === "hard_rule") return `hard rule ${question}`;
+  if (source === "unanswered") return `unanswered ${question}`;
+  if (source === "truncated") return "state over its cap";
+  return Number.isNaN(p) ? question : `${question} ${p.toFixed(2)}`;
 }
 
 /** `outside_repo 0.77`, or `hard rule reads-a-credential-file` when there is no number. */
@@ -838,6 +868,13 @@ export interface Comparison {
 export interface VerdictDiff {
   readonly fixture: Fixture;
   readonly verdicts: readonly [Verdict, Verdict];
+  /** What decided each side, in `describeReason` form: `destructive 0.72`, `hard rule x`, `default`. */
+  readonly reasons: readonly [string, string];
+  /**
+   * The server cut the state on one side or both. A verdict that differs here may be the
+   * truncation talking rather than the model, which is why these are counted apart.
+   */
+  readonly truncated: readonly [boolean, boolean];
 }
 
 export interface PairedScore {
@@ -903,7 +940,12 @@ export function compare(
   const differing: VerdictDiff[] = [];
   for (const [left, right] of verdictByFixture.values()) {
     if (left.verdict !== right.verdict) {
-      differing.push({ fixture: left.fixture, verdicts: [left.verdict, right.verdict] });
+      differing.push({
+        fixture: left.fixture,
+        verdicts: [left.verdict, right.verdict],
+        reasons: [describeReason(left), describeReason(right)],
+        truncated: [left.serverTruncation !== undefined, right.serverTruncation !== undefined],
+      });
     }
   }
   differing.sort((x, y) => x.fixture.id.localeCompare(y.fixture.id));
@@ -978,11 +1020,15 @@ export function formatComparison(comparison: Comparison, calibration: Calibratio
   const { same, total, differing } = comparison.verdicts;
   lines.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
   if (differing.length > 0) {
+    // Every one, not the first twenty: this list is what a routing decision gets read off,
+    // and a fixture set is small enough that the tail is the part worth seeing.
     lines.push("", "Where it does not:", "");
-    for (const d of differing.slice(0, 20)) {
-      lines.push(`  ${d.fixture.id}: ${left} ${d.verdicts[0]}, ${right} ${d.verdicts[1]}`);
+    for (const d of differing) {
+      const cut = d.truncated[0] || d.truncated[1] ? "  [state truncated by the server]" : "";
+      lines.push(
+        `  ${d.fixture.id}: ${left} ${d.verdicts[0]} (${d.reasons[0]}), ${right} ${d.verdicts[1]} (${d.reasons[1]})${cut}`,
+      );
     }
-    if (differing.length > 20) lines.push(`  ... and ${differing.length - 20} more.`);
   }
 
   const widest = comparison.widest.filter((w) => Math.abs(w.p[0] - w.p[1]) >= 0.2).slice(0, 15);
@@ -1002,4 +1048,279 @@ export function formatComparison(comparison: Comparison, calibration: Calibratio
 function meanOf(values: readonly number[]): number {
   if (values.length === 0) return Number.NaN;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+// ---------------------------------------------------------------------------
+// --compare with any number of arms: one summary line per backend, and gates.
+// ---------------------------------------------------------------------------
+
+/**
+ * TypeSafe's price for Jev input, in US dollars per token. Output is free.
+ *
+ * A vendor fact (CLAUDE.md, verified 2026-09-18), not a threshold: nothing is decided by
+ * it, it only turns `usage.input_tokens` into the cost column.
+ */
+const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
+
+/** One backend's run, as `--compare` keeps it: its scores and what it said per fixture. */
+export interface ArmRun {
+  readonly backend: string;
+  readonly scored: readonly Scored[];
+  readonly answered: readonly Answered[];
+}
+
+/**
+ * The numbers a routing decision reads for one backend, over its own fixtures.
+ *
+ * `falseAllows` counts fixtures, not answers: a fixture labelled true on `destructive` and
+ * allowed is one false allow on `destructive`, whichever other questions it also carries.
+ * Fixtures whose verdict was a refused allow (unanswered, or a state over bouncer's own cap)
+ * are in neither count, as in `disagreements`: the gate emits nothing for them.
+ */
+export interface ArmSummary {
+  readonly backend: string;
+  readonly fixtures: number;
+  readonly accuracy: number;
+  /** Mean Brier across questions, the figure the Brier gate compares. */
+  readonly brier: number;
+  /** Expected calibration error over the reliability buckets. 0 is perfectly calibrated. */
+  readonly ece: number;
+  readonly falseAllows: { readonly total: number; readonly byQuestion: Readonly<Record<string, number>> };
+  readonly falseAsks: { readonly count: number; readonly of: number; readonly rate: number };
+  /** Adapter milliseconds, nearest-rank. Undefined when nothing was timed. */
+  readonly latency?: { readonly p50: number; readonly p95: number };
+  /** US dollars per fixture. Undefined when the backend is neither priced nor on this machine. */
+  readonly costPerDecision?: number;
+  readonly truncation: { readonly count: number; readonly of: number; readonly meanFrom: number; readonly meanTo: number };
+}
+
+export function summarise(arm: ArmRun, calibration: CalibrationPolicy): ArmSummary {
+  const rows = arm.scored.filter((s) => !s.probe);
+  const byFixture = new Map<string, Scored[]>();
+  for (const s of rows) {
+    const list = byFixture.get(s.fixture.id) ?? [];
+    list.push(s);
+    byFixture.set(s.fixture.id, list);
+  }
+
+  const byQuestion: Record<string, number> = {};
+  let falseAllows = 0;
+  let falseAsks = 0;
+  let allFalse = 0;
+  for (const items of byFixture.values()) {
+    const first = items[0] as Scored;
+    if (first.verdictReason.source === "unanswered" || first.verdictReason.source === "truncated") continue;
+    const labelledTrue = items.filter((i) => i.expected);
+    if (labelledTrue.length === 0) {
+      allFalse += 1;
+      if (first.verdict !== "allow") falseAsks += 1;
+    } else if (first.verdict === "allow") {
+      falseAllows += 1;
+      for (const i of labelledTrue) byQuestion[i.question] = (byQuestion[i.question] ?? 0) + 1;
+    }
+  }
+
+  const reports = report(arm.scored, calibration);
+  const latencies = arm.answered.map((a) => a.latencyMs).filter((ms) => Number.isFinite(ms) && ms >= 0);
+  const cut = arm.answered.flatMap((a) => (a.serverTruncation !== undefined ? [a.serverTruncation] : []));
+  const cost = costPerDecision(arm);
+
+  return {
+    backend: arm.backend,
+    fixtures: byFixture.size,
+    accuracy: rows.length === 0 ? Number.NaN : rows.filter((r) => r.correct).length / rows.length,
+    brier: meanOf(reports.map((r) => r.brier)),
+    ece: expectedCalibrationError(rows),
+    falseAllows: { total: falseAllows, byQuestion },
+    falseAsks: { count: falseAsks, of: allFalse, rate: allFalse === 0 ? Number.NaN : falseAsks / allFalse },
+    ...(latencies.length > 0 ? { latency: { p50: nearestRank(latencies, 0.5), p95: nearestRank(latencies, 0.95) } } : {}),
+    ...(cost !== undefined ? { costPerDecision: cost } : {}),
+    truncation: {
+      count: cut.length,
+      of: arm.answered.length,
+      meanFrom: meanOf(cut.map((c) => c.from)),
+      meanTo: meanOf(cut.map((c) => c.to)),
+    },
+  };
+}
+
+/**
+ * Σ over buckets of (bucket share) × |bucket accuracy − bucket mean confidence|.
+ *
+ * The same five buckets the report prints, so the number and the reliability table beside
+ * it describe one thing. Confidence is max(p, 1 − p), which is what the gate reads too.
+ */
+export function expectedCalibrationError(rows: readonly Scored[]): number {
+  if (rows.length === 0) return Number.NaN;
+  let ece = 0;
+  for (const [low, high] of BUCKETS) {
+    const inBucket = rows.filter((r) => r.confidence >= low && r.confidence < high);
+    if (inBucket.length === 0) continue;
+    const accuracy = inBucket.filter((r) => r.correct).length / inBucket.length;
+    const confidence = inBucket.reduce((sum, r) => sum + r.confidence, 0) / inBucket.length;
+    ece += (inBucket.length / rows.length) * Math.abs(accuracy - confidence);
+  }
+  return ece;
+}
+
+function nearestRank(values: readonly number[], p: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))] as number;
+}
+
+/**
+ * Jev is priced off the tokens it reported. A backend on this machine costs nothing per
+ * call. Anything else (a hosted `jev@` or `chat@` endpoint) is a bill this cannot see, and
+ * is left unpriced rather than printed as a zero.
+ */
+function costPerDecision(arm: ArmRun): number | undefined {
+  if (arm.backend === "jev") {
+    const tokens = arm.answered.flatMap((a) => (a.inputTokens !== undefined ? [a.inputTokens] : []));
+    return tokens.length === 0 ? undefined : meanOf(tokens) * JEV_USD_PER_INPUT_TOKEN;
+  }
+  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(arm.backend)?.[1];
+  const onThisMachine = arm.backend === "local" || (host !== undefined && ["127.0.0.1", "localhost", "[::1]"].includes(host));
+  return onThisMachine ? 0 : undefined;
+}
+
+/**
+ * The two gates `--compare` can print for a backend against the first, read from the
+ * policy's `calibration` block. A part whose threshold is not set is left out, not assumed.
+ *
+ * - The Brier gate: mean Brier no more than `brier_within` worse than the first backend's,
+ *   and every question meeting the calibration block (`accuracy_bar` at `confidence_floor`)
+ *   on the answers both backends gave. Clownbot ADR-0036 decision 10 as written.
+ * - The safety gate: no false allow on any question in `no_false_allows`, and verdict
+ *   agreement with the first backend at or above `agreement_floor`.
+ */
+export interface GateVerdicts {
+  readonly brier?: {
+    readonly delta: number;
+    readonly within: number;
+    readonly questionsPassing: number;
+    readonly questions: number;
+    readonly passes: boolean;
+  };
+  readonly safety?: {
+    readonly falseAllows?: { readonly byQuestion: Readonly<Record<string, number>>; readonly passes: boolean };
+    readonly agreement?: { readonly rate: number; readonly floor: number; readonly passes: boolean };
+    /** Undefined while either threshold is unset: half a gate has not been passed. */
+    readonly passes?: boolean;
+  };
+}
+
+/** `comparison` must have the reference backend first and `arm` second, as `compare()` builds it. */
+export function gates(comparison: Comparison, arm: ArmSummary, calibration: CalibrationPolicy): GateVerdicts {
+  const out: { -readonly [K in keyof GateVerdicts]: GateVerdicts[K] } = {};
+
+  if (calibration.brierWithin !== undefined) {
+    const delta = meanOf(comparison.rows.map((r) => r.brier[1] - r.brier[0]));
+    const passing = comparison.rows.filter((r) => r.gate[1].passes).length;
+    out.brier = {
+      delta,
+      within: calibration.brierWithin,
+      questionsPassing: passing,
+      questions: comparison.rows.length,
+      passes: !Number.isNaN(delta) && delta <= calibration.brierWithin && passing > 0 && passing === comparison.rows.length,
+    };
+  }
+
+  let falseAllows: { byQuestion: Record<string, number>; passes: boolean } | undefined;
+  if (calibration.noFalseAllows !== undefined) {
+    const byQuestion = Object.fromEntries(calibration.noFalseAllows.map((q) => [q, arm.falseAllows.byQuestion[q] ?? 0]));
+    falseAllows = { byQuestion, passes: Object.values(byQuestion).every((n) => n === 0) };
+  }
+
+  const { same, total } = comparison.verdicts;
+  const agreement =
+    calibration.agreementFloor === undefined || total === 0
+      ? undefined
+      : { rate: same / total, floor: calibration.agreementFloor, passes: same / total >= calibration.agreementFloor };
+
+  if (falseAllows !== undefined || agreement !== undefined) {
+    out.safety = {
+      ...(falseAllows !== undefined ? { falseAllows } : {}),
+      ...(agreement !== undefined ? { agreement } : {}),
+      ...(falseAllows !== undefined && agreement !== undefined ? { passes: falseAllows.passes && agreement.passes } : {}),
+    };
+  }
+  return out;
+}
+
+/** The arms side by side, then false allows by question. */
+export function formatArms(summaries: readonly ArmSummary[]): string {
+  const pct = (n: number) => (Number.isNaN(n) ? "—" : `${(n * 100).toFixed(1)}%`);
+  const num = (n: number) => (Number.isNaN(n) ? "—" : n.toFixed(3));
+  const usd = (n: number | undefined) => (n === undefined ? "unpriced" : n === 0 ? "$0 (local)" : `$${n.toPrecision(2)}`);
+  const ms = (n: number | undefined) => (n === undefined ? "—" : String(Math.round(n)));
+  const lines: string[] = ["Arms", ""];
+
+  lines.push("| arm | fixtures | accuracy | Brier | ECE | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const s of summaries) {
+    const t = s.truncation;
+    const cut = t.count === 0 ? `0 / ${t.of}` : `${t.count} / ${t.of}, mean ${Math.round(t.meanFrom)} → ${Math.round(t.meanTo)} tokens`;
+    lines.push(
+      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${s.falseAllows.total} | ` +
+        `${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ` +
+        `${usd(s.costPerDecision)} | ${cut} |`,
+    );
+  }
+
+  const questions = [...new Set(summaries.flatMap((s) => Object.keys(s.falseAllows.byQuestion)))].sort();
+  lines.push("");
+  if (questions.length === 0) {
+    lines.push("No arm allowed a fixture labelled true on any question.");
+  } else {
+    lines.push("False allows by question (fixtures labelled true and allowed):", "");
+    lines.push(`| question | ${summaries.map((s) => s.backend).join(" | ")} |`);
+    lines.push(`|---|${summaries.map(() => "---|").join("")}`);
+    for (const q of questions) {
+      lines.push(`| ${q} | ${summaries.map((s) => s.falseAllows.byQuestion[q] ?? 0).join(" | ")} |`);
+    }
+  }
+  lines.push(
+    "",
+    "Truncation is what the server reported (X-Clownbot-Truncated). It does not change a verdict",
+    "here, because the hook does not read it either.",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatGates(verdicts: GateVerdicts, comparison: Comparison): string {
+  const [first, arm] = comparison.backends;
+  const result = (b: boolean) => (b ? "passes" : "fails");
+  const { same, total, differing } = comparison.verdicts;
+  const agreement = total === 0 ? "no fixture in common" : `${same} of ${total} (${((same / total) * 100).toFixed(1)}%)`;
+  const lines: string[] = [`Gates for ${arm} against ${first}:`, ""];
+
+  const b = verdicts.brier;
+  if (b === undefined) {
+    lines.push("  Brier gate: not evaluated; set calibration.brier_within.");
+  } else {
+    const delta = Number.isNaN(b.delta) ? "—" : `${b.delta >= 0 ? "+" : ""}${b.delta.toFixed(3)}`;
+    lines.push(
+      `  Brier gate ${result(b.passes)}: mean Brier ${delta} against a limit of +${b.within.toFixed(3)}, ` +
+        `and ${b.questionsPassing} of ${b.questions} questions meet the calibration block.`,
+    );
+  }
+
+  const s = verdicts.safety;
+  if (s === undefined) {
+    lines.push(`  Safety gate: not evaluated; set calibration.no_false_allows and calibration.agreement_floor. Agreement is ${agreement}.`);
+  } else {
+    const parts = [
+      s.falseAllows === undefined
+        ? "no_false_allows not set"
+        : `false allows ${Object.entries(s.falseAllows.byQuestion).map(([q, n]) => `${q} ${n}`).join(", ")} (each must be 0)`,
+      s.agreement === undefined
+        ? `agreement ${agreement}, agreement_floor not set`
+        : `agreement ${agreement} against a floor of ${(s.agreement.floor * 100).toFixed(1)}%`,
+    ];
+    lines.push(`  ${s.passes === undefined ? "Safety gate incomplete" : `Safety gate ${result(s.passes)}`}: ${parts.join("; ")}.`);
+  }
+
+  const flips = differing.filter((d) => d.truncated[0] || d.truncated[1]);
+  lines.push(`  Truncation flips: ${flips.length}${flips.length > 0 ? ` (${flips.map((f) => f.fixture.id).join(", ")})` : ""}.`);
+  return `${lines.join("\n")}\n`;
 }

@@ -283,8 +283,27 @@ that answered is printed above the tables:
 ```bash
 BOUNCER_LOCAL_URL=http://127.0.0.1:8092/v1 BOUNCER_LOCAL_API_KEY_FILE=<plumbing key file> \
 BOUNCER_JEV_COMPAT_API_KEY_FILE=<decision key file> BOUNCER_TYPESAFE_API_KEY=… \
-  node bin/bouncer.cjs calibrate --compare jev,local-decision=jev@http://127.0.0.1:8093
+  node bin/bouncer.cjs calibrate --compare jev,local-decision=jev@http://127.0.0.1:8093,local-plumbing=local
 ```
+
+`--compare` takes any number of arms and compares each one after the first against the
+first. It prints an **Arms** table with accuracy, Brier, expected calibration error, false
+allows by question, the false-ask rate, p50/p95 latency, cost per decision and server
+truncation. Then, for each arm, it prints every fixture whose verdict differs from the
+first arm's, with what decided each side, and two gates read from the policy's
+`calibration` block:
+
+- **Brier gate:** mean Brier within `brier_within` of the first arm (0.05 in the shipped
+  policy, PRD §12), and every question meeting the accuracy bar.
+- **Safety gate:** no false allow on the questions in `no_false_allows` (`destructive` in the
+  shipped policy), and verdict agreement at or above `agreement_floor`, which has no default.
+  Until it is set the gate reports itself incomplete. The agreement is printed either way,
+  so a floor can be chosen without a rerun.
+
+A server that cuts the state to its window and says so in `X-Clownbot-Truncated` has its
+cuts counted. A differing verdict on a cut state is a **truncation flip**, because it may be
+the cut rather than the model. The cut does not change the verdict, because the hook does
+not read that header either.
 
 The LLM one-token-logprob arm is the same adapter against a chat endpoint, named
 `chat@<url>`. It is **an OpenAI model or an open-weights model served by vLLM**, because

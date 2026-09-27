@@ -77,6 +77,14 @@ export interface DecideResponse {
   readonly inputTokens?: number;
   /** Wall-clock milliseconds for the call, measured by the adapter. */
   readonly latencyMs: number;
+  /**
+   * The server cut the state to fit its window before answering, in its own tokens.
+   *
+   * Reported by the server, never inferred here: the adapter does not have the served
+   * model's tokenizer, and a guess at the window would be a second truncation on top of the
+   * server's. Absent means the server said nothing, not that nothing was cut.
+   */
+  readonly serverTruncation?: { readonly from: number; readonly to: number };
 }
 
 export interface Adapter {

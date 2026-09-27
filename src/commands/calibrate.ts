@@ -44,14 +44,20 @@ import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, type Adapter } from "../adapters/types.js";
 import {
   compare,
+  formatArms,
   formatComparison,
+  formatGates,
   formatReport,
+  gates,
   loadFixtures,
   report,
   score,
   scoreAnswered,
   scoreFromLog,
+  summarise,
   type Answered,
+  type ArmRun,
+  type ArmSummary,
   type Fixture,
   type Scored,
 } from "../calibrate.js";
@@ -174,10 +180,12 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     }
   }
 
-  const runs: Array<{ backend: string; scored: Scored[] }> = [];
-  const answered: Answered[] = [];
+  // Each arm keeps its own answers. One shared list worked while `--out` refused two arms,
+  // and stopped being enough once the cost and latency columns read them per arm.
+  const runs: ArmRun[] = [];
   for (const [i, adapter] of adapters.entries()) {
     const label = labels[i] as string;
+    const answered: Answered[] = [];
     let scored: Scored[];
     try {
       scored = await run(fixtures, resolved.policy, adapter, label, names.length, args, answered);
@@ -186,7 +194,7 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
       write(`${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
     }
-    runs.push({ backend: label, scored });
+    runs.push({ backend: label, scored, answered });
   }
 
   const [first, second] = runs;
@@ -195,9 +203,18 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
     return 1;
   }
 
+  const calibration = resolved.policy.calibration;
+  // Every arm after the first is compared with the first: the reference is whoever was named
+  // first, as in the two-arm case, and N-1 pairs are what a routing decision reads.
+  const summaries = runs.map((r) => summarise(r, calibration));
+  const pairs = runs.slice(1).map((r, i) => {
+    const comparison = compare(first, r, calibration);
+    return { comparison, gates: gates(comparison, summaries[i + 1] as ArmSummary, calibration) };
+  });
+
   if (args.out !== undefined) {
     try {
-      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, (adapters[0] as Adapter).name);
+      writeAnswers(args.out, first.answered, resolved.policy, args.set ?? GATE_SET, (adapters[0] as Adapter).name);
     } catch (err) {
       write(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
@@ -207,16 +224,17 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   if (args.json === true) {
     const payload =
       second === undefined
-        ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, resolved.policy.calibration) }
+        ? { backend: first.backend, policy: resolved.source, fixtures: fixtures.length, reports: report(first.scored, calibration) }
         : {
-            backends: [first.backend, second.backend],
+            backends: runs.map((r) => r.backend),
             policy: resolved.source,
             fixtures: fixtures.length,
-            reports: {
-              [first.backend]: report(first.scored, resolved.policy.calibration),
-              [second.backend]: report(second.scored, resolved.policy.calibration),
-            },
-            comparison: compare(first, second, resolved.policy.calibration),
+            reports: Object.fromEntries(runs.map((r) => [r.backend, report(r.scored, calibration)])),
+            arms: summaries,
+            // The first pair under the key it has always had, so a reader of the two-arm
+            // shape keeps working; every pair, keyed by the arm compared, beside it.
+            comparison: (pairs[0] as (typeof pairs)[number]).comparison,
+            comparisons: Object.fromEntries(pairs.map((p) => [p.comparison.backends[1], p])),
           };
     write(`${JSON.stringify(payload, null, 2)}\n`);
     return 0;
@@ -226,12 +244,18 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   // to go and work out the precedence by hand.
   write(`Policy: ${resolved.source}\n`);
   for (const r of runs) {
-    write(formatReport(report(r.scored, resolved.policy.calibration), r.backend, resolved.policy.calibration, r.scored));
+    write(formatReport(report(r.scored, calibration), r.backend, calibration, r.scored));
     write("\n");
   }
 
   if (second !== undefined) {
-    write(formatComparison(compare(first, second, resolved.policy.calibration), resolved.policy.calibration));
+    write(formatArms(summaries));
+    for (const pair of pairs) {
+      write("\n");
+      write(formatComparison(pair.comparison, calibration));
+      write("\n");
+      write(formatGates(pair.gates, pair.comparison));
+    }
   }
 
   if (args.out !== undefined) {
@@ -284,6 +308,7 @@ function writeAnswers(path: string, answered: readonly Answered[], policy: Polic
       // `--from` reads this back, and without it re-scoring the file would approve what the
       // run itself refused.
       ...(a.truncated === true ? { truncated: true } : {}),
+      ...(a.serverTruncation !== undefined ? { server_truncated: a.serverTruncation } : {}),
       ...(Object.keys(a.probes).length > 0 ? { probes: a.probes } : {}),
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs },
     };
@@ -423,8 +448,11 @@ function backendsFor(primary: string, compare?: string): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
-  const pair = named.length >= 2 ? named.slice(0, 2) : [primary, ...named];
-  return pair[0] === pair[1] ? [pair[0] as string] : pair;
+  // Every arm named, in order; one name means "against the backend already selected".
+  // A backend named twice is run once, since the second run could only disagree with the
+  // first by noise, and a column pair that is one classifier reads as two.
+  const arms = named.length >= 2 ? named : [primary, ...named];
+  return [...new Set(arms)];
 }
 
 /**

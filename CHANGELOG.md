@@ -8,6 +8,26 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.8
+
+**`calibrate --compare` reports what a routing decision reads** (#108).
+
+- It takes any number of backends and compares each against the first.
+- Its new **Arms** table gives, per backend: accuracy, Brier, expected calibration error, false allows by question, false-ask rate, p50/p95 latency, cost per decision, and how many requests the server reported truncating.
+- Every differing verdict is listed, with what decided each side. The list used to stop at twenty.
+- Each comparison ends with two gates. The **Brier gate** is within `brier_within` of the first backend with every question meeting the bar. The **safety gate** is no false allow on the `no_false_allows` questions, with agreement at or above `agreement_floor`.
+- **Truncation flips** are differing verdicts on a state the server said it cut, and are flagged.
+- `--json` adds `arms` and `comparisons` and keeps `comparison` for the first pair.
+
+**New optional keys in the `calibration` block:**
+
+- `brier_within: 0.05` and `no_false_allows: [destructive]` are in the shipped policy.
+- `agreement_floor` is documented and left unset.
+
+A copied policy without them works as before, and the gates it cannot evaluate say so. A policy that sets them loads on 0.2.7 too, which ignores them.
+
+**What an existing install will notice:** only `calibrate --compare` output. The hook is unchanged, and the first call after updating re-parses your policy once, because the compiled-policy cache version moved.
+
 ## 0.2.7
 
 **`calibrate` can reach a keyed local server, and reads llama.cpp 0.4.1** (#105).
