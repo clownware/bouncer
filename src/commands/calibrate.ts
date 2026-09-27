@@ -4,7 +4,7 @@
 // thread ever has; CI runs the same code against the mock adapter so the harness itself
 // stays tested.
 //
-//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare a,b] [--out run.jsonl] [--json]
+//   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b] [--out run.jsonl] [--json]
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //
 // `--out` writes what the classifier said about each fixture, one line per fixture, in the
@@ -57,7 +57,7 @@ import {
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
-import { apiKey, chatBackend, errorsIn, jevCompatible, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import { apiKey, chatBackend, errorsIn, jevCompatible, keyFromEnv, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
 
 export interface CalibrateArgs {
@@ -135,17 +135,29 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   }
 
   const adapters: Adapter[] = [];
+  const given: Array<string | undefined> = [];
   for (const name of names) {
-    const adapter = adapterFor(name);
+    const { label, backend } = labelled(name);
+    const adapter = adapterFor(backend);
     if (typeof adapter === "string") {
       write(`${adapter}\n`);
       return 1;
     }
     adapters.push(adapter);
+    given.push(label);
   }
-  // Columns and `--out` lines carry the adapter's own name, which for `jev@` is the endpoint
-  // it will actually call rather than however the flag happened to be typed.
-  const labels = adapters.map((a) => a.name);
+  // Columns carry the adapter's own name, which for `jev@` is the endpoint it will actually
+  // call rather than however the flag happened to be typed, unless the arm was given a name
+  // (`local-decision=jev@http://127.0.0.1:8093`) so a report can use the names of the
+  // manifest it is evidence for. Then the mapping is printed, because a column called
+  // `local-decision` says nothing on its own about which server answered. `--out` lines keep
+  // the adapter's name either way: the log names what answered, never what it was called.
+  const labels = adapters.map((a, i) => given[i] ?? a.name);
+  if (given.some((g) => g !== undefined) && args.json !== true) {
+    for (const [i, adapter] of adapters.entries()) {
+      if (given[i] !== undefined) write(`${given[i]} = ${adapter.name}\n`);
+    }
+  }
 
   // Preflight before the first fixture, not on it. The local adapter refuses to start when
   // the endpoint cannot constrain its decode, and finding that out 40 fixtures into a run
@@ -185,7 +197,7 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
 
   if (args.out !== undefined) {
     try {
-      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, first.backend);
+      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, (adapters[0] as Adapter).name);
     } catch (err) {
       write(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
@@ -415,8 +427,20 @@ function backendsFor(primary: string, compare?: string): string[] {
   return pair[0] === pair[1] ? [pair[0] as string] : pair;
 }
 
+/**
+ * `name=backend`, or a bare backend.
+ *
+ * The name is a lowercase word, so a URL that happens to contain `=` in its query (a
+ * `jev@https://host/?a=b`) is never read as one: the part before the first `=` there holds
+ * `@` and `:`, which a name cannot.
+ */
+export function labelled(spec: string): { readonly label?: string; readonly backend: string } {
+  const match = /^([a-z][a-z0-9-]*)=(.+)$/.exec(spec.trim());
+  return match === null ? { backend: spec.trim() } : { label: match[1] as string, backend: (match[2] as string).trim() };
+}
+
 /** An adapter, or the sentence to print instead of one. */
-function adapterFor(backend: string): Adapter | string {
+export function adapterFor(backend: string): Adapter | string {
   if (backend === "mock") return new MockAdapter();
 
   if (backend === "jev") {
@@ -427,16 +451,26 @@ function adapterFor(backend: string): Adapter | string {
     return new JevAdapter({ apiKey: key });
   }
 
-  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "local") {
+    // Here rather than in `localBackend()`, which the hook also calls and which must not
+    // print: a named key file that cannot be read is a sentence, not a run of 401s.
+    const key = keyFromEnv("BOUNCER_LOCAL_API_KEY");
+    if (key.error !== undefined) return key.error;
+    return new LocalAdapter(localBackend());
+  }
 
   const compatible = jevCompatible(backend);
   if (compatible !== undefined) {
-    return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+    return "error" in compatible ? compatible.error : new JevAdapter(compatible);
   }
 
   const chat = chatBackend(backend);
   if (chat !== undefined) {
-    return "error" in chat ? chat.error : new LocalAdapter({ ...localBackend(), ...chat, api: "chat" });
+    if ("error" in chat) return chat.error;
+    // The local key is for BOUNCER_LOCAL_URL. A `chat@` URL is whatever was typed and gets
+    // BOUNCER_CHAT_API_KEY or nothing, so the local one is taken out before the spread.
+    const { apiKey: _localKey, ...local } = localBackend();
+    return new LocalAdapter({ ...local, ...chat, api: "chat" });
   }
 
   return `Unknown backend "${backend}".`;

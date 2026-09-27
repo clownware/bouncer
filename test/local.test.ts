@@ -5,6 +5,8 @@
 // the decode, whether the probability read back off the logprobs is the right one, and
 // whether the adapter refuses rather than degrades when the engine cannot constrain.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { LocalAdapter } from "../src/adapters/local.js";
 import { AdapterError, noulProbability, type Question } from "../src/adapters/types.js";
@@ -502,5 +504,40 @@ describe("LocalAdapter in chat mode refuses to start rather than degrading", () 
     );
     const error = await new LocalAdapter({ api: "chat", model: "m", fetch: fetchImpl }).decide(request).catch((e: unknown) => e);
     expect((error as AdapterError).kind).toBe("auth");
+  });
+});
+
+// #105. llama.cpp 0.4.1 answers `/v1/completions` in the chat shape, and the adapter read
+// only the legacy one, so the pinned build refused before the first fixture. Every file in
+// test/fixtures/local is one shape for the same distribution, p(yes) = 0.75; they must all
+// read the same p, and a file added for a new server is checked without editing this test.
+describe("the completion shapes a server can answer in", () => {
+  const DIR = "test/fixtures/local";
+  const shapes = readdirSync(DIR).filter((f) => f.endsWith(".json"));
+
+  it("has both shapes #105 names", () => {
+    expect(shapes).toEqual(expect.arrayContaining(["legacy-top-logprobs.json", "llamacpp-0.4.1-content.json"]));
+  });
+
+  it.each(shapes)("%s reads p(yes) = 0.75", async (file) => {
+    const body = JSON.parse(readFileSync(join(DIR, file), "utf8")) as unknown;
+    const { fetchImpl } = server({ completionBody: body });
+    const result = await new LocalAdapter({ fetch: fetchImpl }).decide(request);
+    expect(noulProbability(result.answers["destructive"])).toBeCloseTo(0.75, 9);
+    expect(noulProbability(result.answers["secrets"])).toBeCloseTo(0.75, 9);
+  });
+
+  // Neither shape is a refusal, never a default answer: a p made up from nothing would be
+  // scored as if the model had said it.
+  it.each([
+    ["logprobs with neither key", { choices: [{ text: " yes", logprobs: { tokens: [" yes"] } }] }],
+    ["an empty content array", { choices: [{ text: " yes", logprobs: { content: [] } }] }],
+    ["content with no top_logprobs", { choices: [{ text: " yes", logprobs: { content: [{ token: " yes", logprob: -0.1 }] } }] }],
+    ["top_logprobs as an array of arrays", { choices: [{ text: " yes", logprobs: { top_logprobs: [[" yes", -0.1]] } }] }],
+  ])("refuses %s", async (_label, body) => {
+    const { fetchImpl } = server({ completionBody: body });
+    const error = await new LocalAdapter({ fetch: fetchImpl }).decide(request).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AdapterError);
+    expect((error as AdapterError).kind).toBe("malformed_response");
   });
 });

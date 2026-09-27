@@ -266,7 +266,24 @@ BOUNCER_TYPESAFE_API_KEY=… \
 ```
 
 If the endpoint cannot constrain the decode, the adapter refuses to start rather than
-returning an unconstrained number that would look exactly like a real one.
+returning an unconstrained number that would look exactly like a real one. llama.cpp
+0.4.1 answers `/v1/completions` in the chat logprobs shape; the adapter reads either.
+
+**A keyed server** gets its key from the environment or from a key file, never from the
+policy, since a repository's `.bouncer.yaml` is adopted by cloning it and must not decide
+where a key is sent. `local` reads `BOUNCER_LOCAL_API_KEY` or the file named by
+`BOUNCER_LOCAL_API_KEY_FILE`; a `jev@<url>` server reads `BOUNCER_JEV_COMPAT_API_KEY` or
+`BOUNCER_JEV_COMPAT_API_KEY_FILE`, and is never sent your TypeSafe key. With a key set,
+the preflight also sends one request without it, and refuses to run if the server answers:
+a key that protects nothing means the endpoint is not the server the key was issued for.
+An arm can be given a name for the report, `name=backend`, and the mapping to the endpoint
+that answered is printed above the tables:
+
+```bash
+BOUNCER_LOCAL_URL=http://127.0.0.1:8092/v1 BOUNCER_LOCAL_API_KEY_FILE=<plumbing key file> \
+BOUNCER_JEV_COMPAT_API_KEY_FILE=<decision key file> BOUNCER_TYPESAFE_API_KEY=… \
+  node bin/bouncer.cjs calibrate --compare jev,local-decision=jev@http://127.0.0.1:8093
+```
 
 The LLM one-token-logprob arm is the same adapter against a chat endpoint, named
 `chat@<url>`. It is **an OpenAI model or an open-weights model served by vLLM**, because

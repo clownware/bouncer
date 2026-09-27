@@ -185,10 +185,17 @@ export function apiKey(): string | undefined {
  * run this arm. TypeSafe's own host is refused under this spelling for the same reason in
  * reverse: `jev` is the name that sends the key, and a keyless call there only fails.
  *
+ * A server that wants a key of its own gets `BOUNCER_JEV_COMPAT_API_KEY`, or the file named
+ * by `BOUNCER_JEV_COMPAT_API_KEY_FILE` (#105: Clownbot's local-decision seat is keyed from a
+ * 0600 file and answers nothing without it). That key is the user's for whatever `jev@`
+ * URL they typed, as `BOUNCER_CHAT_API_KEY` is for `chat@`, and it is never TypeSafe's.
+ *
  * A bare origin gets `/v1/systemone`, the path both TypeSafe and openjev-sglang serve;
  * anything with a path is taken as the full endpoint.
  */
-export function jevCompatible(backend: string): { readonly baseUrl: string } | { readonly error: string } | undefined {
+export function jevCompatible(
+  backend: string,
+): { readonly baseUrl: string; readonly apiKey?: string } | { readonly error: string } | undefined {
   if (!backend.startsWith("jev@")) return undefined;
 
   const raw = backend.slice("jev@".length).trim();
@@ -205,7 +212,40 @@ export function jevCompatible(backend: string): { readonly baseUrl: string } | {
     return { error: `"${backend}" is TypeSafe itself: name it jev, which is the backend that sends your key.` };
   }
   if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1/systemone";
-  return { baseUrl: url.toString() };
+
+  const key = keyFromEnv("BOUNCER_JEV_COMPAT_API_KEY");
+  if (key.error !== undefined) return { error: key.error };
+  return { baseUrl: url.toString(), ...(key.key !== undefined ? { apiKey: key.key } : {}) };
+}
+
+/**
+ * A bearer key from `<name>`, or read from the file `<name>_FILE`.
+ *
+ * Environment and files only, never the policy YAML: a repository's `.bouncer.yaml` is
+ * adopted by cloning it (see `resolvePolicy`), so a key or an endpoint there would let a
+ * repository decide where your key is sent. A file rather than only a variable because the
+ * servers this exists for keep their key in one (Clownbot's seats read a 0600 key file and
+ * never take it on argv), and pointing at that file keeps the value out of every shell
+ * profile and settings file. No keychain lookup: `security` and `op` can raise a prompt in
+ * the middle of an agent run, which is why the Jev key is environment-only too. For one
+ * command, `NAME="$(security find-generic-password -s <item> -w)"` does it at the call.
+ *
+ * A named file that cannot be read is an error rather than no key, because "no key" would
+ * turn a typo into a run against an endpoint that refuses every call, or worse, one that
+ * accepts them.
+ */
+export function keyFromEnv(name: string): { readonly key?: string; readonly error?: string } {
+  const direct = process.env[name]?.trim();
+  if (direct !== undefined && direct.length > 0) return { key: direct };
+
+  const file = process.env[`${name}_FILE`]?.trim();
+  if (file === undefined || file.length === 0) return {};
+  try {
+    const value = readFileSync(file, "utf8").trim();
+    return value.length > 0 ? { key: value } : { error: `${name}_FILE names ${file}, which is empty.` };
+  } catch (err) {
+    return { error: `${name}_FILE names ${file}, which cannot be read (${err instanceof Error ? err.message : String(err)}).` };
+  }
 }
 
 /**
@@ -305,15 +345,19 @@ function tryRead(path: string): string | undefined {
  * ADR-005 records that as the follow-up. Keeping it out of the schema today means the
  * adapter can land without touching the policy loader.
  */
-export function localBackend(): { baseUrl?: string; model?: string; concurrency?: number } {
+export function localBackend(): { baseUrl?: string; model?: string; concurrency?: number; apiKey?: string } {
   const text = (name: string): string | undefined => {
     const value = process.env[name];
     return value !== undefined && value.trim().length > 0 ? value.trim() : undefined;
   };
 
   const concurrency = Number(text("BOUNCER_LOCAL_CONCURRENCY"));
+  // An unreadable key file is reported by the commands that preflight (`keyFromEnv` again,
+  // in calibrate); here it is no key, so the server's 401 takes the ordinary error path.
+  const key = keyFromEnv("BOUNCER_LOCAL_API_KEY").key;
 
   return {
+    ...(key !== undefined ? { apiKey: key } : {}),
     ...(text("BOUNCER_LOCAL_URL") !== undefined ? { baseUrl: text("BOUNCER_LOCAL_URL") as string } : {}),
     ...(text("BOUNCER_LOCAL_MODEL") !== undefined ? { model: text("BOUNCER_LOCAL_MODEL") as string } : {}),
     ...(Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}),

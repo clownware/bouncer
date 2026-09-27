@@ -1,0 +1,27 @@
+{
+  "id": "cmpl-llamacpp",
+  "object": "text_completion",
+  "model": "Qwen3-4B-Instruct-2507",
+  "choices": [
+    {
+      "index": 0,
+      "text": " yes",
+      "logprobs": {
+        "content": [
+          {
+            "id": 9891,
+            "token": " yes",
+            "bytes": [32, 121, 101, 115],
+            "logprob": -0.2876820724517809,
+            "top_logprobs": [
+              { "id": 9891, "token": " yes", "bytes": [32, 121, 101, 115], "logprob": -0.2876820724517809 },
+              { "id": 1738, "token": " no", "bytes": [32, 110, 111], "logprob": -1.3862943611198906 }
+            ]
+          }
+        ]
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": { "prompt_tokens": 412, "completion_tokens": 1 }
+}

@@ -168,6 +168,12 @@ file. No real OpenAI or vLLM reply has been read.
   code rule does not by itself send it to the YAML, and keeping it out of the schema lets
   this land without touching the policy loader. A `local:` block belongs in the policy once
   local is a supported hook backend rather than a calibration one.
+  **Amended 2026-09-26 (#105):** keys stay out of it even then. `BOUNCER_LOCAL_API_KEY` and
+  `BOUNCER_JEV_COMPAT_API_KEY`, each also readable from the file a `_FILE` variable names,
+  because a repository's policy is adopted by cloning it and an endpoint or key there
+  would let the repository choose where a key goes. A policy block may one day name a URL;
+  it may never name a key or a key file. With a key set, the preflight sends one request
+  without it and refuses a server that answers.
 - **The preflight is per process.** The hook is a fresh process per tool call, so a hook
   configured with `backend: local` pays the tokenize round trips and one probe every call.
   Against localhost that is small beside the decode itself, but it is real, and a disk cache
