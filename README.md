@@ -10,7 +10,7 @@ thresholds live in a YAML file you own.
 
 **If you run `--dangerously-skip-permissions`, this never prompts you.** That is the point,
 not a caveat. Your baseline is zero interruptions, and `seatbelt` mode keeps it at zero: it
-is silent until one of fifteen deterministic rules matches something that is never okay —
+is silent until one of nineteen deterministic rules matches something that is never okay —
 printing a private key, a live credential on the command line, `git stash clear`. Judgments
 still run and still get logged; they just do not get to interrupt you, unless you enable a
 deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes).
@@ -99,7 +99,7 @@ directions: widening it upward reaches nothing at 0.15, and widening it downward
 to reach 0.15 would prompt on nearly every command in the fixture set — and that band was
 already the single largest source of friction in the policy.
 
-So these four stopped being questions. `gate.hard_rules` is a list of fifteen entries in the
+So these four stopped being questions. `gate.hard_rules` is a list of nineteen entries in the
 policy, evaluated before the classifier is called: when one matches, its verdict is the
 verdict, no model call is made, and the log records `source: hard_rule` with the entry's
 name. It is the symmetric twin of the `fast_path` allowlist. Between them sits everything
