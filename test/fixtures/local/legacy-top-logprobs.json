@@ -1,0 +1,18 @@
+{
+  "id": "cmpl-legacy",
+  "object": "text_completion",
+  "model": "qwen3-4b",
+  "choices": [
+    {
+      "index": 0,
+      "text": " yes",
+      "logprobs": {
+        "tokens": [" yes"],
+        "token_logprobs": [-0.2876820724517809],
+        "top_logprobs": [{ " yes": -0.2876820724517809, " no": -1.3862943611198906 }]
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": { "prompt_tokens": 412, "completion_tokens": 1 }
+}

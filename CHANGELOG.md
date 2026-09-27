@@ -8,6 +8,26 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.7
+
+**`calibrate` can reach a keyed local server, and reads llama.cpp 0.4.1** (#105).
+
+- `local` sends `BOUNCER_LOCAL_API_KEY` (or the contents of the file
+  `BOUNCER_LOCAL_API_KEY_FILE` names) as a bearer token, and a `jev@<url>` server gets
+  `BOUNCER_JEV_COMPAT_API_KEY` (or `…_FILE`). Neither ever gets your TypeSafe key, and the
+  local key is never sent to a `chat@` URL. Keys come from the environment or a key file,
+  never from a policy.
+- With a key set, the preflight sends one request without it and refuses a server that
+  answers: the key would be protecting nothing.
+- llama.cpp 0.4.1 answers `/v1/completions` with its top logprobs in the chat shape, and
+  `local` refused it as "no top logprobs". It now reads both shapes, and still refuses a
+  response in neither.
+- `--compare` takes `name=backend`, so a column can read `local-decision` while the line
+  above the tables says which endpoint answered. `--out` records the endpoint either way.
+
+**What an existing install will notice:** nothing, unless your policy sets
+`backend: local` and you set `BOUNCER_LOCAL_API_KEY`; then the hook sends that key too.
+
 ## 0.2.6
 
 **`calibrate` can read a probability off an LLM's logprobs.** Name it `chat@<url>` with

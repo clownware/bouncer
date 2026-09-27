@@ -130,7 +130,42 @@ export class LocalAdapter implements Adapter {
    * path at volume.
    */
   async start(): Promise<void> {
-    await this.ready(Date.now() + PREFLIGHT_BUDGET_MS);
+    const deadline = Date.now() + PREFLIGHT_BUDGET_MS;
+    await this.ready(deadline);
+    await this.refuseIfOpen(deadline);
+  }
+
+  /**
+   * With a key configured, one request without it, which has to be refused.
+   *
+   * A key is a claim that the endpoint is protected, and a comparison is only evidence about
+   * the server it thinks it is talking to. An endpoint that answers keyless is either not
+   * the keyed seat the key was issued for or a seat started without its key, and in both
+   * cases the numbers would be reported under a name they do not belong to (#105). Without a
+   * key nothing is claimed and nothing is probed, which is what keeps an open endpoint like
+   * a scratch llama-server usable on purpose.
+   */
+  private async refuseIfOpen(deadline: number): Promise<void> {
+    if (this.options.apiKey === undefined) return;
+    const chat = this.options.api === "chat";
+    const url = `${this.baseUrl()}${chat ? "/chat/completions" : "/completions"}`;
+    const body = chat
+      ? { model: this.model(), messages: [{ role: "user", content: "ok" }], max_tokens: 1 }
+      : { model: this.model(), prompt: "ok", max_tokens: 1 };
+
+    try {
+      await this.post(url, body, deadline, undefined, { keyless: true });
+    } catch (err) {
+      if (err instanceof AdapterError && err.kind === "auth") return;
+      throw new AdapterError(
+        "unavailable",
+        `${url} neither refused nor answered a request sent without the key (${err instanceof Error ? err.message : String(err)}), so whether it is keyed cannot be told`,
+      );
+    }
+    throw new AdapterError(
+      "auth",
+      `${url} answered a request sent without the key you configured, so the key protects nothing and the endpoint is not the keyed server it was meant to be. Key the server, or unset BOUNCER_LOCAL_API_KEY to run against it as an open endpoint.`,
+    );
   }
 
   async decide(request: DecideRequest): Promise<DecideResponse> {
@@ -316,7 +351,13 @@ export class LocalAdapter implements Adapter {
     );
   }
 
-  private async post(url: string, body: unknown, deadline: number, signal?: AbortSignal): Promise<unknown> {
+  private async post(
+    url: string,
+    body: unknown,
+    deadline: number,
+    signal?: AbortSignal,
+    options: { readonly keyless?: boolean } = {},
+  ): Promise<unknown> {
     const doFetch = this.options.fetch ?? globalThis.fetch;
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new AdapterError("timeout", "no time left in the budget");
@@ -333,7 +374,9 @@ export class LocalAdapter implements Adapter {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...(this.options.apiKey !== undefined ? { authorization: `Bearer ${this.options.apiKey}` } : {}),
+          ...(this.options.apiKey !== undefined && options.keyless !== true
+            ? { authorization: `Bearer ${this.options.apiKey}` }
+            : {}),
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -602,11 +645,19 @@ function hostOf(url: string): string {
 }
 
 /**
- * `choices[0].logprobs.top_logprobs[0]`, as both servers spell it.
+ * The first generated token's top logprobs, as a map of token to logprob.
  *
- * vLLM returns the OpenAI array-of-maps shape. llama.cpp's OpenAI-compatible layer matches
- * it; its native `/completion` endpoint does not, which is why this adapter talks to
- * `/v1/completions` and nothing else.
+ * Two shapes reach `/v1/completions`. vLLM returns the OpenAI legacy one,
+ * `choices[0].logprobs.top_logprobs[0]`, a map. llama.cpp 0.4.1 returns the chat one on the
+ * completions endpoint too, `choices[0].logprobs.content[0].top_logprobs[]`, an array of
+ * `{ token, logprob }` (#105): the pinned build could not be calibrated against at all until
+ * this read both. The legacy map is read first because it is what the endpoint is
+ * documented to return, and the two cannot be confused: one is a map, the other an array
+ * under a key the legacy shape does not have. Neither present is `undefined`, and the caller
+ * refuses; there is no third guess.
+ *
+ * llama.cpp's native `/completion` endpoint matches neither, which is why this adapter talks
+ * to `/v1/completions` and nothing else.
  */
 function topLogprobs(payload: unknown): Record<string, unknown> | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
@@ -617,10 +668,22 @@ function topLogprobs(payload: unknown): Record<string, unknown> | undefined {
   if (typeof logprobs !== "object" || logprobs === null) return undefined;
 
   const top = (logprobs as Record<string, unknown>)["top_logprobs"];
-  if (!Array.isArray(top) || top.length === 0) return undefined;
+  if (Array.isArray(top) && top.length > 0) {
+    const first = top[0];
+    if (typeof first === "object" && first !== null && !Array.isArray(first)) return first as Record<string, unknown>;
+  }
 
-  const first = top[0];
-  return typeof first === "object" && first !== null ? (first as Record<string, unknown>) : undefined;
+  const rows = chatContent(payload)?.["top_logprobs"];
+  if (!Array.isArray(rows) || rows.length === 0) return undefined;
+
+  const map: Record<string, unknown> = {};
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const token = (row as Record<string, unknown>)["token"];
+    // A surface form listed twice keeps its first entry; the server sorts them descending.
+    if (typeof token === "string" && !(token in map)) map[token] = (row as Record<string, unknown>)["logprob"];
+  }
+  return Object.keys(map).length > 0 ? map : undefined;
 }
 
 function readUsage(payload: unknown): { model?: string; inputTokens?: number } {

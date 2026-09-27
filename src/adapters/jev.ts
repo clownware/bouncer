@@ -84,15 +84,17 @@ export class JevAdapter implements Adapter {
     };
     const deadline = Date.now() + deadlineMs;
     let last: AdapterError | undefined;
+    let answered = false;
 
-    while (Date.now() < deadline) {
+    while (!answered && Date.now() < deadline) {
       try {
         await this.decide({
           state: "The server is being asked whether it is ready.",
           questions: { ready: { type: "noul", instructions: "The state asks whether the server is ready." } },
           timeoutMs: Math.max(1, Math.min(WARMUP_ATTEMPT_MS, deadline - Date.now())),
         });
-        return;
+        answered = true;
+        break;
       } catch (err) {
         const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
         // Still booting looks like a timeout or a 5xx. Anything else is an answer, and it
@@ -105,10 +107,48 @@ export class JevAdapter implements Adapter {
       await delay(intervalMs, deadline);
     }
 
+    if (!answered) {
+      throw new AdapterError(
+        "unavailable",
+        `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1000)} s` +
+          (last !== undefined ? ` (last: ${last.message})` : ""),
+      );
+    }
+
+    // Outside the loop on purpose: an inconclusive probe is not a server still booting.
+    await this.refuseIfOpen();
+  }
+
+  /**
+   * With a key configured, one request without it, which has to be refused.
+   *
+   * A key is a claim that the endpoint is protected, and a comparison is evidence about the
+   * server it names. One that answers keyless is not the keyed seat the key was issued for,
+   * or is that seat started without its key, and either way its numbers would be reported
+   * under a name that is not theirs (#105). No key, no claim, no probe: openjev-sglang's
+   * public deploy is open by design and stays usable.
+   */
+  private async refuseIfOpen(): Promise<void> {
+    const { apiKey, ...keyless } = this.options;
+    if (apiKey === undefined || keyless.baseUrl === undefined) return;
+
+    try {
+      await new JevAdapter(keyless).decide({
+        state: "The server is being asked whether it requires its key.",
+        questions: { keyed: { type: "noul", instructions: "The state asks whether the server requires its key." } },
+        timeoutMs: WARMUP_ATTEMPT_MS,
+      });
+    } catch (err) {
+      const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
+      if (error.kind === "auth") return;
+      throw new AdapterError(
+        "unavailable",
+        `${keyless.baseUrl} neither refused nor answered a request sent without the key (${error.message}), so whether it is keyed cannot be told`,
+      );
+    }
     throw new AdapterError(
-      "unavailable",
-      `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1000)} s` +
-        (last !== undefined ? ` (last: ${last.message})` : ""),
+      "auth",
+      `${keyless.baseUrl} answered a request sent without the key you configured, so the key protects nothing and the endpoint is not the keyed server it was meant to be. Key the server, or unset BOUNCER_JEV_COMPAT_API_KEY to run against it as an open endpoint.`,
     );
   }
 

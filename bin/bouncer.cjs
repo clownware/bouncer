@@ -7387,7 +7387,7 @@ var MIN_REMAINING_FOR_RETRY_MS = 150;
 var WARMUP_DEADLINE_MS = 10 * 6e4;
 var WARMUP_INTERVAL_MS = 5e3;
 var WARMUP_ATTEMPT_MS = 6e4;
-var JevAdapter = class {
+var JevAdapter = class _JevAdapter {
   name;
   options;
   constructor(options) {
@@ -7415,14 +7415,16 @@ var JevAdapter = class {
     };
     const deadline = Date.now() + deadlineMs;
     let last;
-    while (Date.now() < deadline) {
+    let answered = false;
+    while (!answered && Date.now() < deadline) {
       try {
         await this.decide({
           state: "The server is being asked whether it is ready.",
           questions: { ready: { type: "noul", instructions: "The state asks whether the server is ready." } },
           timeoutMs: Math.max(1, Math.min(WARMUP_ATTEMPT_MS, deadline - Date.now()))
         });
-        return;
+        answered = true;
+        break;
       } catch (err) {
         const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
         if (error.kind !== "timeout" && error.kind !== "unavailable" && error.kind !== "rate_limited") {
@@ -7432,9 +7434,43 @@ var JevAdapter = class {
       }
       await delay(intervalMs, deadline);
     }
+    if (!answered) {
+      throw new AdapterError(
+        "unavailable",
+        `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1e3)} s` + (last !== void 0 ? ` (last: ${last.message})` : "")
+      );
+    }
+    await this.refuseIfOpen();
+  }
+  /**
+   * With a key configured, one request without it, which has to be refused.
+   *
+   * A key is a claim that the endpoint is protected, and a comparison is evidence about the
+   * server it names. One that answers keyless is not the keyed seat the key was issued for,
+   * or is that seat started without its key, and either way its numbers would be reported
+   * under a name that is not theirs (#105). No key, no claim, no probe: openjev-sglang's
+   * public deploy is open by design and stays usable.
+   */
+  async refuseIfOpen() {
+    const { apiKey: apiKey2, ...keyless } = this.options;
+    if (apiKey2 === void 0 || keyless.baseUrl === void 0) return;
+    try {
+      await new _JevAdapter(keyless).decide({
+        state: "The server is being asked whether it requires its key.",
+        questions: { keyed: { type: "noul", instructions: "The state asks whether the server requires its key." } },
+        timeoutMs: WARMUP_ATTEMPT_MS
+      });
+    } catch (err) {
+      const error = asAdapterError(err, WARMUP_ATTEMPT_MS);
+      if (error.kind === "auth") return;
+      throw new AdapterError(
+        "unavailable",
+        `${keyless.baseUrl} neither refused nor answered a request sent without the key (${error.message}), so whether it is keyed cannot be told`
+      );
+    }
     throw new AdapterError(
-      "unavailable",
-      `${this.options.baseUrl} did not answer within ${Math.round(deadlineMs / 1e3)} s` + (last !== void 0 ? ` (last: ${last.message})` : "")
+      "auth",
+      `${keyless.baseUrl} answered a request sent without the key you configured, so the key protects nothing and the endpoint is not the keyed server it was meant to be. Key the server, or unset BOUNCER_JEV_COMPAT_API_KEY to run against it as an open endpoint.`
     );
   }
   async decide(request) {
@@ -7645,7 +7681,38 @@ var LocalAdapter = class {
    * path at volume.
    */
   async start() {
-    await this.ready(Date.now() + PREFLIGHT_BUDGET_MS);
+    const deadline = Date.now() + PREFLIGHT_BUDGET_MS;
+    await this.ready(deadline);
+    await this.refuseIfOpen(deadline);
+  }
+  /**
+   * With a key configured, one request without it, which has to be refused.
+   *
+   * A key is a claim that the endpoint is protected, and a comparison is only evidence about
+   * the server it thinks it is talking to. An endpoint that answers keyless is either not
+   * the keyed seat the key was issued for or a seat started without its key, and in both
+   * cases the numbers would be reported under a name they do not belong to (#105). Without a
+   * key nothing is claimed and nothing is probed, which is what keeps an open endpoint like
+   * a scratch llama-server usable on purpose.
+   */
+  async refuseIfOpen(deadline) {
+    if (this.options.apiKey === void 0) return;
+    const chat = this.options.api === "chat";
+    const url = `${this.baseUrl()}${chat ? "/chat/completions" : "/completions"}`;
+    const body = chat ? { model: this.model(), messages: [{ role: "user", content: "ok" }], max_tokens: 1 } : { model: this.model(), prompt: "ok", max_tokens: 1 };
+    try {
+      await this.post(url, body, deadline, void 0, { keyless: true });
+    } catch (err) {
+      if (err instanceof AdapterError && err.kind === "auth") return;
+      throw new AdapterError(
+        "unavailable",
+        `${url} neither refused nor answered a request sent without the key (${err instanceof Error ? err.message : String(err)}), so whether it is keyed cannot be told`
+      );
+    }
+    throw new AdapterError(
+      "auth",
+      `${url} answered a request sent without the key you configured, so the key protects nothing and the endpoint is not the keyed server it was meant to be. Key the server, or unset BOUNCER_LOCAL_API_KEY to run against it as an open endpoint.`
+    );
   }
   async decide(request) {
     const started = Date.now();
@@ -7774,7 +7841,7 @@ var LocalAdapter = class {
       `cannot resolve label token ids: ${root}/tokenize answered neither the llama.cpp nor the vLLM request shape${last instanceof Error ? ` (${last.message})` : ""}. Without token ids the decode cannot be constrained, and an unconstrained answer is not a probability.`
     );
   }
-  async post(url, body, deadline, signal) {
+  async post(url, body, deadline, signal, options = {}) {
     const doFetch = this.options.fetch ?? globalThis.fetch;
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new AdapterError("timeout", "no time left in the budget");
@@ -7787,7 +7854,7 @@ var LocalAdapter = class {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...this.options.apiKey !== void 0 ? { authorization: `Bearer ${this.options.apiKey}` } : {}
+          ...this.options.apiKey !== void 0 && options.keyless !== true ? { authorization: `Bearer ${this.options.apiKey}` } : {}
         },
         body: JSON.stringify(body),
         signal: controller.signal
@@ -7992,9 +8059,19 @@ function topLogprobs(payload) {
   const logprobs = choices[0]["logprobs"];
   if (typeof logprobs !== "object" || logprobs === null) return void 0;
   const top = logprobs["top_logprobs"];
-  if (!Array.isArray(top) || top.length === 0) return void 0;
-  const first = top[0];
-  return typeof first === "object" && first !== null ? first : void 0;
+  if (Array.isArray(top) && top.length > 0) {
+    const first = top[0];
+    if (typeof first === "object" && first !== null && !Array.isArray(first)) return first;
+  }
+  const rows = chatContent(payload)?.["top_logprobs"];
+  if (!Array.isArray(rows) || rows.length === 0) return void 0;
+  const map = {};
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const token = row["token"];
+    if (typeof token === "string" && !(token in map)) map[token] = row["logprob"];
+  }
+  return Object.keys(map).length > 0 ? map : void 0;
 }
 function readUsage(payload) {
   if (typeof payload !== "object" || payload === null) return {};
@@ -9366,7 +9443,21 @@ function jevCompatible(backend) {
     return { error: `"${backend}" is TypeSafe itself: name it jev, which is the backend that sends your key.` };
   }
   if (url.pathname === "" || url.pathname === "/") url.pathname = "/v1/systemone";
-  return { baseUrl: url.toString() };
+  const key = keyFromEnv("BOUNCER_JEV_COMPAT_API_KEY");
+  if (key.error !== void 0) return { error: key.error };
+  return { baseUrl: url.toString(), ...key.key !== void 0 ? { apiKey: key.key } : {} };
+}
+function keyFromEnv(name) {
+  const direct = process.env[name]?.trim();
+  if (direct !== void 0 && direct.length > 0) return { key: direct };
+  const file = process.env[`${name}_FILE`]?.trim();
+  if (file === void 0 || file.length === 0) return {};
+  try {
+    const value = (0, import_node_fs4.readFileSync)(file, "utf8").trim();
+    return value.length > 0 ? { key: value } : { error: `${name}_FILE names ${file}, which is empty.` };
+  } catch (err) {
+    return { error: `${name}_FILE names ${file}, which cannot be read (${err instanceof Error ? err.message : String(err)}).` };
+  }
 }
 function chatBackend(backend) {
   if (!backend.startsWith("chat@")) return void 0;
@@ -9434,7 +9525,9 @@ function localBackend() {
     return value !== void 0 && value.trim().length > 0 ? value.trim() : void 0;
   };
   const concurrency = Number(text("BOUNCER_LOCAL_CONCURRENCY"));
+  const key = keyFromEnv("BOUNCER_LOCAL_API_KEY").key;
   return {
+    ...key !== void 0 ? { apiKey: key } : {},
     ...text("BOUNCER_LOCAL_URL") !== void 0 ? { baseUrl: text("BOUNCER_LOCAL_URL") } : {},
     ...text("BOUNCER_LOCAL_MODEL") !== void 0 ? { model: text("BOUNCER_LOCAL_MODEL") } : {},
     ...Number.isFinite(concurrency) && concurrency > 0 ? { concurrency } : {}
@@ -10632,16 +10725,25 @@ async function calibrate(args, write3) {
     return 1;
   }
   const adapters = [];
+  const given = [];
   for (const name of names) {
-    const adapter = adapterFor2(name);
+    const { label, backend } = labelled(name);
+    const adapter = adapterFor2(backend);
     if (typeof adapter === "string") {
       write3(`${adapter}
 `);
       return 1;
     }
     adapters.push(adapter);
+    given.push(label);
   }
-  const labels = adapters.map((a) => a.name);
+  const labels = adapters.map((a, i) => given[i] ?? a.name);
+  if (given.some((g) => g !== void 0) && args.json !== true) {
+    for (const [i, adapter] of adapters.entries()) {
+      if (given[i] !== void 0) write3(`${given[i]} = ${adapter.name}
+`);
+    }
+  }
   for (const adapter of adapters) {
     if (adapter.name.startsWith("jev@") && args.json !== true) {
       process.stderr.write(`Waiting for ${adapter.name} to answer (a server that scales to zero boots first)...
@@ -10675,7 +10777,7 @@ async function calibrate(args, write3) {
   }
   if (args.out !== void 0) {
     try {
-      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, first.backend);
+      writeAnswers(args.out, answered, resolved.policy, args.set ?? GATE_SET, adapters[0].name);
     } catch (err) {
       write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -10843,6 +10945,10 @@ function backendsFor(primary, compare2) {
   const pair = named.length >= 2 ? named.slice(0, 2) : [primary, ...named];
   return pair[0] === pair[1] ? [pair[0]] : pair;
 }
+function labelled(spec) {
+  const match = /^([a-z][a-z0-9-]*)=(.+)$/.exec(spec.trim());
+  return match === null ? { backend: spec.trim() } : { label: match[1], backend: match[2].trim() };
+}
 function adapterFor2(backend) {
   if (backend === "mock") return new MockAdapter();
   if (backend === "jev") {
@@ -10852,14 +10958,20 @@ function adapterFor2(backend) {
     }
     return new JevAdapter({ apiKey: key });
   }
-  if (backend === "local") return new LocalAdapter(localBackend());
+  if (backend === "local") {
+    const key = keyFromEnv("BOUNCER_LOCAL_API_KEY");
+    if (key.error !== void 0) return key.error;
+    return new LocalAdapter(localBackend());
+  }
   const compatible = jevCompatible(backend);
   if (compatible !== void 0) {
-    return "error" in compatible ? compatible.error : new JevAdapter({ baseUrl: compatible.baseUrl });
+    return "error" in compatible ? compatible.error : new JevAdapter(compatible);
   }
   const chat = chatBackend(backend);
   if (chat !== void 0) {
-    return "error" in chat ? chat.error : new LocalAdapter({ ...localBackend(), ...chat, api: "chat" });
+    if ("error" in chat) return chat.error;
+    const { apiKey: _localKey, ...local } = localBackend();
+    return new LocalAdapter({ ...local, ...chat, api: "chat" });
   }
   return `Unknown backend "${backend}".`;
 }
@@ -12588,7 +12700,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.6\n");
+      process.stdout.write("0.2.7\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
