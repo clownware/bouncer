@@ -1064,7 +1064,14 @@ const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 
 /** One backend's run, as `--compare` keeps it: its scores and what it said per fixture. */
 export interface ArmRun {
+  /** The column name: the `name=` label when one was given, else the adapter's name. */
   readonly backend: string;
+  /**
+   * The adapter's own name, which says what answered (`jev`, `local`, `jev@127.0.0.1:8093`).
+   * Anything decided by what the backend is, the price for one, reads this and never the
+   * label: the first live run labelled two loopback arms and reported both as unpriced.
+   */
+  readonly endpoint?: string;
   readonly scored: readonly Scored[];
   readonly answered: readonly Answered[];
 }
@@ -1174,12 +1181,13 @@ function nearestRank(values: readonly number[], p: number): number {
  * is left unpriced rather than printed as a zero.
  */
 function costPerDecision(arm: ArmRun): number | undefined {
-  if (arm.backend === "jev") {
+  const endpoint = arm.endpoint ?? arm.backend;
+  if (endpoint === "jev") {
     const tokens = arm.answered.flatMap((a) => (a.inputTokens !== undefined ? [a.inputTokens] : []));
     return tokens.length === 0 ? undefined : meanOf(tokens) * JEV_USD_PER_INPUT_TOKEN;
   }
-  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(arm.backend)?.[1];
-  const onThisMachine = arm.backend === "local" || (host !== undefined && ["127.0.0.1", "localhost", "[::1]"].includes(host));
+  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(endpoint)?.[1];
+  const onThisMachine = endpoint === "local" || (host !== undefined && ["127.0.0.1", "localhost", "[::1]"].includes(host));
   return onThisMachine ? 0 : undefined;
 }
 

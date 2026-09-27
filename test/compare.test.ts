@@ -113,6 +113,19 @@ describe("summarise", () => {
     expect(summarise({ ...run, backend }, POLICY.calibration).costPerDecision).toBe(cost);
   });
 
+  // The first live run labelled both loopback arms and printed them unpriced: the price was
+  // read off the column name. What answered decides it, whatever the column is called.
+  it.each([
+    ["local-decision", "jev@127.0.0.1:8093", 0],
+    ["local-plumbing", "local", 0],
+    ["reference", "jev", (2000 * 0.042) / 1_000_000],
+    ["hosted", "jev@my-app.modal.run", undefined],
+  ])("prices the arm labelled %s by its endpoint %s", (backend, endpoint, cost) => {
+    const priced = summarise({ ...run, backend, endpoint }, POLICY.calibration).costPerDecision;
+    if (cost === undefined) expect(priced).toBeUndefined();
+    else expect(priced).toBeCloseTo(cost, 12);
+  });
+
   it("reports server truncation as the server gave it", () => {
     const cut = arm("local-decision", [
       { fixture: byId("wipe"), answers: answers(0.02), latencyMs: 1, serverTruncation: { from: 3600, to: 760 } },
@@ -258,7 +271,7 @@ describe("calibrate --compare with three arms", () => {
     const r = await run("--compare", `mock,local-decision=jev@${url},again=mock`);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/\| mock \| \d+ \|/);
-    expect(r.stdout).toMatch(/\| local-decision \| \d+ \|.*\| (\d+) \/ \1, mean 3600 → 760 tokens \|/);
+    expect(r.stdout).toMatch(/\| local-decision \| \d+ \|.*\| \$0 \(local\) \| (\d+) \/ \1, mean 3600 → 760 tokens \|/);
     expect(r.stdout).toMatch(/\| again \| \d+ \|/);
     expect(r.stdout).toContain("Gates for local-decision against mock:");
     expect(r.stdout).toContain("Gates for again against mock:");

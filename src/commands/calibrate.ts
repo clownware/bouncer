@@ -194,7 +194,7 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
       write(`${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
     }
-    runs.push({ backend: label, scored, answered });
+    runs.push({ backend: label, endpoint: adapter.name, scored, answered });
   }
 
   const [first, second] = runs;
