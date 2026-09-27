@@ -10729,12 +10729,13 @@ function nearestRank(values, p) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))];
 }
 function costPerDecision(arm) {
-  if (arm.backend === "jev") {
+  const endpoint = arm.endpoint ?? arm.backend;
+  if (endpoint === "jev") {
     const tokens = arm.answered.flatMap((a) => a.inputTokens !== void 0 ? [a.inputTokens] : []);
     return tokens.length === 0 ? void 0 : meanOf(tokens) * JEV_USD_PER_INPUT_TOKEN;
   }
-  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(arm.backend)?.[1];
-  const onThisMachine = arm.backend === "local" || host !== void 0 && ["127.0.0.1", "localhost", "[::1]"].includes(host);
+  const host = /@(?:https?:\/\/)?(\[[^\]]+\]|[^/:]+)/.exec(endpoint)?.[1];
+  const onThisMachine = endpoint === "local" || host !== void 0 && ["127.0.0.1", "localhost", "[::1]"].includes(host);
   return onThisMachine ? 0 : void 0;
 }
 function gates(comparison, arm, calibration) {
@@ -10973,7 +10974,7 @@ async function calibrate(args, write3) {
 `);
       return 1;
     }
-    runs.push({ backend: label, scored, answered });
+    runs.push({ backend: label, endpoint: adapter.name, scored, answered });
   }
   const [first, second] = runs;
   if (first === void 0) {
@@ -12919,7 +12920,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.8\n");
+      process.stdout.write("0.2.9\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

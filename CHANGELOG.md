@@ -8,6 +8,14 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.9
+
+**`calibrate --compare` prices a named arm by what answered, not by its name.** An arm
+given a label (`local-decision=jev@http://127.0.0.1:8093`) was always "unpriced", because the
+cost column read the label. It now reads the endpoint: a loopback server is `$0 (local)`, Jev
+is priced from its tokens, and any other hosted endpoint stays unpriced. **What you will
+notice:** the cost column is filled in for labelled local arms. Nothing else changes.
+
 ## 0.2.8
 
 **`calibrate --compare` reports what a routing decision reads** (#108).

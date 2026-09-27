@@ -1,7 +1,8 @@
 {
-  "id": "cmpl-llamacpp",
+  "id": "chatcmpl-cfwgNIrBdnoWGNeKhyfdP5DJMNjeO5vd",
   "object": "text_completion",
-  "model": "Qwen3-4B-Instruct-2507",
+  "model": "local/qwen3-4b-instruct-2507",
+  "system_fingerprint": "b10964-b29c606e2",
   "choices": [
     {
       "index": 0,
@@ -9,13 +10,16 @@
       "logprobs": {
         "content": [
           {
-            "id": 9891,
+            "id": 9834,
             "token": " yes",
             "bytes": [32, 121, 101, 115],
-            "logprob": -0.2876820724517809,
+            "logprob": -0.5108256237659907,
             "top_logprobs": [
-              { "id": 9891, "token": " yes", "bytes": [32, 121, 101, 115], "logprob": -0.2876820724517809 },
-              { "id": 1738, "token": " no", "bytes": [32, 110, 111], "logprob": -1.3862943611198906 }
+              { "id": 9834, "token": " yes", "bytes": [32, 121, 101, 115], "logprob": -0.5108256237659907 },
+              { "id": 7414, "token": " Yes", "bytes": [32, 89, 101, 115], "logprob": -1.8971199848858813 },
+              { "id": 902, "token": " no", "bytes": [32, 110, 111], "logprob": -1.6094379124341003 },
+              { "id": 3070, "token": " **", "bytes": [32, 42, 42], "logprob": -9.840638160705566 },
+              { "id": 2308, "token": " No", "bytes": [32, 78, 111], "logprob": -2.995732273553991 }
             ]
           }
         ]
@@ -23,5 +27,5 @@
       "finish_reason": "length"
     }
   ],
-  "usage": { "prompt_tokens": 412, "completion_tokens": 1 }
+  "usage": { "completion_tokens": 1, "prompt_tokens": 17, "total_tokens": 18 }
 }
