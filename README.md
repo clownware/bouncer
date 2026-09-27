@@ -197,7 +197,8 @@ are hand-labelled, and the labels are judgments about what *should* warrant a pr
 the number is the classifier's agreement with one person's policy intuitions, not accuracy
 against ground truth. Since you are also the one setting the thresholds, that is the right
 thing to measure — but it is not the same claim as "97% accurate", and it should not be
-read as one.
+read as one. The set is published as a dataset for running any gate against, with its
+format, label counts and fingerprint, in [`fixtures/README.md`](fixtures/README.md).
 
 Run 9 measured all of them, and is the first run to commit its answers, so from here a
 fixture added without a rerun fails a test by name rather than quietly leaving the table
