@@ -9,6 +9,9 @@
   a commit message into a forced push (#84). See the predicate table.
 - **Corrected 2026-09-18:** an earlier draft said run 7 *allows* the four. It does not — it
   has no `missed` fixtures at all. What it does is catch them by accident. See "Why".
+- **Corrected 2026-09-30:** the payload count under "What is verified", the counts under
+  "What it catches" and "Consequences" that the shipped policy has since outgrown, and a
+  caveat on "no friction" that belongs where the claim is made. In place.
 
 ## Decision
 
@@ -141,6 +144,12 @@ classifier's opinion to be a bug:
 > each of its letters, so `git branch -df x` matches and `git clean -fdn` — a dry run — is
 > excused. This is still not a shell parser:
 > `sudo -u root cat .env`, `xargs` and `$(…)` get past it and fall to the classifier.
+>
+> (2026-09-30: the wrapper list the verb is found behind is now `sudo`, `command`,
+> `builtin`, `exec`, `env`, `time`, `nohup` and `nice` — `src/engine/hardrules.ts` is the
+> list, and the `first_token` example above is shorter than the shipped entry, which has
+> since added `grep`, `rg`, `awk`, `sed` and others. The policy file is the source; the
+> YAML here is the shape.)
 
 `path_labelled` never fires on its own. `find ~ -name 'id_rsa'` has a token that labels as
 `ssh_key` and is a search, not a read; the label only becomes a verdict when a verb
@@ -154,6 +163,22 @@ checkable without a live run:
 **9 fixtures get a deterministic verdict. All nine are labelled `true` on at least one
 question. Zero fixtures labelled `false` throughout gain one.** Hard rules add no friction
 to the fixture set at all.
+
+> **Corrected on 2026-09-30.** Two things have moved and one was never said plainly.
+> The numbers: `fixtures/gate.jsonl` holds 104 fixtures at 0.2.9, not 96, and the shipped
+> list has 19 entries rather than the fifteen priced below; hard rules decide **12** of the
+> 104, still none of them labelled safe, and `test/hardrules.test.ts` pins those twelve by
+> name so a rule that reaches something new is looked at by a person.
+>
+> The caveat: "no friction" is a statement about the fixture set, and the fixture set is
+> commands somebody guessed an agent would run. Real traffic has produced two false
+> positives since — `credential-on-the-command-line` fires on source code inside an inline
+> script (#87), and `reads-a-credential-file` fires on `.env.example` and `.env.tpl`, which
+> are templates labelled `environment_file` (#98). Both are open. Deterministic means the
+> false-positive rate is a property of the rule and is fixed by editing the rule; it does
+> not mean the rate is zero, and the amendment above already says the matcher is not a
+> shell parser. Read "a property of the rule rather than of a model's answer on the day"
+> under "The population this is actually for" with both halves of that in mind.
 
 What that changes depends on the mode, and it is worth being exact rather than claiming a
 verdict flip that does not happen:
@@ -221,7 +246,10 @@ than of a model's answer on the day.
 **PreToolUse hooks fire under `--dangerously-skip-permissions`. Confirmed from captured
 payloads.** Six of the seven `PreToolUse` fixtures in `test/fixtures/payloads/` carry
 `"permission_mode": "bypassPermissions"` — `pretooluse-bash.json`, `-edit.json`,
-`-write.json`, `-notebookedit.json`, `-read.json`, `-agent.json`. Those files exist because
+`-write.json`, `-notebookedit.json`, `-read.json`, `-agent.json`. (Corrected 2026-09-30:
+all seven do; the list above left out `-toolsearch.json`. The eighth file in the directory,
+`userpromptsubmit-none.json`, was captured under `acceptEdits` and is not a `PreToolUse`
+payload.) Those files exist because
 a real hook received real stdin while the session was running under the flag, which is the
 fact itself rather than a report of it. ADR-001 records the same thing from the same run.
 

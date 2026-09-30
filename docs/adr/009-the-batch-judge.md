@@ -1,6 +1,7 @@
 # ADR-009: `bouncer judge`, the batch consumer — and the three format changes it forced
 
-- **Status:** accepted; decision 5's account of what `measure` reports corrected on
+- **Status:** accepted; decision 4's account of truncation, the manifest and the exit
+  status, and decision 5's account of what `measure` reports, both corrected on
   2026-09-19, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.3 (`bouncer judge`, `bouncer measure`), v0.4 (package extraction)

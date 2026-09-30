@@ -1,6 +1,8 @@
 # ADR-005: The local adapter reads a probability off the logits, or refuses to run
 
-- **Status:** accepted
+- **Status:** accepted; Jev-shaped servers, the chat arm and prior art added 2026-09-23;
+  key handling amended 2026-09-26 (#105); what `--compare` reports, the environment list,
+  one wrong citation and what has actually run live corrected 2026-09-30. All in place.
 - **Date:** 2026-09-18
 - **Context for:** v0.2 (promoted from v0.3)
 
@@ -53,6 +55,14 @@ before it trusts one, rather than inferring it from a version string:
    or neither label token in the returned distribution, means the server accepted
    `logit_bias` and ignored it: refuse.
 
+   > **Open, recorded 2026-09-30.** Step 3 is weaker than the sentence above it promises.
+   > It refuses only when the label mass is zero; a distribution whose top token is not a
+   > label at all, with the labels far down it, passes and yields a p that is a conditional
+   > over two tokens the model barely considered. That is review finding 7 and issue #55,
+   > still open, because the minimum share it needs is a number and by this repository's
+   > rule a number belongs in configuration, chosen against a real server. Until then
+   > "proves the constraint" reads as "proves the labels are reachable".
+
 The refusal is an `AdapterError` like any other, so at hook time `on_error` decides what
 happens and the default is still to emit nothing (ADR-003). Refusing to start is not
 refusing to let the tool call through.
@@ -98,6 +108,18 @@ the same `score()` and prints one side-by-side table. It compares **p and Brier 
 the header says so, because Jev returns no confidence field for a `noul` (ADR-002, and
 PRD §16 question 3) and the local adapter's softmax is not one either. A confidence column
 only one side could fill would invite exactly the comparison neither side supports.
+
+> **Corrected on 2026-09-30.** Two things. The citation is wrong: ADR-002 says nothing
+> about confidence. The fact that a `noul` answer carries no confidence field was verified
+> live on 2026-09-18 and is pinned in CLAUDE.md's "Verified facts" and PRD §16 question 3.
+> And "p and Brier only" describes the two-column table of 0.2.4. Since 0.2.8 (#108)
+> `--compare` takes any number of arms and compares each against the first: an **Arms**
+> table with accuracy, Brier, expected calibration error, false allows by question, the
+> false-ask rate, p50/p95 latency, cost per decision and server-reported truncation; every
+> differing verdict, with what decided each side; and two gates read from the policy's
+> `calibration` block — Brier within `brier_within` of the first arm with every question
+> meeting the bar, and no false allow on the `no_false_allows` questions with agreement at
+> or above `agreement_floor`. There is still no confidence column, for the reason above.
 
 Rows are **paired** on (fixture, question): an answer one backend did not produce is
 dropped from both. Comparing a 94-row mean against an 89-row mean and calling the
@@ -205,7 +227,10 @@ the answers committed so the scoring can be checked. The three-way table on
 ## Consequences and costs
 
 - **Configuration is environment-only for now:** `BOUNCER_LOCAL_URL`, `BOUNCER_LOCAL_MODEL`,
-  `BOUNCER_LOCAL_CONCURRENCY`. An endpoint URL is not a threshold, so the no-thresholds-in-
+  `BOUNCER_LOCAL_CONCURRENCY` — and, for the chat arm added 2026-09-23, `BOUNCER_CHAT_MODEL`,
+  `BOUNCER_CHAT_API_KEY` (sent only to the `chat@` URL named), `BOUNCER_CHAT_EXTRA_BODY`,
+  and `OPENAI_API_KEY`, which is sent to OpenAI's host and nowhere else (`src/io/config.ts`;
+  list completed 2026-09-30). An endpoint URL is not a threshold, so the no-thresholds-in-
   code rule does not by itself send it to the YAML, and keeping it out of the schema lets
   this land without touching the policy loader. A `local:` block belongs in the policy once
   local is a supported hook backend rather than a calibration one.
@@ -225,13 +250,26 @@ the answers committed so the scoring can be checked. The three-way table on
   choice needs a letter index over the options, which is the router's problem (v0.2) and
   lands with it.
 - **Latency is unchanged for everyone else.** `npm run bench` p95 96.9 ms before this
-  change and 92.0 ms after, on the same container, against a 150 ms CI budget; the bundle
-  grows 320.0 KB to 339.1 KB. Nothing new is imported at module scope on the hook path
+  change and 92.0 ms after, on the same container, against a 150 ms CI budget (that budget
+  stopped being a gate on 2026-09-19, #73; CI now benches paired against the base commit,
+  ADR-007); the bundle grows 320.0 KB to 339.1 KB. Nothing new is imported at module scope on the hook path
   beyond the adapter itself.
 - **Nothing here has been run against a real model.** Every test stubs the HTTP layer, and
   no thread has a local endpoint. The wire shapes come from the two servers' documented
   OpenAI-compatible surfaces; the first live run is the thing that will find whatever this
   got wrong, and the `--compare` table is what it should produce.
+
+  > **Corrected on 2026-09-30.** Partly overtaken. Before 0.2.9 a live three-arm run was
+  > made — `jev`, a `jev@` server named `local-decision`, and this adapter's logit path
+  > against a llama.cpp 0.4.1 server named `local-plumbing` — and it found two things: the
+  > cost column read an arm's label rather than its endpoint (fixed in 0.2.9), and
+  > llama.cpp 0.4.1 answers `/v1/completions` with its logprobs in the chat shape (fixed in
+  > 0.2.7). A real response from that server replaced the reconstructed fixture in
+  > `test/fixtures/local/`. What has **not** happened is a published row: no write-up and
+  > no answers file came out of that run, so no Brier number is claimed for any local arm,
+  > and #109 (the `jev@` arm), #110 (the `chat@` arm) and #111 (this adapter's logit path)
+  > are all still open. "Verified against a stub only" under the chat section stands
+  > unchanged.
 
 ## What this does not decide
 

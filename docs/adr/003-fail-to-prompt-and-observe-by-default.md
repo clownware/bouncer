@@ -1,7 +1,9 @@
 # ADR-003: Fail to the prompt, observe by default, and ship no deny rules
 
 - **Status:** accepted; the steady-state latency figures and the list of failure paths
-  corrected on 2026-09-18 and 2026-09-19, in place
+  corrected on 2026-09-18 and 2026-09-19, the `full` mode table on 2026-09-19, and the
+  wording of decision 1 and the bypass sentence on 2026-09-30, all in place. ADR-004 adds
+  a fourth mode, `seatbelt`, and reads this document's three-mode table as a subset.
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -14,6 +16,19 @@ would without Bouncer installed":
    invalid policy file, or an internal crash all resolve to "emit no decision" — the normal
    permission flow runs. Bouncer being broken must never be the reason something dangerous
    ran unchallenged, and must never be the reason a session is bricked either.
+
+   > **Corrected on 2026-09-30.** "Fail to the prompt" names the wrong thing. What every
+   > error path does is emit no decision, and what that buys is that **the host's own
+   > permission policy decides**, exactly as it would with no plugin installed. For a
+   > prompted user that is a prompt. For a session under `--dangerously-skip-permissions`
+   > there is no prompt to fall to, and the call runs — which is the correct worst case for
+   > this ADR and the reason ADR-004 exists for that population. Read "the prompt" below as
+   > "the host's permission policy" throughout.
+   >
+   > One more failure path, fixed on 2026-09-19 in #45 and recorded here: the circuit breaker
+   > kept one record for the whole machine, so two sessions alternating failures reset each
+   > other and neither ever tripped. `src/io/breaker.ts` now keys its state by session and
+   > remembers the last eight (`MAX_SESSIONS`), so a session's failures are its own.
 
    > **Corrected on 2026-09-18.** That list missed a failure with no error attached: a
    > response that answers part of the request. The Jev adapter keeps whatever parsed, and
@@ -54,6 +69,11 @@ would without Bouncer installed":
 
 2. **Observe mode is the shipped default, and it emits nothing at all.**
 
+   (Exactly one thing crosses that line, in every mode: a policy file that exists and
+   fails to load produces one `systemMessage` per session saying bouncer is not enforcing
+   and why, because a user who wrote a broken file needs to know it is being ignored. No
+   decision is ever emitted for it. `src/hooks/pretooluse.ts`, added 2026-09-30.)
+
 3. **No `deny` rules are enabled in the default policy.** They exist in the schema, are
    documented, and are commented out.
 
@@ -87,6 +107,12 @@ progression a user actually walks through:
 Note that even in `full`, an `allow` is not authoritative: hooks merge most-restrictive-wins,
 so another hook or a settings rule can still force the prompt (ADR-001).
 
+> **Amended by ADR-004 (2026-09-18).** There is a fourth row. `seatbelt` emits `deny` for a
+> hard-rule match and for a judgment that clears a `deny` rule the user enabled, and nothing
+> else; it is the mode for `--dangerously-skip-permissions`, where `ask` reaches no prompt.
+> ADR-004 has the four-row table. The progression this table names stops being the whole
+> story for that population; see the correction under "Why no deny rules on day one".
+
 > **Corrected on 2026-09-19.** "Calls judged safe" is what the table says and not what the
 > code did. A tool outside `gate.tools`, and any call in a mode listed under
 > `skip_permission_modes`, short-circuited with the verdict `allow` — and in `full` that was
@@ -114,6 +140,15 @@ decision that caused it. The failure is both worse and less visible.
 the false-positive rate for the question they want to enforce on. Until then the strictest
 default action is `ask`, which makes `guard` mode mean "adds prompts" — a much easier thing
 to trust, and still the whole benefit for someone running in `bypassPermissions`.
+
+> **Corrected on 2026-09-30.** That last clause is wrong, and ADR-004 said so the same day
+> this was accepted. Under `bypassPermissions` there is no prompt for an `ask` to force, so
+> `guard` is a no-op there and `full` nearly one. The benefit for that population is
+> `seatbelt`, whose only verdict is a `deny` from a deterministic rule — and ADR-004 argues
+> that the case against `deny` made above is a case about a prompted user, whose
+> alternative was one keystroke, and reverses for a bypass user, whose alternative is that
+> the command runs. The reasoning above stands for the prompted population it was written
+> about.
 
 ## Consequences
 
