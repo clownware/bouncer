@@ -43,8 +43,7 @@ per tool and the state builder needs all of them:
 
 - `Bash` — one plain command, one with a heredoc, one multi-line chain
 - `Edit` — a small edit to an existing file. There is no `MultiEdit` to exercise: it does
-  not exist as a tool in Claude Code 2.1.201, `Edit` absorbed it (ADR-001), and the one
-  capture that asked for it got `Edit`
+  not exist as a tool in Claude Code 2.1.201; `Edit` absorbed it (ADR-001)
 - `Write` — a new file, and an overwrite of an existing file
 - `NotebookEdit` — if you have a notebook handy; skip if not
 - A `Task`/subagent call, so we capture `agent_id` / `agent_type`
