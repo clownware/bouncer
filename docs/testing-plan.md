@@ -4,8 +4,8 @@ What Bouncer measures today, what those measurements cannot say, and the A/B tha
 to answer the part they leave open: does installing this plugin make a real agent session
 better or worse.
 
-Written 2026-09-19, against `main` at 0.2.3. Everything below is either something the
-repository can do today or is marked as not built.
+Written 2026-09-19, against `main` at 0.2.3; revised 2026-09-30 against 0.2.9. Everything
+below is either something the repository can do today or is marked as not built.
 
 ## The one question the existing measurements do not answer
 
@@ -24,7 +24,9 @@ re-measures what the fixture table already covers is wasted runner time.
 | `bouncer calibrate` | `fixtures/gate.jsonl`, 104 hand-labelled near-miss cases | the classifier agrees with the labels, per question, in confidence buckets, with a Brier score |
 | the §12 gate in the same run | the same fixtures | every question clears 0.85 accuracy among answers at confidence ≥ 0.80 — the release gate, published in the README and written up under [docs/calibration/](calibration/) |
 | `calibrate --from <answers>.jsonl` | a committed answers file, e.g. [2026-09-19-jev-9.jsonl](calibration/2026-09-19-jev-9.jsonl) | what a *threshold* change does to a run already paid for, with no key and no network |
-| `test/pipeline.test.ts` over `test/holdout/cases.jsonl` | 66 frozen cases in seven groups | the built `bin/bouncer.cjs`, driven over a real PreToolUse payload, emits the right thing and logs the right `source` |
+| `calibrate --compare a,b,…` (N-arm since 0.2.8) | the same fixtures, every arm in one run | each arm against the first: accuracy, Brier, ECE, false allows by question, latency and cost per arm, every differing verdict, and a Brier gate and a safety gate per pair. `--out` refuses to combine with it (#101), so a compare's answers are not yet re-scorable |
+| `bouncer export` | a decision log | not a measurement: it turns real traffic into unlabelled candidate fixtures keyed on `tool_use_id`, so `calibrate --fixtures candidates.jsonl --from <log>` can score the log's own answers against labels a person adds |
+| `test/pipeline.test.ts` over `test/holdout/cases.jsonl` | 69 frozen cases in seven groups | the built `bin/bouncer.cjs`, driven over a real PreToolUse payload, emits the right thing and logs the right `source` |
 | `test/fastpath.test.ts` | generative over every `gate.fast_path` entry in the policy | no entry can be driven into printing a secret or taking a redirect, whatever argument it is given |
 | `test/hardrules.test.ts` | the fixture set | the hard rules fire on exactly the named fixtures and add no friction |
 | `scripts/bench.mjs --against <bundle>` | one synthetic payload, interleaved pairs | this change's hook overhead against the base commit's, paired on one machine; CI fails a paired median more than 10% worse ([ADR-007](adr/007-cache-the-compiled-policy.md), `ci.yml`) |
@@ -201,8 +203,13 @@ The loop already exists, in [docs/dogfooding.md](dogfooding.md) §5. A wrong ver
 traffic becomes a fixture before it becomes a threshold change:
 
 1. Find the line in the log; take its `ts`, `source`, `verdict` and `answers`.
-2. Write a fixture in `fixtures/gate.jsonl` with a `note` saying why the label is what it
-   is. `note` is required — an unexplained label cannot be argued with later.
+2. Run `bouncer export --from <decisions.jsonl> --out candidates.jsonl` (README, "Turning
+   your own log into fixtures"). Every distinct call in the log comes out as a commented,
+   unlabelled fixture whose `id` is the call's `tool_use_id`; fill in `expect` and a `note`
+   saying why the label is what it is, uncomment it, and move it into `fixtures/gate.jsonl`.
+   `note` is required — an unexplained label cannot be argued with later. Because the id is
+   the log's, `calibrate --fixtures candidates.jsonl --from <decisions.jsonl>` scores the
+   answers the log already holds against the new labels with no key.
 3. A miss in `hard_rule` is a rule change and does not touch the classifier. A miss in
    `judge` is either a question's wording or a threshold.
 
@@ -231,9 +238,12 @@ Marked as such so nothing here reads as if it exists.
 
 - **There is no A/B harness.** No script runs the two arms, no schema for a run record, no
   report. §3 is a design, verified in its load-bearing parts and nothing more.
-- **There is no exporter from a decision log to fixtures.** `calibrate --from` joins a gate
-  log to fixtures on `tool_use_id`, so re-scoring real traffic means a fixture file whose
-  ids are that log's `tool_use_id`s, built by hand today.
+- **The exporter from a decision log to fixtures exists now** (`bouncer export`,
+  `src/commands/export.ts`; "Not built" here until 2026-09-30). It emits one candidate per
+  distinct call with the call's `tool_use_id` as `id`, which is what `calibrate --from`
+  joins on, so re-scoring real traffic no longer means a fixture file built by hand. What
+  it does not do is label: `expect` and `note` are still a person's, and it refuses to
+  write under `test/holdout/`.
 - **`bouncer status` has no machine-readable output.** Scoring a run means reading
   `decisions.jsonl` directly.
 - **There is no way to point an installed plugin's log at a per-run directory.**

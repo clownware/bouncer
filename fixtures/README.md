@@ -77,8 +77,9 @@ mapping a label onto your own gate's question.
 Which wording a run asked is recorded as a fingerprint. Every line `calibrate --out` writes,
 and every line in a decision log, carries `policy.questions`. The labels in this file were
 last scored against **`questions 4401-b43c6811`**, which is run 9's and is still the shipped
-policy's as of 0.2.6. A run whose fingerprint differs asked different questions, and its
-row does not compare with run 9's. The `policy.file` fingerprint covers thresholds and
+policy's as of 0.2.9 (recomputed on 2026-09-30 with `calibrate --backend mock --out`; the
+`policy.questions` field of every line is the fingerprint). A run whose fingerprint differs
+asked different questions, and its row does not compare with run 9's. The `policy.file` fingerprint covers thresholds and
 rules as well, so it moves more often (run 9 was `28954-86221e3b`; the thresholds changed
 in #81). Accuracy and Brier depend only on the questions. The verdict report depends on the
 thresholds too.
@@ -144,7 +145,7 @@ node bin/bouncer.cjs calibrate --backend jev@https://<endpoint> --out run.jsonl
 node bin/bouncer.cjs calibrate --from run.jsonl
 ```
 
-Compare two arms over the same fixtures in the same minute:
+Compare arms over the same fixtures in the same minute:
 
 ```bash
 BOUNCER_TYPESAFE_API_KEY=… \
@@ -157,11 +158,19 @@ BOUNCER_LOCAL_URL=http://127.0.0.1:8080 BOUNCER_LOCAL_MODEL=<model> BOUNCER_TYPE
   node bin/bouncer.cjs calibrate --compare jev,local
 ```
 
-`--compare` takes two backends. It pairs rows on (fixture, question) and drops an answer
-either side did not produce from both, prints accuracy and Brier side by side, counts the
-fixtures on which the policy reaches the same verdict under each, and ends with the mean
-Brier difference as a sentence. A three-way table is therefore two paired runs against
-Jev, and each has its own Jev sample.
+`--compare` takes any number of backends, and since 0.2.8 compares every arm after the
+first against the first in one run, so `--compare jev,jev@<url>,chat@<url>,local` fills a
+whole table from a single Jev sample. An arm can be labelled, `name=backend`, so a column
+reads `local-decision` while the header says which endpoint answered. It pairs rows on
+(fixture, question) and drops an answer either side did not produce from both, prints an
+**Arms** table (accuracy, Brier, expected calibration error, false allows by question,
+false-ask rate, p50/p95 latency, cost per decision, requests the server truncated), lists
+every differing verdict with what decided each side, and ends each pair with two gates: the
+Brier gate (within `brier_within` of the first arm, every question meeting the bar) and the
+safety gate (no false allow on the `no_false_allows` questions, agreement at or above
+`agreement_floor`). `--out` refuses to combine with `--compare`, so a compare's own answers
+cannot be committed and re-scored yet; pairing two recorded logs is issue #101. Until then,
+record each arm with `--backend <arm> --out` as well, as separate samples.
 
 ## What this set is not
 

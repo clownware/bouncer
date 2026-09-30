@@ -126,9 +126,14 @@ https://github.com/clownware/bouncer
   Until that lands, also record each arm with `--backend <arm> --out` and commit those,
   saying they are separate samples from the compare's; or say plainly that the compare's
   own answers are not committed.
-- **Each paired run has its own Jev sample.** A Jev row filled from run A and a gap filled
-  from run B describe two different samples. State the Jev mean from the run each gap was
-  computed in, or give the range.
+- **Fill the table from one run.** Since 0.2.8 `--compare` takes any number of arms and
+  compares each against the first, so `--compare jev,jev@<modal-url>,chat@<url>[,local]`
+  produces every row against a single Jev sample, and the Jev column is one number. Runs A,
+  B and C above are the arms, not separate invocations. If they do end up as separate
+  paired runs, each has its own Jev sample: a Jev row filled from run A and a gap filled
+  from run B describe two different samples, so state the Jev mean from the run each gap
+  was computed in, or give the range. Either way the `--out`/`--compare` caveat above
+  stands (#101).
 - **"Within 5 Brier points" is loose at this scale.** PRD §12's bar is a mean Brier gap of
   0.05, and run 9's Jev mean across the seven questions is 0.059, so an arm can nearly
   double Jev's error and still be inside it. State the gap as a number and do not call an

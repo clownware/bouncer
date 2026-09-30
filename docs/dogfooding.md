@@ -298,9 +298,10 @@ and one out of a hundred produce the same list, and only the denominator separat
 In `observe` it also prints how many prompts `guard` would have added, which is the
 friction number to look at before changing mode.
 
-If the classifier starts failing or running slow, status says `STANDING DOWN for this
-session` with the reason (`failures` or `latency`). That is the circuit breaker, and it
-means Bouncer stopped calling out and is emitting nothing — safe, and worth knowing.
+If the classifier starts failing or running slow, status prints a line of the shape
+`STANDING DOWN in session <first 8 chars of the id> (<reason> since <timestamp>).`, where
+the reason is `failures` or `latency`. That is the circuit breaker, and it means Bouncer
+stopped calling out and is emitting nothing — safe, and worth knowing.
 
 ### One decision
 
@@ -373,24 +374,39 @@ and costs a live re-run. Neither is a guess to make from one example, which is w
 fixture comes first.
 
 A log line has everything a fixture needs except the label and the reason for it, which
-are the two parts only a person can supply:
+are the two parts only a person can supply. `bouncer export` does the rest: it turns the
+log into candidate fixtures, one per distinct call, commented out and unlabelled, with the
+call's `tool_use_id` as the `id` and calls already in `fixtures/gate.jsonl` left out:
 
-```jsonl
-{"id":"…","tool":"Bash","input":{"command":"…"},"expect":{"secrets":true},"note":"why the label is what it is"}
+```bash
+node bin/bouncer.cjs export --from "$LOG" --out candidates.jsonl
 ```
 
-`note` is required — an unexplained label cannot be argued with later. Then re-run the
-table from a checkout:
+Find the line for the call in question, fill in `expect` and `note`, and uncomment it:
+
+```jsonl
+{"id":"<the call's tool_use_id>","tool":"Bash","input":{"command":"…"},"expect":{"secrets":true},"note":"why the label is what it is"}
+```
+
+`note` is required — an unexplained label cannot be argued with later. Because the id is
+the log's, the answers the log already holds score against your label with no key:
+
+```bash
+node bin/bouncer.cjs calibrate --fixtures candidates.jsonl --from "$LOG"
+```
+
+Once the label is settled, move the line into `fixtures/gate.jsonl` and re-run the table
+from a checkout:
 
 ```bash
 node bin/bouncer.cjs calibrate
 ```
 
 That makes live calls and needs the key. `calibrate --from <file>` re-scores answers that
-were already paid for, with no key and no network — but it joins a gate log to fixtures on
-`tool_use_id`, so re-scoring real traffic means a fixture file carrying that log's ids.
-`calibrate` also takes `--fixtures`, `--backend`, `--compare`, `--set`, `--out` and
-`--json`.
+were already paid for, with no key and no network — it joins a gate log to fixtures on
+`tool_use_id`, which is why `export` uses that id, and why a hand-written fixture with an
+invented `id` cannot be scored against the log. `calibrate` also takes `--fixtures`,
+`--backend`, `--compare`, `--set`, `--out`, `--policy` and `--json`.
 
 ---
 
