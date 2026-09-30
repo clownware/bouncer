@@ -6,6 +6,7 @@
 //
 //   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b] [--out run.jsonl] [--json]
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
+//   bouncer calibrate --from [name=]a.jsonl,[name=]b.jsonl[,...] [--fixtures path] [--set name] [--json]
 //
 // `--out` writes what the classifier said about each fixture, one line per fixture, in the
 // shape `--from` reads. The answers are the only part of a run that costs a live call, and a
@@ -17,6 +18,13 @@
 // you have already paid for — after a relabelling, or after moving a threshold — costs
 // nothing and calls nothing. It joins the log to the labels by id: `bouncer judge` writes
 // `item` on every line, so a judgments log over a fixture file lines up by construction.
+//
+// `--from a.jsonl,b.jsonl` scores each log and compares them exactly as `--compare` compares
+// live arms: the same pairing, table, Brier sentence and gates, with no key. It is how a
+// published comparison is re-scored, since `--out` records one arm per file. It refuses two
+// logs answered under different wordings of the questions, because that is two experiments
+// rather than one comparison, and it says how far apart in time the arms were answered,
+// because a live run answers them in the same minute and this cannot promise that.
 //
 // `--set` names the policy set to score against, defaulting to `gate`. A fixture file does
 // not name its own set on purpose: the same batch scored against two sets is a thing
@@ -59,6 +67,7 @@ import {
   type ArmRun,
   type ArmSummary,
   type Fixture,
+  type FromLog,
   type Scored,
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
@@ -68,7 +77,7 @@ import type { DecisionRecord } from "../io/log.js";
 
 export interface CalibrateArgs {
   readonly fixtures?: string;
-  /** A decisions or judgments log to score instead of calling a backend. */
+  /** A decisions or judgments log to score instead of calling a backend; several, comma-separated, to compare them. */
   readonly from?: string;
   /** The policy set to score against. Defaults to `gate`. */
   readonly set?: string;
@@ -127,6 +136,18 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   }
 
   if (args.from !== undefined) {
+    const logs = args.from
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (logs.length > 1) {
+      if (args.compare !== undefined || args.backend !== undefined || args.out !== undefined) {
+        // Each would be ignored, and an ignored flag reads as one that did something.
+        write("--from with several logs compares them; it takes no --compare, --backend or --out.\n");
+        return 1;
+      }
+      return fromLogs(logs, args, resolved.policy, resolved.source, fixtures, write);
+    }
     return fromLog(args, resolved.policy, fixtures, write);
   }
 
@@ -405,6 +426,167 @@ function fromLog(
     );
   }
   return 0;
+}
+
+/**
+ * `--from a.jsonl,b.jsonl`: compare recorded runs, the way `--compare` compares live ones.
+ *
+ * Each log is scored by `scoreFromLog`, becomes an arm, and goes through the same
+ * `summarise`, `compare` and `gates` a live arm does, so a re-scored comparison and the live
+ * one it came from print the same tables. Three things a live run guarantees and a pair of
+ * files does not are checked instead: that each file is one backend, that every file asked
+ * the same questions, and how far apart the answers were given.
+ */
+function fromLogs(
+  specs: readonly string[],
+  args: CalibrateArgs,
+  policy: Policy,
+  policySource: string,
+  fixtures: readonly Fixture[],
+  write: (s: string) => void,
+): number {
+  const setName = args.set ?? GATE_SET;
+  const arms: Array<{ readonly path: string; readonly result: FromLog; readonly run: ArmRun }> = [];
+  const used = new Set<string>();
+
+  for (const spec of specs) {
+    // `name=path`, as `--compare` takes `name=backend`. A path is never read as a name: the
+    // name is a lowercase word, and the part before `=` in a path holds `/` or `.`.
+    const { label: given, backend: path } = labelled(spec);
+    let source: string;
+    try {
+      source = readFileSync(path, "utf8");
+    } catch (err) {
+      write(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+
+    let result: FromLog;
+    try {
+      result = scoreFromLog(source, fixtures, policy, setName);
+    } catch (err) {
+      write(`${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+
+    if (result.matched === 0) {
+      write(`No line in ${path} matched a fixture id, so it has nothing to compare. Run --from ${path} alone to see why.\n`);
+      return 1;
+    }
+    if (result.backends.length > 1) {
+      // One file, several classifiers: its column would be an average of backends.
+      write(`${path} holds answers from ${result.backends.length} backends (${result.backends.join(", ")}), so it is not one arm.\n`);
+      return 1;
+    }
+
+    // The column is what answered, read off the lines, never the file name.
+    const backend = result.backends[0] ?? "unknown";
+    const model = result.models.length === 1 ? (result.models[0] as string) : undefined;
+    let label = given ?? (model !== undefined && !backend.includes(model) ? `${backend} (${model})` : backend);
+    for (let n = 2; used.has(label); n += 1) label = `${given ?? backend} #${n}`;
+    used.add(label);
+
+    arms.push({ path, result, run: { backend: label, endpoint: backend, scored: result.scored, answered: result.answered } });
+  }
+
+  // Two wordings of the questions are two experiments. Refused rather than warned: every
+  // number the comparison prints would be about a difference nobody varied on purpose.
+  const wordings = new Set(arms.flatMap((a) => a.result.questions));
+  if (wordings.size > 1) {
+    write(
+      `These logs were answered under ${wordings.size} different wordings of the "${setName}" questions:\n` +
+        arms.map((a) => `  ${a.path}: ${a.result.questions.join(", ") || "not recorded"}\n`).join("") +
+        `That is two experiments, not one comparison. Re-run the arms against one policy, or compare them one at a time against their own.\n`,
+    );
+    return 1;
+  }
+  const unrecorded = arms.filter((a) => a.result.questions.length === 0).map((a) => a.path);
+
+  const calibration = policy.calibration;
+  const runs = arms.map((a) => a.run);
+  const first = runs[0] as ArmRun;
+  const summaries = runs.map((r) => summarise(r, calibration));
+  const pairs = runs.slice(1).map((r, i) => {
+    const comparison = compare(first, r, calibration);
+    return { comparison, gates: gates(comparison, summaries[i + 1] as ArmSummary, calibration) };
+  });
+
+  const starts = arms.flatMap((a) => (a.result.span !== undefined ? [Date.parse(a.result.span.first)] : [])).filter(Number.isFinite);
+  const apart = starts.length === arms.length && starts.length > 1 ? Math.max(...starts) - Math.min(...starts) : undefined;
+
+  if (args.json === true) {
+    write(
+      `${JSON.stringify(
+        {
+          from: arms.map((a) => ({
+            path: a.path,
+            backend: a.run.backend,
+            endpoint: a.run.endpoint,
+            models: a.result.models,
+            questions: a.result.questions,
+            span: a.result.span,
+            matched: a.result.matched,
+            unmatched: a.result.unmatched,
+            unscorable: a.result.unscorable,
+            otherSet: a.result.otherSet,
+            reworded: a.result.reworded,
+          })),
+          ...(apart !== undefined ? { startsApartMs: apart } : {}),
+          backends: runs.map((r) => r.backend),
+          policy: policySource,
+          fixtures: fixtures.length,
+          reports: Object.fromEntries(runs.map((r) => [r.backend, report(r.scored, calibration)])),
+          arms: summaries,
+          comparison: (pairs[0] as (typeof pairs)[number]).comparison,
+          comparisons: Object.fromEntries(pairs.map((p) => [p.comparison.backends[1], p])),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  }
+
+  write(`Policy: ${policySource}\n`);
+  for (const a of arms) {
+    const when = a.result.span !== undefined ? `, answered ${a.result.span.first}` : "";
+    write(`${a.run.backend} = ${a.path} (${a.result.matched} items${when})\n`);
+  }
+  write(
+    apart === undefined
+      ? "Not every log records when it was answered, so how far apart the arms were is unknown.\n"
+      : `The arms started ${formatSpan(apart)} apart. A live --compare answers them in the same minute; this cannot.\n`,
+  );
+  if (unrecorded.length > 0) {
+    write(`${unrecorded.join(", ")} carries no question fingerprint, so whether every arm asked the same questions is unchecked.\n`);
+  }
+  write("\n");
+
+  for (const a of arms) {
+    write(formatReport(report(a.run.scored, calibration), `${a.run.backend} (recorded)`, calibration, a.run.scored));
+    if (a.result.reworded > 0) {
+      write(`\n${a.result.reworded} of ${a.result.matched} were answered under a different wording than the policy has now.\n`);
+    }
+    write("\n");
+  }
+
+  write(formatArms(summaries));
+  for (const pair of pairs) {
+    write("\n");
+    write(formatComparison(pair.comparison, calibration));
+    write("\n");
+    write(formatGates(pair.gates, pair.comparison));
+  }
+  return 0;
+}
+
+function formatSpan(ms: number): string {
+  const minutes = ms / 60_000;
+  if (minutes < 1) return "under a minute";
+  if (minutes < 120) return `${Math.round(minutes)} minutes`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${Math.round(hours)} hours`;
+  return `${Math.round(hours / 24)} days`;
 }
 
 async function run(

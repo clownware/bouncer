@@ -8,6 +8,27 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.10
+
+**`calibrate --from` compares recorded runs** (#101). Give it several logs,
+`--from a.jsonl,b.jsonl`, and it prints the paired comparison that `--compare` prints for
+live backends: the **Arms** table, the comparison, the Brier sentence and both gates. It
+needs no key and makes no network call. `--out` still records one arm per file, so this is
+how a published comparison gets re-scored after a threshold moves or a label changes.
+
+- Each column is named from the backend and model the log records, never from the file
+  name. `name=path` gives it a name of your own.
+- It refuses logs answered under different wordings of the questions. That would be two
+  experiments, not one comparison.
+- It refuses a file holding answers from more than one backend.
+- It prints how far apart the arms were answered. A live `--compare` answers every arm in
+  the same minute; recorded arms need not have been.
+- Any comparison, live or recorded, now says how many answers only one side gave and so
+  were left out of the pairing. `--json` carries this as `dropped` on each comparison.
+
+**What an existing install will notice:** nothing, unless you run `calibrate`. The hook,
+`judge` and `measure` are unchanged.
+
 ## 0.2.9
 
 **`calibrate --compare` prices a named arm by what answered, not by its name.** An arm

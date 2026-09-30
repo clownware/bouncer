@@ -10329,7 +10329,12 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
   }
   const byId = new Map(fixtures.map((f) => [f.id, f]));
   const scored = [];
+  const answered = [];
   const models = /* @__PURE__ */ new Set();
+  const backends = /* @__PURE__ */ new Set();
+  const questions = /* @__PURE__ */ new Set();
+  let first;
+  let last;
   let matched = 0;
   let unmatched = 0;
   let unscorable = 0;
@@ -10358,15 +10363,34 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
     }
     matched += 1;
     if (record2.policy !== void 0 && record2.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record2.policy !== void 0) questions.add(record2.policy.questions);
     if (record2.model !== void 0) models.add(record2.model);
+    if (typeof record2.backend === "string") backends.add(record2.backend);
+    if (typeof record2.ts === "string") {
+      if (first === void 0 || record2.ts < first) first = record2.ts;
+      if (last === void 0 || record2.ts > last) last = record2.ts;
+    }
     const truncated = record2.truncated === true ? { truncated: true } : {};
     const cut = record2.server_truncated;
     const serverTruncation2 = cut !== void 0 && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
-    scored.push(
-      ...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated, ...serverTruncation2 }, policy, set, setName).rows
-    );
+    const latencyMs = record2.latency_ms?.adapter ?? record2.latency_ms?.total ?? Number.NaN;
+    const one = { fixture, answers, probes, latencyMs, ...truncated, ...serverTruncation2 };
+    answered.push(one);
+    scored.push(...scoreAnswered(one, policy, set, setName).rows);
   }
-  return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
+  return {
+    scored,
+    answered,
+    matched,
+    unmatched,
+    unscorable,
+    otherSet,
+    reworded,
+    models: [...models].sort(),
+    backends: [...backends].sort(),
+    questions: [...questions].sort(),
+    ...first !== void 0 && last !== void 0 ? { span: { first, last } } : {}
+  };
 }
 function report(scored, calibration) {
   const byQuestion = /* @__PURE__ */ new Map();
@@ -10547,11 +10571,16 @@ function formatReport(reports, backend, calibration, scored = []) {
 var pairKey = (s) => `${s.fixture.id}::${s.question}`;
 function compare(a, b, calibration) {
   const bByKey = new Map(b.scored.map((s) => [pairKey(s), s]));
+  const aKeys = new Set(a.scored.map(pairKey));
   const paired = [];
   for (const left of a.scored) {
     const right = bByKey.get(pairKey(left));
     if (right !== void 0) paired.push([left, right]);
   }
+  const dropped = [
+    a.scored.filter((s) => !bByKey.has(pairKey(s))).length,
+    b.scored.filter((s) => !aKeys.has(pairKey(s))).length
+  ];
   const byQuestion = /* @__PURE__ */ new Map();
   for (const pair of paired) {
     const list = byQuestion.get(pair[0].question) ?? [];
@@ -10597,7 +10626,8 @@ function compare(a, b, calibration) {
     backends: [a.backend, b.backend],
     rows,
     verdicts: { same: verdictByFixture.size - differing.length, total: verdictByFixture.size, differing },
-    widest
+    widest,
+    dropped
   };
 }
 function formatComparison(comparison, calibration) {
@@ -10617,6 +10647,13 @@ function formatComparison(comparison, calibration) {
     "the gate below is the derived statistic max(p, 1 - p), computed the same way on both sides.",
     ""
   );
+  if (comparison.dropped[0] > 0 || comparison.dropped[1] > 0) {
+    lines.push(
+      `Paired on (fixture, question). Left out because the other side has no answer for them:`,
+      `${comparison.dropped[0]} from ${left}, ${comparison.dropped[1]} from ${right}.`,
+      ""
+    );
+  }
   lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
   lines.push("|---|---|---|---|---|---|---|");
   for (const row of comparison.rows) {
@@ -10922,6 +10959,14 @@ async function calibrate(args, write3) {
     return 1;
   }
   if (args.from !== void 0) {
+    const logs = args.from.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    if (logs.length > 1) {
+      if (args.compare !== void 0 || args.backend !== void 0 || args.out !== void 0) {
+        write3("--from with several logs compares them; it takes no --compare, --backend or --out.\n");
+        return 1;
+      }
+      return fromLogs(logs, args, resolved.policy, resolved.source, fixtures, write3);
+    }
     return fromLog(args, resolved.policy, fixtures, write3);
   }
   const primary = args.backend ?? resolved.policy.backend;
@@ -11143,6 +11188,141 @@ leaves them valid; rewording a question does not, and only a live run re-asks it
     );
   }
   return 0;
+}
+function fromLogs(specs, args, policy, policySource, fixtures, write3) {
+  const setName = args.set ?? GATE_SET;
+  const arms = [];
+  const used = /* @__PURE__ */ new Set();
+  for (const spec of specs) {
+    const { label: given, backend: path } = labelled(spec);
+    let source;
+    try {
+      source = (0, import_node_fs8.readFileSync)(path, "utf8");
+    } catch (err) {
+      write3(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+    let result;
+    try {
+      result = scoreFromLog(source, fixtures, policy, setName);
+    } catch (err) {
+      write3(`${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+    if (result.matched === 0) {
+      write3(`No line in ${path} matched a fixture id, so it has nothing to compare. Run --from ${path} alone to see why.
+`);
+      return 1;
+    }
+    if (result.backends.length > 1) {
+      write3(`${path} holds answers from ${result.backends.length} backends (${result.backends.join(", ")}), so it is not one arm.
+`);
+      return 1;
+    }
+    const backend = result.backends[0] ?? "unknown";
+    const model = result.models.length === 1 ? result.models[0] : void 0;
+    let label = given ?? (model !== void 0 && !backend.includes(model) ? `${backend} (${model})` : backend);
+    for (let n = 2; used.has(label); n += 1) label = `${given ?? backend} #${n}`;
+    used.add(label);
+    arms.push({ path, result, run: { backend: label, endpoint: backend, scored: result.scored, answered: result.answered } });
+  }
+  const wordings = new Set(arms.flatMap((a) => a.result.questions));
+  if (wordings.size > 1) {
+    write3(
+      `These logs were answered under ${wordings.size} different wordings of the "${setName}" questions:
+` + arms.map((a) => `  ${a.path}: ${a.result.questions.join(", ") || "not recorded"}
+`).join("") + `That is two experiments, not one comparison. Re-run the arms against one policy, or compare them one at a time against their own.
+`
+    );
+    return 1;
+  }
+  const unrecorded = arms.filter((a) => a.result.questions.length === 0).map((a) => a.path);
+  const calibration = policy.calibration;
+  const runs = arms.map((a) => a.run);
+  const first = runs[0];
+  const summaries = runs.map((r) => summarise(r, calibration));
+  const pairs = runs.slice(1).map((r, i) => {
+    const comparison = compare(first, r, calibration);
+    return { comparison, gates: gates(comparison, summaries[i + 1], calibration) };
+  });
+  const starts = arms.flatMap((a) => a.result.span !== void 0 ? [Date.parse(a.result.span.first)] : []).filter(Number.isFinite);
+  const apart = starts.length === arms.length && starts.length > 1 ? Math.max(...starts) - Math.min(...starts) : void 0;
+  if (args.json === true) {
+    write3(
+      `${JSON.stringify(
+        {
+          from: arms.map((a) => ({
+            path: a.path,
+            backend: a.run.backend,
+            endpoint: a.run.endpoint,
+            models: a.result.models,
+            questions: a.result.questions,
+            span: a.result.span,
+            matched: a.result.matched,
+            unmatched: a.result.unmatched,
+            unscorable: a.result.unscorable,
+            otherSet: a.result.otherSet,
+            reworded: a.result.reworded
+          })),
+          ...apart !== void 0 ? { startsApartMs: apart } : {},
+          backends: runs.map((r) => r.backend),
+          policy: policySource,
+          fixtures: fixtures.length,
+          reports: Object.fromEntries(runs.map((r) => [r.backend, report(r.scored, calibration)])),
+          arms: summaries,
+          comparison: pairs[0].comparison,
+          comparisons: Object.fromEntries(pairs.map((p) => [p.comparison.backends[1], p]))
+        },
+        null,
+        2
+      )}
+`
+    );
+    return 0;
+  }
+  write3(`Policy: ${policySource}
+`);
+  for (const a of arms) {
+    const when = a.result.span !== void 0 ? `, answered ${a.result.span.first}` : "";
+    write3(`${a.run.backend} = ${a.path} (${a.result.matched} items${when})
+`);
+  }
+  write3(
+    apart === void 0 ? "Not every log records when it was answered, so how far apart the arms were is unknown.\n" : `The arms started ${formatSpan(apart)} apart. A live --compare answers them in the same minute; this cannot.
+`
+  );
+  if (unrecorded.length > 0) {
+    write3(`${unrecorded.join(", ")} carries no question fingerprint, so whether every arm asked the same questions is unchecked.
+`);
+  }
+  write3("\n");
+  for (const a of arms) {
+    write3(formatReport(report(a.run.scored, calibration), `${a.run.backend} (recorded)`, calibration, a.run.scored));
+    if (a.result.reworded > 0) {
+      write3(`
+${a.result.reworded} of ${a.result.matched} were answered under a different wording than the policy has now.
+`);
+    }
+    write3("\n");
+  }
+  write3(formatArms(summaries));
+  for (const pair of pairs) {
+    write3("\n");
+    write3(formatComparison(pair.comparison, calibration));
+    write3("\n");
+    write3(formatGates(pair.gates, pair.comparison));
+  }
+  return 0;
+}
+function formatSpan(ms) {
+  const minutes = ms / 6e4;
+  if (minutes < 1) return "under a minute";
+  if (minutes < 120) return `${Math.round(minutes)} minutes`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${Math.round(hours)} hours`;
+  return `${Math.round(hours / 24)} days`;
 }
 async function run(fixtures, policy, adapter, label, total, args, answered) {
   const prefix = total > 1 ? `${label}: ` : "";
@@ -12920,7 +13100,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.9\n");
+      process.stdout.write("0.2.10\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
