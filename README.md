@@ -15,9 +15,10 @@ printing a private key, a live credential on the command line, `git stash clear`
 still run and still get logged; they just do not get to interrupt you, unless you enable a
 deny threshold yourself. Nothing in the way, and a floor. [Jump to modes](#modes).
 
-> **Status: v0.2 shipped, v0.3 in flight.** The hook runs end to end, it ships
-> observing, and every accuracy number below comes from a live calibration run against Jev
-> on the policy in this repository. Read the verdict paragraph under the table before the
+> **Status: the gate (v0.2) and the batch judge (v0.3 in the PRD's roadmap) have both
+> shipped; the plugin is at 0.2.9.** The hook runs end to end, it ships observing, and
+> every accuracy number below comes from a live calibration run against Jev on the policy
+> in this repository. Read the verdict paragraph under the table before the
 > table itself: clearing the bar is not the same as behaving well. See [docs/PRD.md](docs/PRD.md) for the spec and
 > [docs/adr/](docs/adr/) for what has been decided and why. [Install](#install) is two
 > commands.
@@ -38,7 +39,7 @@ in one call, for about four cents a day. Bouncer is the judgment layer, starting
 one call every Claude Code user makes hundreds of times a day: should this tool call run.
 The gate is the demo, because it installs as a plugin and reproduces the table below on your
 own machine. The place the bill actually goes down is batch work, which is what
-`bouncer judge` is being built for next: a policy of questions run over a file or a
+`bouncer judge` is for: a policy of questions run over a file or a
 directory of items, producing a judgments log and an escalation manifest naming which items
 failed which criteria, at what `p`. Judgment model decides; reasoning model sees only the
 escalations, and the ratio of escalated to judged is the saving, measured rather than
@@ -348,7 +349,7 @@ rule you enabled yourself, and those ship commented out. Out of the box that is 
 and silence, which is a coherent default rather than a degenerate one.
 
 That mode exists because a `PreToolUse` `deny` is honoured under the flag. Both halves of
-that were verified rather than read off the documentation: six of the seven captured
+that were verified rather than read off the documentation: all seven captured `PreToolUse`
 payloads in `test/fixtures/payloads/` carry `"permission_mode": "bypassPermissions"`, which
 is how we know the hook fires at all, and
 [`scripts/deny-probe-hook.mjs`](scripts/deny-probe-hook.mjs) confirmed on 2026-09-18 that a
@@ -413,8 +414,10 @@ changes that number, however many commits have landed. Your decision log is in t
 data directory, not in the versioned directory an update replaces; `/bouncer:status`
 prints its path if you would rather copy it first.
 
-Restart Claude Code, then run `/bouncer:status`. It prints the mode, the backend, the
-policy file it resolved and the path to the decision log. Node 20 or newer has to be on
+After installing, restart Claude Code and run `/bouncer:status`. It prints the mode, the
+backend, the policy file it resolved and the path to the decision log. `/bouncer:explain`
+says why the most recent judged call, or the one whose `tool_use_id` you pass, got the
+verdict it did, and `/bouncer:mode` walks through changing the mode. Node 20 or newer has to be on
 `PATH`; there is no `npm install` step, because `bin/bouncer.cjs` is a committed bundle
 with zero runtime dependencies ([ADR-002](docs/adr/002-bundled-single-file-on-node.md)).
 
@@ -735,6 +738,11 @@ plugins by fetching the repo and never runs `npm install`. Rebuild and commit it
 `src/` changes; CI checks that it matches.
 
 To capture real hook payloads to develop against, see [scripts/CAPTURE.md](scripts/CAPTURE.md).
+
+`node bin/bouncer.cjs skills` lists the skills the router in
+[ADR-006](docs/adr/006-the-skill-router.md) would discover on this machine, with the
+registry fingerprint. The router is not built; the command exists because discovery cannot
+be verified from inside this repository, only on a machine with skills installed.
 
 ## License
 

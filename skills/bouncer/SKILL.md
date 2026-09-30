@@ -52,9 +52,17 @@ anything outside the project". Never ask it to count or compare dates.
 ## When the user wants to enforce
 
 Enforcement is opt-in on purpose. `observe` changes nothing, `guard` can only add prompts,
-`full` can suppress them. Before recommending `guard`, check `/bouncer:status` for how
-many decisions have been logged — enforcing thresholds nobody has looked at is the thing
-the observe default exists to prevent. Before `full`, suggest `bouncer calibrate`.
+`full` can suppress them, and `seatbelt` denies on a hard-rule match and emits nothing else.
+Before recommending `guard`, check `/bouncer:status` for how many decisions have been
+logged — enforcing thresholds nobody has looked at is the thing the observe default exists
+to prevent. Before `full`, suggest `bouncer calibrate`.
+
+If the user runs `--dangerously-skip-permissions`, `guard` and `full` do nothing useful:
+there is no prompt for an `ask` to reach. `seatbelt` is the mode for that session. It is
+silent until one of the deterministic entries in `gate.hard_rules` matches, and that match
+is a `deny`; every judgment-derived `ask` is dropped. Recommend it without the calibration
+caveat, since a hard rule's false-positive rate is a property of the rule, not of the
+model.
 
 If the user asks you to enable `deny` rules, point out what makes them different: a
 false-positive `ask` costs a keystroke, but a false-positive `deny` returns a reason to
