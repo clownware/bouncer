@@ -1,10 +1,38 @@
 # ADR-006: The skill router
 
 - **Status:** accepted — the three open decisions were settled by Chris on 2026-09-18,
-  and the viability measurement (§10) came back inside budget
+  and the viability measurement (§10) came back inside budget. **Not built**, and the
+  execution contract is not settled: see the note of 2026-09-30 below and issue #58.
 - **Date:** 2026-09-18
-- **Context for:** v0.2
+- **Context for:** v0.2 when written; v0.5 in PRD §12 since the 2026-09-19 reprioritisation.
+  At 0.2.9 the discovery half exists (`src/engine/registry.ts`, `src/io/skills.ts`,
+  `bouncer skills`) and nothing else does: no `userpromptsubmit` entrypoint, no hook entry,
+  no `router:` block.
 - **Supersedes:** PRD §5.3 (router half), §6 `router:` block, §12 v0.2 DoD
+
+> **Still open, recorded 2026-09-30.** "Accepted" here means the design is agreed, not
+> that it is ready to build. Four things the review (`docs/adr-review-2026-09-18.md`) raised
+> are unresolved and tracked in #58, and two of this document's own questions are still
+> marked as Chris's:
+>
+> - **The recipient sentence in decision 3 is wrong.** "Nothing new leaves the machine"
+>   does not follow from the prompt and skill descriptions being visible to Claude:
+>   TypeSafe is a new recipient. The decision needs to say what fields are sent, to whom,
+>   that `suggest` is opt-in, and that the local adapter is the alternative — the way
+>   ADR-009 decision 4 does for batch content.
+> - **There is no absolute fit check.** Decision 2 picks a winner by a generic need signal
+>   and a margin between candidates, which can say the best option beat the others and not
+>   that it is suitable. TypeSafe's own skill-suggestion cookbook shortlists, then checks
+>   the selected candidate's fit with a rejection path.
+> - **The 500 ms timeout in §10 was measured warm**, five calls inside one process. The
+>   hook is a process per call and pays ~193 ms of TCP and TLS on every one (ADR-003,
+>   corrected). What fraction of router calls would time out cold is an unmade measurement.
+> - **Discovery of built-in and disabled skills** is the ceiling described under "What
+>   building it found"; the choice among the three ways to live with it is still open, as
+>   is where the Windows desktop tree lives.
+>
+> Two citations in this document are also corrected below: ADR-003 for a claim about
+> confidence it does not make, and ADR-002 for a caching finding ADR-007 reversed.
 
 ## What this is
 
@@ -118,7 +146,8 @@ comparable, so two skills can both come back 0.9; and there is no margin signal 
 `confidence` field, unlike `noul`, but the vendor documents it as a statistic derived from
 the distribution — so it carries nothing the distribution does not, and policy is written
 on the probabilities themselves. That is the same reasoning as ADR-003's, applied to a
-different question type.
+different question type. (Corrected 2026-09-30: ADR-003 does not discuss confidence. The
+reasoning is ADR-005's, and the verified fact is in CLAUDE.md and PRD §16 question 3.)
 
 ### 3. Names in the state, descriptions in the question
 
@@ -161,6 +190,11 @@ disable itself with one `systemMessage`, not a silently truncated registry.
 
 Nothing new leaves the machine: skill names and descriptions are already in the model's
 context, and the prompt is the user's own text.
+
+> **Wrong, recorded 2026-09-30.** Being in Claude's context is not the same as being sent
+> to TypeSafe, which is a second recipient. What this decision has to say instead is in the
+> note at the top of this document and in #58; it is not rewritten here because the
+> disclosure wording is a decision, not a correction.
 
 ### 4. Discovery completeness is a correctness requirement, not an optimisation
 
@@ -248,7 +282,9 @@ this ADR was carrying.
 across 3 manifests and ~50 `SKILL.md` reads. Against the 80 ms budget that is the
 difference between fitting and not, so the cache is load-bearing and ships with discovery
 rather than after it. ADR-002's finding that caching the parsed policy bought nothing does
-not transfer: that was one file parsed in 2 ms.
+not transfer: that was one file parsed in 2 ms. (2026-09-30: ADR-007 has since reversed
+that finding for the policy too — the parse is 22 ms on the shipped file, and the compiled
+policy is cached on disk. Both caches exist for the same reason.)
 
 **Some skills cannot be discovered at all, and this is a ceiling rather than a bug.** The
 CLI's built-in skills — `code-review`, `security-review`, `dataviz`, `artifact-design`,
@@ -394,7 +430,7 @@ needs no adapter change.
 
 | | budget |
 |---|---|
-| hook overhead, including discovery from cache | ≤ 80 ms p95 (ADR-002, unchanged) |
+| hook overhead, including discovery from cache | ≤ 80 ms p95 (ADR-002, unchanged — since 2026-09-19 a printed target rather than a gate; CI's gate is the paired regression against the base commit, ADR-007 and #73) |
 | `router.timeout_ms` | **500 ms**, lower than the gate's 800 |
 | total, `suggest` | ≤ 600 ms p95 |
 
@@ -541,7 +577,9 @@ where this repo keeps reasoning.
    so nothing else is worth measuring first. The sources table is the acceptance criteria
    and `marketing:brand-review` is the test. Carries two open questions to answer while
    building it: what `installationPreference: "available"` means, and where the Windows
-   equivalent of the desktop tree lives. Neither blocks the macOS path.
+   equivalent of the desktop tree lives. Neither blocks the macOS path. (The first was
+   answered under "What building it found": `available` means enabled. The second is still
+   open. Noted 2026-09-30.)
 2. **The `needs_skill` state change** (decision 3) and the `UserPromptSubmit` stdout
    capture (decision 1).
 3. **Observe mode and the offline harness**, including the registry fingerprint

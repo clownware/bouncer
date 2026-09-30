@@ -1,7 +1,9 @@
 # ADR-008: Bouncer is a judgment engine; the gate is its first consumer
 
 - **Status:** accepted; what a manifest and a record carry corrected on 2026-09-19, and
-  the priority among consumers corrected the same day — both in place
+  the priority among consumers corrected the same day — both in place. The two deferred
+  items in decision 1 were landed by ADR-009 (`policies:`, and fixtures as items), and
+  `bouncer judge` has shipped; noted in place on 2026-09-30.
 - **Date:** 2026-09-18
 - **Context for:** v0.2 (naming), v0.3 (`bouncer judge`), v0.4 (package extraction)
 - **Numbering:** proposed as ADR-006, written as ADR-008. ADR-006 is the skill router and
@@ -106,6 +108,11 @@ type-level:
 The deferred rows are not blocked on anything; they are held because a schema change with
 no second consumer is churn, and this window is not the time to spend on it.
 
+> **Landed by ADR-009 (2026-09-18), noted here 2026-09-30.** Both deferred rows shipped
+> with `bouncer judge`: the policy file names sets under `policies:` with top-level `gate:`
+> as a permanent alias, and a fixture is an item with a `kind` that picks its state builder,
+> with `fixtures/gate.jsonl` unchanged by a byte. ADR-009 is the record.
+
 ## The escalation manifest
 
 ### What it is
@@ -188,7 +195,7 @@ observe mode is trying to read.
 | The `ask` reason at the prompt | The deciding signal is the headline, as ADR-004 left it, and the others are appended: `secrets 0.71; also prod 0.66`. A user deciding whether to approve needs to know the call tripped two things, not one. | shipped |
 | `/bouncer:explain` | The full signal list off the log line, each with its threshold, its rule, and the question's own words, with `→` marking the one that decided. The judgments table above it is every answer; this is the subset a rule acted on. | shipped |
 | `/bouncer:status` | `escalated / judged` over the last 200 calls. | shipped |
-| `bouncer judge` | The manifest as a standalone artifact, and the input to the reasoning pass. | v0.3 |
+| `bouncer judge` | The manifest as a standalone artifact, and the input to the reasoning pass. | shipped (ADR-009; "v0.3" when this was written) |
 
 ### What is not an escalation
 
@@ -281,7 +288,7 @@ items a test they either pass or don't.
 **The cost.** Two of decision 1's three items are deferred, so for the length of v0.2 the
 policy file's `gate:` and `calibrate`'s hook-shaped fixtures contradict the naming. That
 is deliberate — see the table above — and the contradiction is visible in the types, which
-is the cheapest place for it to sit until v0.3 resolves it.
+is the cheapest place for it to sit until v0.3 resolves it. (It did: ADR-009.)
 
 **The risk to watch.** The bigger claim invites scope. The rule in decision 3 is the brake:
 no package extraction until a second consumer has forced the interface, and no roadmap item

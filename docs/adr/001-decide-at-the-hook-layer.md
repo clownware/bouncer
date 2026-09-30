@@ -1,6 +1,8 @@
 # ADR-001: Decide at the hook layer, not as MCP tools
 
-- **Status:** accepted
+- **Status:** accepted; the claim about what the gated model can know narrowed on
+  2026-09-30, in place. Whether a `deny` is honoured under `--dangerously-skip-permissions`
+  was settled by ADR-004.
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -8,6 +10,17 @@
 
 Bouncer runs as a `PreToolUse` hook and talks to the classifier itself. The model being
 gated never sees the judge, cannot call it, and cannot know what it was asked.
+
+> **Corrected on 2026-09-30**, after `docs/adr-review-2026-09-18.md`'s note on this ADR. "Cannot
+> know what it was asked" is more than the code delivers. A `deny` hands the model
+> `permissionDecisionReason`, and that reason carries the question's own instructions and the
+> probability it answered at (`src/hooks/pretooluse.ts`); the policy is a YAML file in the
+> repository and the log is a file on disk, both readable by a tool call. What the hook layer
+> actually buys is narrower and still the point: the decision is **independent of the acting
+> model's cooperation**. It cannot call the judge, cannot answer for it, and cannot change the
+> policy from inside a tool call without that call itself being judged. That is the claim the
+> rest of this document rests on, and it is the one to defend. ADR-004 later confirmed the
+> other half, that a hook `deny` is honoured under `--dangerously-skip-permissions`.
 
 ## Why not MCP
 
@@ -79,4 +92,6 @@ the emitted verdict set until something actually tests it — nothing in v0.1 em
   beyond what the user's own settings allow.
 - The hook is in the latency path of every gated tool call. See ADR-002.
 - Because the model cannot see the judgment, explaining a verdict requires a log and a
-  command to read it — hence `decisions.jsonl` and `/bouncer:explain`.
+  command to read it — hence `decisions.jsonl` and `/bouncer:explain`. (Read with the
+  2026-09-30 note above: the model sees a deny's reason; it does not see an `allow`, an
+  `ask`, or anything in `observe`.)

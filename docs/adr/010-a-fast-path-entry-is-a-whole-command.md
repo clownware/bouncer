@@ -1,6 +1,7 @@
 # ADR-010: A fast-path entry is a whole command unless it ends in a space
 
-- **Status:** accepted; the shipped list's `git status` entry corrected on 2026-09-19
+- **Status:** accepted; the shipped list's `git status` entry corrected on 2026-09-19; what
+  a whole-command entry still trusts said on 2026-09-30
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 - **Changes:** the matching rule `policy/default.yaml` documented as "a literal prefix"
@@ -69,10 +70,20 @@ accepts — `unreviewed_execution` says so in its own `criteria.false`. The argu
 makes the command stop being that. All five took the fast path, and in `full` mode bouncer
 would have emitted `allow` for them.
 
+> **Said plainly, 2026-09-30**, after the review's note on this ADR. Allowing bare
+> `npm test` still trusts everything the bare form reaches: the `scripts` block of the
+> project's `package.json`, its configuration files, whatever `node_modules` resolves to,
+> and the environment the command inherits. The whole-command rule closes the *argument*
+> escape and nothing else. A repository that puts `curl … | sh` under `"test"` runs it
+> unjudged, which is the trust the policy's `criteria.false` accepts on purpose; this ADR
+> narrows the hole, it does not make the script safe.
+
 ## The same audit found one thing that is not about entries
 
 `"ls "`, `"which "` and `"git status "` take arguments because nothing they can be given
-writes or runs anything. One thing they can be given is a variable, and the shell expands
+writes or runs anything. (`"git status "` is as this was written; the correction above
+replaced it with five whole commands on 2026-09-19, and the audit here is about the two
+that remain.) One thing they can be given is a variable, and the shell expands
 it before the verb sees it. Tried with a fake variable: `ls $VAR` prints
 `ls: <value>: No such file or directory` in bash and zsh, and zsh's `which $VAR` prints
 `<value> not found`. That is `echo $OPENAI_API_KEY` — the `secrets` question's own example —

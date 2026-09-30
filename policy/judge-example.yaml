@@ -37,6 +37,9 @@ policies:
     # is never sent to the model, so `unsupported_claim` carries no meaning by itself and
     # the instruction has to say the whole thing.
     questions:
+      # What this question checks is whether a source is *named*, not whether the source
+      # supports the claim. Fine for a draft review; it is not fact verification. Checking
+      # semantic support needs the source passage in the state, which this set never sees.
       unsupported_claim:
         instructions: "The draft in `text` states a specific fact, number or outcome without naming where it came from."
         criteria:

@@ -1,6 +1,7 @@
 # ADR-007: Cache the compiled policy on disk, keyed on the policy text
 
-- **Status:** accepted, with a measurement consequence added on 2026-09-19, in place
+- **Status:** accepted, with a measurement consequence added on 2026-09-19 and the
+  invalidation rule completed on 2026-09-30, both in place
 - **Date:** 2026-09-18
 - **Context for:** v0.2
 - **Reverses:** ADR-002, item 2 — "Caching the parsed policy as JSON is not worth doing …
@@ -88,6 +89,22 @@ field to `Policy`, `GatePolicy`, `HardRule`, `HardRuleWhen`, `Rule` or `Calibrat
 fails `test/policycache.test.ts` until the number moves. It is pinned against a fixture
 rather than the shipped policy on purpose, so that a thread editing the questions does not
 have to bump a cache version to do it.
+
+> **Corrected on 2026-09-30**, after the review's note on this ADR. The shape test guards
+> the *shape*, and a stale compiler is not only a shape. A change to how `loadPolicy`
+> normalises, defaults or validates can change what the same source text compiles to with
+> no type changing at all — and then the pinned test stays green while the cache keeps
+> serving the old result. That has already happened once: 0.2.4 added the `token_prefix`
+> predicate, and a policy an older build had *rejected* was still rejected from the cache
+> until `CACHE_VERSION` moved, which is why 0.2.4's CHANGELOG entry says the first call
+> re-parses. So the rule is: **bump `CACHE_VERSION` whenever `loadPolicy` can return
+> something different for the same text**, not only when a type gains a field, and say so
+> in the CHANGELOG entry as 0.2.4 and 0.2.8 do. The test catches the half it can see; the
+> other half is a review question on any change to `src/engine/policy.ts`.
+>
+> One more thing the cache does not do: it removes the parse, not the read. The source is
+> still read and compared on every call, so a hit still scales with file size — at 0.24 ms
+> for 17 KB it is not a number anyone will notice, but it is not zero.
 
 ## Consequences
 

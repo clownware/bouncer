@@ -1,6 +1,7 @@
 # ADR-002: A single bundled JS file on Node, with the bundle committed
 
-- **Status:** accepted; item 2 reversed by ADR-007
+- **Status:** accepted; item 2 reversed by ADR-007; the latency it prices separated into its
+  four parts on 2026-09-30, in place
 - **Date:** 2026-09-18
 - **Context for:** v0.1
 
@@ -61,7 +62,24 @@ problems, for a saving that is small next to the adapter call. Not for v0.1.
 > plugin, ~190 ms of a ~437 ms adapter call is TCP and TLS setup paid again on every tool
 > call (ADR-003, corrected the same day). So the saving is not small next to the adapter
 > call — it is most of half of it. The lifecycle problems listed above are exactly as real
-> as they were, which is why this is a note and not a reversal.
+> as they were, which is why this is a note and not a reversal. The daemon question is
+> issue #51, which asks for an ADR or a measured reason not to have one.
+
+> **Corrected on 2026-09-30**, after the review's note on this ADR. This document reads as
+> though hook latency were one number. It is four, and only the first is what this ADR
+> decided about:
+>
+> | part | measured | where |
+> |---|---|---|
+> | process startup | ~28 ms bare Node, ~45 ms with the bundle | the table above |
+> | policy load | 22 ms to parse the shipped policy cold; 0.24 ms to hit the cache | ADR-007 |
+> | opening the connection | ~95 ms to a socket, ~193 ms to finish TLS, on every call | ADR-003, corrected |
+> | the request and the model | the remaining ~245 ms of a 437 ms median | ADR-003, corrected |
+>
+> Bundling moves the first row. Caching moves the second. Nothing in a process-per-call
+> design moves the third, which is the daemon argument in the note above. The fast path was
+> once described as the lever on all of this; ADR-010 measured it at 0 of 88 real calls, so
+> it is not one.
 
 ## Consequences
 
