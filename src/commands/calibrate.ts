@@ -22,9 +22,9 @@
 // not name its own set on purpose: the same batch scored against two sets is a thing
 // someone will want to do, and a set baked into every line makes that an edit (docs/adr/009).
 //
-// `--compare` runs two backends over the same fixture set and prints them side by side.
-// Both runs go through the same `score()`, so the comparison is of the backends and not of
-// two code paths that happen to agree.
+// `--compare` runs any number of backends over the same fixture set and compares each
+// after the first against the first (0.2.8). Every arm goes through the same `score()`, so
+// the comparison is of the backends and not of code paths that happen to agree.
 //
 // `jev@<url>` is a second Jev-shaped backend: the same `JevAdapter` pointed at another
 // server's `/v1/systemone`, such as openjev-sglang. `--compare jev,jev@<url>` is therefore
