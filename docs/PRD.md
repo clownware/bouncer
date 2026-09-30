@@ -1,7 +1,15 @@
 # PRD — Bouncer: a decision layer for Claude Code hooks
 
-**Status:** Draft v0.1 · **Owner:** Chris / Clownware · **Date:** 2026-09-18
+**Status:** Historical spec — Draft v0.1 of 2026-09-18, with dated "Current contract" notes · **Owner:** Chris / Clownware · **Date:** 2026-09-18, contract notes 2026-09-30
 **Working name:** `bouncer` (alternatives: `verdict`, `gatekeep`). Name the layer, not the backend.
+
+> **How to read this document (2026-09-30).** This is the spec as it was written on
+> 2026-09-18, before the Jev API and the Claude Code hook payloads were verified. It is kept
+> as history because it is why the ADRs read the way they do. **Where this document and
+> `docs/adr/` disagree, the ADRs win.** Each section that has since been superseded opens
+> with a dated **Current contract** note saying what is true now and pointing at the ADR,
+> `CHANGELOG.md` entry or source file that replaced the text under it. The historical text
+> itself is unchanged.
 
 ---
 
@@ -49,6 +57,16 @@ Claude Code ──(hook JSON on stdin)──▶ bouncer CLI ──▶ Decision E
 
 ### 5.1 Components
 
+> **Current contract (2026-09-30).** One hook entrypoint, not two: `hooks/hooks.json`
+> registers `PreToolUse` only, matcher `Bash|Edit|Write|NotebookEdit`, running
+> `bin/bouncer.cjs pretooluse`. There is no `userpromptsubmit`; the router is unbuilt and
+> sits at v0.5 in §12 ([ADR-006](adr/006-the-skill-router.md)). Commands are `calibrate`,
+> `explain`, `mode` and `status`; there is no `dry-run`. The log is not fixed at
+> `~/.bouncer`: it lives in `dataDir()` (`src/io/config.ts`), which is `$CLAUDE_PLUGIN_DATA`
+> for an installed plugin and `~/.bouncer` only as the fallback (`CHANGELOG.md` 0.2.1), and
+> it stores the redacted state itself, not only a hash (§9, `src/io/log.ts`). The adapter
+> takes a map of named questions, not `questions[]` (§5.2).
+
 | Component | Responsibility |
 |---|---|
 | **Hook entrypoints** | Two thin scripts registered in the plugin's `hooks/hooks.json`: `pretooluse` and `userpromptsubmit`. Read stdin JSON, call the engine, write stdout JSON. Hard timeout well under Claude Code's hook timeout. |
@@ -61,6 +79,17 @@ Claude Code ──(hook JSON on stdin)──▶ bouncer CLI ──▶ Decision E
 | **Commands / skill** | `/bouncer:status`, `/bouncer:dry-run on|off`, `/bouncer:explain <id>` (shows the last verdict's raw judgments), plus a SKILL.md that teaches Claude to consult the log when a user asks "why did that get blocked." |
 
 ### 5.2 Adapter contract
+
+> **Current contract (2026-09-30).** The shape below predates verification against
+> `docs.typesafe.ai`; `src/adapters/types.ts` is the contract. `questions` is a **map**
+> keyed by caller-chosen names, each `{ type, instructions, criteria }`, and answers come
+> back under the same keys — there is no `id`, `prompt`, `options` or `levels`. A `noul`
+> answer is `{ type: "noul", noul: 0..1 }` with **no confidence field** and no `p`.
+> `decide(request: DecideRequest)` takes `{ state, questions, timeoutMs, signal? }` and
+> resolves `{ answers, latencyMs, model?, inputTokens?, serverTruncation? }`.
+> `AdapterErrorKind` also has `invalid_request` and `malformed_response`. Confirmed live on
+> 2026-09-18: `scripts/jev-latency.mjs` is a working request, and CLAUDE.md "Verified
+> facts" is the pinned summary.
 
 ```ts
 type Question =
@@ -83,12 +112,34 @@ All questions in one call. Adapter must be side-effect free and must throw a typ
 
 ### 5.3 Hook I/O
 
+> **Current contract (2026-09-30).** `allow` is emitted only in `full` mode; there is no
+> `auto_allow` key, the mode is that switch (§6, `src/engine/types.ts`,
+> [ADR-003](adr/003-fail-to-prompt-and-observe-by-default.md)). In `observe`, the default,
+> nothing is emitted at all. The `UserPromptSubmit` half is unbuilt
+> ([ADR-006](adr/006-the-skill-router.md); v0.5 in §12). The open item below is closed:
+> the payloads are captured in `test/fixtures/payloads/` and the pinned facts are in
+> [ADR-001](adr/001-decide-at-the-hook-layer.md) (§16 Q1).
+
 - **PreToolUse:** read `tool_name`, `tool_input`, `cwd`, session/transcript path from stdin. Output a decision using Claude Code's documented hook response schema (`permissionDecision: allow|deny|ask` + reason). `ask` means "fall through to the normal prompt"; `allow` suppresses it only when the user has enabled auto-allow in policy.
 - **UserPromptSubmit:** read `prompt`, `cwd`. Output additional context (one line: `Consider loading skill: <name> — <reason>`) or nothing.
 
 > **Open item (verify first thing):** confirm the exact current field names for hook input/output and the per-hook timeout against the live Claude Code hooks docs. Do not build against memory. Pin the docs version in an ADR.
 
 ## 6. Policy schema (v0.1)
+
+> **Current contract (2026-09-30).** `policy/default.yaml` is the schema; the block below
+> is the pre-verification draft. Modes are `observe | guard | full | seatbelt`, not
+> `dry-run | enforce` (`src/engine/types.ts`,
+> [ADR-003](adr/003-fail-to-prompt-and-observe-by-default.md),
+> [ADR-004](adr/004-hard-rules-before-the-judge.md)), and `observe` emits nothing rather
+> than `ask`. Sets live under `policies:`, with a top-level `gate:` as a permanent alias
+> that the shipped file still uses ([ADR-009](adr/009-the-batch-judge.md)). `tools` is
+> `[Bash, Edit, Write, NotebookEdit]`; `MultiEdit` does not exist in Claude Code. There is
+> no `auto_allow` and no `conf` condition: every rule is on `p`, the shipped rules are `ask`
+> at `>=0.60` and `>=0.65` plus an `any: 0.40..0.60` uncertainty rule, and the `deny` rules
+> ship commented out. `gate.fast_path`, `gate.hard_rules`, `gate.probe_questions`,
+> `skip_permission_modes` and a `calibration` block exist and are not shown here. The
+> `router:` block is superseded by [ADR-006](adr/006-the-skill-router.md).
 
 ```yaml
 version: 1
@@ -128,6 +179,14 @@ Design rules: policy is data, questions are plain English, thresholds are number
 
 ## 7. State construction
 
+> **Current contract (2026-09-30).** The state is compact JSON with one named field per
+> fact, not the prose below (`src/engine/state.ts`): `tool`, `action` (a description of the
+> action, never file contents), `project` (the cwd **basename**; the full path never leaves
+> the machine), `permission_mode`, `running_as_subagent`, `git_branch`, `git_dirty` and
+> `recent_tools` (the last three). Anything numeric or path-shaped is computed in the
+> builder rather than asked. The 4 KB cap holds (`MAX_STATE_BYTES`). The router state is
+> unbuilt ([ADR-006](adr/006-the-skill-router.md)).
+
 Gate state (≤ 4 KB, truncated with a marker):
 
 ```
@@ -143,6 +202,14 @@ Router state (≤ 2 KB): the user prompt + a one-line list of skill names with d
 Keep state small on purpose: latency scales with input tokens, and Jev is cheapest and fastest on dense state.
 
 ## 8. Failure modes & latency budget
+
+> **Current contract (2026-09-30).** A crash exits 1, not 0. An uncaught Node exception
+> exits 1, which Claude Code treats as a non-blocking error; only exit 2 blocks the tool
+> call, so the invariant is **never exit 2** (`src/cli.ts`, tested, CLAUDE.md). The circuit
+> breaker exists and trips into `observe` — the mode `dry-run` became — after 5
+> consecutive adapter failures or 20 consecutive over-budget calls, per session
+> (`src/io/breaker.ts`). The 80 ms hook overhead is a printed target, not a gate; the
+> enforced gate is relative (§14).
 
 | Condition | Behavior |
 |---|---|
@@ -164,6 +231,14 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 
 ## 10. Calibration harness
 
+> **Current contract (2026-09-30).** `fixtures/gate.jsonl` holds 104 fixtures, not 99.
+> `--backend` takes `jev | jev@<url> | chat@<url> | local | mock`, and `--compare` takes
+> any number of backends, each compared against the first, with a Brier gate and a safety
+> gate (`src/commands/calibrate.ts`; `CHANGELOG.md` 0.2.5 through 0.2.8). `--from` re-scores
+> a decisions log's recorded answers with no key, and `--set` names a policy set
+> ([ADR-009](adr/009-the-batch-judge.md)). The bar lives in the policy's `calibration`
+> block, and "enabling `enforce`" is moving to `guard` or `full`.
+
 `bouncer calibrate [--from decisions.jsonl | --fixtures fixtures/*.jsonl] [--backend jev|local]`
 
 - Fixture format: `{ state, questions, expected: {...} }`. Ship ~150 hand-labeled fixtures across the seven gate questions (destructive/safe git, rm variants, curl to registries vs. arbitrary hosts, secret echo vs. secret-shaped strings, prod vs. staging, writes to sensitive paths, piped or auto-approved execution). v0.1 ships 99, which is short of the target and is why the per-bucket accuracies in the README rest on three or four samples each.
@@ -172,6 +247,15 @@ Budget: hook overhead (Node start + JSON) ≤ 80 ms; adapter call ≤ 500 ms p95
 - This is a release gate: v0.1 README must publish the fixture table for Jev so users see the numbers before enabling `enforce`.
 
 ## 11. Plugin layout
+
+> **Current contract (2026-09-30).** `hooks/hooks.json` registers `PreToolUse` only. The
+> bundle is `bin/bouncer.cjs`, committed and rebuilt from `src/` on every change
+> ([ADR-002](adr/002-bundled-single-file-on-node.md)). `commands/` holds `calibrate.md`,
+> `explain.md`, `mode.md` and `status.md`; there is no `dry-run.md`. `src/hooks/` holds
+> `pretooluse.ts` alone, and the tree has grown `src/commands/` (`judge`, `measure`,
+> `explain`, `status`, …), `src/io/` (everything that touches the filesystem: config, log,
+> breaker, policy cache) and `src/{judge,measure}.ts` beside `calibrate.ts`
+> ([ADR-008](adr/008-bouncer-is-a-judgment-engine.md), [ADR-009](adr/009-the-batch-judge.md)).
 
 ```
 bouncer/
@@ -306,6 +390,11 @@ evaluation problem.
 
 **v0.3 — `bouncer judge`, the batch consumer**
 
+> **Current contract (2026-09-30).** The shipped flag for the set is `--set <name>`;
+> `--policy <file>` names a policy file instead. The usage line is
+> `bouncer judge <file-or-dir> [--set name] [--backend jev|local|mock] [--policy file]`
+> (`src/commands/judge.ts`).
+
 - A second entrypoint over the same engine: `bouncer judge --policy <set> <file-or-dir>`,
   reading a JSONL file or a directory of items, writing a judgments log and an escalation
   manifest. Its state builder is a second implementation of `StateBuilder`, not a fork of
@@ -394,6 +483,15 @@ carries their titles and nothing is reserved for them:
 
 ## 14. Test plan
 
+> **Current contract (2026-09-30).** CI does not assert an absolute 80 ms. `npm run bench`
+> prints the target and does not enforce it, because an absolute number measures the
+> machine. The gate is relative: `.github/workflows/ci.yml` runs `scripts/bench.mjs
+> --against` the base commit's committed bundle, interleaved, each arm reading its own
+> policy, and fails a change whose paired median is more than 10% worse than the base's —
+> the number lives in `ci.yml`. It is skipped when bundle, policy and bench are
+> byte-identical to the base ([ADR-002](adr/002-bundled-single-file-on-node.md),
+> [ADR-007](adr/007-cache-the-compiled-policy.md)).
+
 - Unit: policy parsing, rule evaluation order, redaction (table-driven, includes near-misses), state truncation.
 - Adapter: `mock` deterministic; `jev` tested with stubbed fetch for 200/401/429/timeout.
 - Integration: replay fixtures through the real hook entrypoint via stdin; assert stdout schema.
@@ -402,11 +500,24 @@ carries their titles and nothing is reserved for them:
 
 ## 15. Success metrics
 
+> **Current contract (2026-09-30).** "Enforce mode" is `guard` (adds prompts, never removes
+> one) or `full` (also emits `allow`); "dry-run" is `observe`
+> ([ADR-003](adr/003-fail-to-prompt-and-observe-by-default.md)). The calibration bar is the
+> policy's `calibration` block (`confidence_floor: 0.80`, `accuracy_bar: 0.85`), not this
+> section.
+
 - Author dogfood: prompt interruptions down ≥ 50% at zero unsafe allows over two weeks in enforce mode.
 - Calibration: Jev gate questions ≥ 0.85 accuracy in the 0.8+ confidence bucket on fixtures.
 - Adoption signal: 25 installs / 3 external policy PRs in the first month — enough to know whether the policy format is the thing people fork.
 
 ## 16. Open questions
+
+> **Current contract (2026-09-30).** Q5 is resolved: the repository is its own
+> single-plugin marketplace (`.claude-plugin/marketplace.json`; README "Install" is
+> `claude plugin marketplace add clownware/bouncer` then
+> `claude plugin install bouncer@bouncer`). Q4 stays open with the rest of
+> [ADR-006](adr/006-the-skill-router.md)'s unsettled questions, tracked in
+> [#58](https://github.com/clownware/bouncer/issues/58).
 
 1. ~~Exact current Claude Code hook schema and timeout.~~ **Answered.** Captured from a live session on 2026-09-18; the payloads are in `test/fixtures/payloads/` and the pinned facts are in `docs/adr/001`. Read a fixture rather than the docs.
 2. ~~Jev state-size limit and rate limits.~~ **Answered.** 64k tokens for state plus all questions, 32k for state plus the longest question. Rate limits are documented as dynamically adjusting, so nothing hardcodes them.
@@ -415,6 +526,11 @@ carries their titles and nothing is reserved for them:
 5. Marketplace: publish under `clownware/plugins` or a dedicated repo? Recommend dedicated repo, listed in the existing marketplace.
 
 ## 17. Project brief (paste into the Claude Code project)
+
+> **Current contract (2026-09-30).** Historical: v0.1 shipped and the brief was not
+> updated for later versions. "Dry-run" is `observe`
+> ([ADR-003](adr/003-fail-to-prompt-and-observe-by-default.md)), and `CLAUDE.md` is the
+> current copy of the rules, as the addendum below says.
 
 **Goal:** Ship Bouncer v0.1 — a Claude Code plugin whose PreToolUse hook classifies tool calls via a pluggable System One adapter (Jev first) against a user-owned YAML policy, in dry-run by default, with a calibration harness and published fixture results.
 
