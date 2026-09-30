@@ -42,25 +42,32 @@ In a scratch repo, get Claude to run at least one of each. The payload shape dif
 per tool and the state builder needs all of them:
 
 - `Bash` — one plain command, one with a heredoc, one multi-line chain
-- `Edit` — a small edit to an existing file
-- `MultiEdit` — two or more edits in one call
+- `Edit` — a small edit to an existing file. There is no `MultiEdit` to exercise: it does
+  not exist as a tool in Claude Code 2.1.201; `Edit` absorbed it (ADR-001)
 - `Write` — a new file, and an overwrite of an existing file
 - `NotebookEdit` — if you have a notebook handy; skip if not
 - A `Task`/subagent call, so we capture `agent_id` / `agent_type`
-- One `UserPromptSubmit`, for the v0.2 router
+- One `UserPromptSubmit`, for the skill router — v0.5 in PRD §12, and not built
 
 Then run once under `--permission-mode plan` and once under `acceptEdits`, so we capture
 more than one value of `permission_mode`.
 
 ## 3. What to check while you are in there
 
-These are the open questions from ADR-001 that only a real payload can settle:
+These were the open questions from ADR-001 that only a real payload could settle. As of
+2026-09-30 the committed payloads in `test/fixtures/payloads/` answer all but the first:
 
 - Is `permissionDecision: "defer"` actually accepted, and where does it sit in the
-  most-restrictive-wins merge order relative to `ask`?
+  most-restrictive-wins merge order relative to `ask`? **Still open.** The recorder is inert
+  and the deny probe in §5 did not exercise it; nothing in the repo emits it.
 - Do `prompt_id`, `scratchpad_dir`, `effort` and `tool_use_id` appear, spelled that way?
-- Does `permission_mode` report `bypassPermissions` when started with that flag?
-- On `UserPromptSubmit`, is the field `prompt_text` or `prompt`?
+  **Yes** — all four are in `pretooluse-bash.json`, and `effort` is an object,
+  `{"level": "high"}`, not a string.
+- Does `permission_mode` report `bypassPermissions` when started with that flag? **Yes** —
+  every one of the seven `pretooluse-*.json` fixtures carries it; the eighth file,
+  `userpromptsubmit-none.json`, was captured under `acceptEdits`.
+- On `UserPromptSubmit`, is the field `prompt_text` or `prompt`? **`prompt`**, per
+  `userpromptsubmit-none.json`.
 
 ## 4. Normalize and commit
 
@@ -78,9 +85,14 @@ is your own.
 
 ## 5. Probing deny under bypass
 
+**Done.** The probe below was run on 2026-09-18 and the sentinel command was blocked, so a
+hook `deny` is honoured under `--dangerously-skip-permissions`; ADR-004 records the result
+under "What is verified, and what is not", and `seatbelt` mode was built on it. The
+procedure is kept so it can be re-run against a new Claude Code.
+
 `--dangerously-skip-permissions` is the mode Bouncer is most useful in, and `seatbelt`
 mode (ADR-004) assumes a hook `deny` is still honoured there. The captured payloads prove
-the *first* half of that — six of the seven `PreToolUse` fixtures carry
+the *first* half of that — all seven `PreToolUse` fixtures carry
 `"permission_mode": "bypassPermissions"`, so the hook demonstrably fires under the flag —
 and can never prove the second, because the recorder is inert. That is the same reason
 ADR-001 still lists `permissionDecision: "defer"` as unverified.
@@ -109,9 +121,11 @@ to run `echo BOUNCER_DENY_PROBE`. Then, as a control, ask it to run `echo hello`
 probe ignores.
 
 - **The command is blocked and Claude reports the reason** → deny is honoured under bypass.
-  `seatbelt` is viable. Record it in ADR-004 with the date.
+  `seatbelt` is viable. This is what happened on 2026-09-18, and ADR-004 records it with
+  the date.
 - **The command runs and prints `BOUNCER_DENY_PROBE`** → deny is ignored under bypass, and
-  `seatbelt` is a mode that cannot do anything. Stop and say so before it gets built.
+  `seatbelt` is a mode that cannot do anything. On a newer Claude Code that would be a
+  regression to report, since `seatbelt` is already built and shipped.
 
 Remove the hook entry afterwards.
 
