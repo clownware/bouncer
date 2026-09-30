@@ -7,7 +7,7 @@
 // signal is a response header and only a real HTTP round trip carries one.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -292,5 +292,96 @@ describe("calibrate --compare with three arms", () => {
     expect(payload.arms.map((a) => a.backend)).toEqual(["mock", "local-decision", "again"]);
     expect(payload.comparison.backends).toEqual(["mock", "local-decision"]);
     expect(Object.keys(payload.comparisons)).toEqual(["local-decision", "again"]);
+  }, 60_000);
+});
+
+// `--from a.jsonl,b.jsonl` (#101): a published comparison re-scored with no key. `--out`
+// records one arm per file, so this is the only way a paired run's committed answers print
+// the paired table again. What a live run guarantees and two files do not — one backend per
+// file, one wording of the questions, answers given in the same minute — is checked here.
+describe("calibrate --from with several logs", () => {
+  let data: string;
+  const log = (name: string) => join(data, name);
+
+  const run = (...args: string[]) =>
+    new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: resolve("."),
+        CLAUDE_PLUGIN_DATA: data,
+        BOUNCER_POLICY: resolve("policy/default.yaml"),
+      };
+      const child = spawn(process.execPath, ["bin/bouncer.cjs", "calibrate", ...args], { env });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (c) => (stdout += c));
+      child.stderr.on("data", (c) => (stderr += c));
+      child.on("close", (status) => done({ status, stdout, stderr }));
+    });
+
+  const lines = (path: string) => readFileSync(path, "utf8").trim().split("\n");
+
+  beforeAll(async () => {
+    data = mkdtempSync(join(tmpdir(), "bouncer-from-pair-"));
+    for (const name of ["a.jsonl", "b.jsonl"]) {
+      const r = await run("--backend", "mock", "--out", log(name));
+      expect(r.status, r.stderr).toBe(0);
+    }
+  }, 60_000);
+
+  afterAll(() => rmSync(data, { recursive: true, force: true }));
+
+  it("prints the comparison the live run printed, from the files alone", async () => {
+    const live = JSON.parse((await run("--compare", "mock,again=mock", "--json")).stdout);
+    const recorded = await run("--from", `${log("a.jsonl")},${log("b.jsonl")}`, "--json");
+    expect(recorded.status, recorded.stderr).toBe(0);
+    const payload = JSON.parse(recorded.stdout);
+    expect(payload.comparison.rows).toEqual(live.comparison.rows);
+    expect(payload.comparison.verdicts).toEqual(live.comparison.verdicts);
+    expect(payload.comparison.dropped).toEqual([0, 0]);
+  }, 60_000);
+
+  it("names each column from what answered, never from the file, and takes a name=", async () => {
+    const bare = JSON.parse((await run("--from", `${log("a.jsonl")},${log("b.jsonl")}`, "--json")).stdout);
+    expect(bare.backends).toEqual(["mock", "mock #2"]);
+    expect(bare.from.map((f: { endpoint: string }) => f.endpoint)).toEqual(["mock", "mock"]);
+
+    const named = await run("--from", `before=${log("a.jsonl")},after=${log("b.jsonl")}`);
+    expect(named.status, named.stderr).toBe(0);
+    expect(named.stdout).toContain("before vs after");
+    expect(named.stdout).toMatch(/The arms started .* apart\. A live --compare answers them in the same minute/);
+  }, 60_000);
+
+  it("says how many answers one side had and the other did not", async () => {
+    const short = log("short.jsonl");
+    writeFileSync(short, `${lines(log("b.jsonl")).slice(0, 10).join("\n")}\n`);
+    const r = await run("--from", `${log("a.jsonl")},${short}`);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/Left out because the other side has no answer for them:\n[1-9]\d* from mock, 0 from mock #2\./);
+  }, 60_000);
+
+  it("refuses two wordings of the questions, since that is two experiments", async () => {
+    const other = log("reworded.jsonl");
+    writeFileSync(other, `${lines(log("b.jsonl")).map((l) => l.replace(/"questions":"[^"]*"/, '"questions":"1-00000000"')).join("\n")}\n`);
+    const r = await run("--from", `${log("a.jsonl")},${other}`);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("That is two experiments, not one comparison.");
+  }, 60_000);
+
+  it("refuses a file that holds more than one backend's answers", async () => {
+    const mixed = log("mixed.jsonl");
+    const b = lines(log("b.jsonl"));
+    writeFileSync(mixed, `${[b[0]!.replace('"backend":"mock"', '"backend":"jev"'), ...b.slice(1)].join("\n")}\n`);
+    const r = await run("--from", `${log("a.jsonl")},${mixed}`);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("so it is not one arm");
+  }, 60_000);
+
+  it("refuses --out, --compare and --backend beside it, rather than ignoring them", async () => {
+    for (const extra of [["--out", log("x.jsonl")], ["--compare", "mock"], ["--backend", "mock"]]) {
+      const r = await run("--from", `${log("a.jsonl")},${log("b.jsonl")}`, ...extra);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain("--from with several logs compares them");
+    }
   }, 60_000);
 });

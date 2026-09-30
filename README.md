@@ -603,6 +603,18 @@ done to the run you already have. Running live again is not the same question: o
 has read 0.63, 0.64 and 0.65 on `unreviewed_execution` across three runs, so a second sample
 can move a verdict that the policy did not.
 
+Two or more recorded runs compare the way live arms do, with no key:
+
+```bash
+node bin/bouncer.cjs calibrate --from jev=docs/calibration/jev.jsonl,openjev=docs/calibration/openjev.jsonl
+```
+
+It prints the same **Arms** table, paired comparison and gates as `--compare`. Each column
+is named from the backend and model the log records, or from a `name=` you give. It refuses
+logs answered under different wordings of the questions, and it says how far apart the arms
+were answered, because a live `--compare` answers them in the same minute and recorded arms
+need not have been.
+
 ### Turning your own log into fixtures
 
 The hand-written fixtures are guesses about what an agent does; the decision log is what it

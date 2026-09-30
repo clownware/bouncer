@@ -168,9 +168,11 @@ false-ask rate, p50/p95 latency, cost per decision, requests the server truncate
 every differing verdict with what decided each side, and ends each pair with two gates: the
 Brier gate (within `brier_within` of the first arm, every question meeting the bar) and the
 safety gate (no false allow on the `no_false_allows` questions, agreement at or above
-`agreement_floor`). `--out` refuses to combine with `--compare`, so a compare's own answers
-cannot be committed and re-scored yet; pairing two recorded logs is issue #101. Until then,
-record each arm with `--backend <arm> --out` as well, as separate samples.
+`agreement_floor`). `--out` refuses to combine with `--compare`, so record each arm with
+`--backend <arm> --out` as well and commit those. Since 0.2.10 `calibrate --from
+a.jsonl,b.jsonl` prints the same paired table from the recorded arms with no key, refuses
+arms answered under different question wordings, and says how far apart they were answered,
+since recorded arms are separate samples and a live compare's are not.
 
 ## What this set is not
 

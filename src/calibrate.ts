@@ -506,7 +506,12 @@ export function scoreFromLog(
   const byId = new Map(fixtures.map((f) => [f.id, f]));
 
   const scored: Scored[] = [];
+  const answered: Answered[] = [];
   const models = new Set<string>();
+  const backends = new Set<string>();
+  const questions = new Set<string>();
+  let first: string | undefined;
+  let last: string | undefined;
   let matched = 0;
   let unmatched = 0;
   let unscorable = 0;
@@ -549,7 +554,13 @@ export function scoreFromLog(
     // reader has to be told, because a number about the old wording looks like any other.
     // A line from before records carried this says nothing either way.
     if (record.policy !== undefined && record.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record.policy !== undefined) questions.add(record.policy.questions);
     if (record.model !== undefined) models.add(record.model);
+    if (typeof record.backend === "string") backends.add(record.backend);
+    if (typeof record.ts === "string") {
+      if (first === undefined || record.ts < first) first = record.ts;
+      if (last === undefined || record.ts > last) last = record.ts;
+    }
 
     // Read off the line rather than rebuilt from the fixture: the line is what the classifier
     // was actually shown, and a cap that has moved since would make the two disagree.
@@ -557,12 +568,27 @@ export function scoreFromLog(
     const cut = record.server_truncated;
     const serverTruncation =
       cut !== undefined && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
-    scored.push(
-      ...scoreAnswered({ fixture, answers, probes, latencyMs: 0, ...truncated, ...serverTruncation }, policy, set, setName).rows,
-    );
+    // The latency the line recorded, so a recorded arm's p50 and p95 are the run's own and
+    // not a column of zeros. `NaN` when the line has none, which `summarise` leaves out.
+    const latencyMs = record.latency_ms?.adapter ?? record.latency_ms?.total ?? Number.NaN;
+    const one: Answered = { fixture, answers, probes, latencyMs, ...truncated, ...serverTruncation };
+    answered.push(one);
+    scored.push(...scoreAnswered(one, policy, set, setName).rows);
   }
 
-  return { scored, matched, unmatched, unscorable, otherSet, reworded, models: [...models].sort() };
+  return {
+    scored,
+    answered,
+    matched,
+    unmatched,
+    unscorable,
+    otherSet,
+    reworded,
+    models: [...models].sort(),
+    backends: [...backends].sort(),
+    questions: [...questions].sort(),
+    ...(first !== undefined && last !== undefined ? { span: { first, last } } : {}),
+  };
 }
 
 export interface FromLog {
@@ -578,6 +604,14 @@ export interface FromLog {
   readonly reworded: number;
   /** Every model the matched lines name. More than one means the answers are not one sample. */
   readonly models: readonly string[];
+  /** The matched lines, as `--compare` keeps a live arm's, so a recorded arm summarises the same way. */
+  readonly answered: readonly Answered[];
+  /** Every backend the matched lines name. A recorded arm is one backend or it is not an arm. */
+  readonly backends: readonly string[];
+  /** Every `policy.questions` fingerprint the matched lines carry. Lines older than the field add none. */
+  readonly questions: readonly string[];
+  /** The earliest and latest `ts` among the matched lines. */
+  readonly span?: { readonly first: string; readonly last: string };
 }
 
 export function report(scored: readonly Scored[], calibration: CalibrationPolicy): QuestionReport[] {
@@ -863,6 +897,12 @@ export interface Comparison {
   readonly verdicts: { readonly same: number; readonly total: number; readonly differing: readonly VerdictDiff[] };
   /** The answers furthest apart, most distant first. */
   readonly widest: readonly PairedScore[];
+  /**
+   * Answers only one side gave, per side, and so left out of every number above. A live
+   * run drops few; two recorded logs over different fixture revisions can drop many, and
+   * a table that does not say so compares two populations as if they were one.
+   */
+  readonly dropped: readonly [number, number];
 }
 
 export interface VerdictDiff {
@@ -900,11 +940,16 @@ export function compare(
   calibration: CalibrationPolicy,
 ): Comparison {
   const bByKey = new Map(b.scored.map((s) => [pairKey(s), s]));
+  const aKeys = new Set(a.scored.map(pairKey));
   const paired: Array<readonly [Scored, Scored]> = [];
   for (const left of a.scored) {
     const right = bByKey.get(pairKey(left));
     if (right !== undefined) paired.push([left, right]);
   }
+  const dropped = [
+    a.scored.filter((s) => !bByKey.has(pairKey(s))).length,
+    b.scored.filter((s) => !aKeys.has(pairKey(s))).length,
+  ] as const;
 
   const byQuestion = new Map<string, Array<readonly [Scored, Scored]>>();
   for (const pair of paired) {
@@ -964,6 +1009,7 @@ export function compare(
     rows,
     verdicts: { same: verdictByFixture.size - differing.length, total: verdictByFixture.size, differing },
     widest,
+    dropped,
   };
 }
 
@@ -985,6 +1031,14 @@ export function formatComparison(comparison: Comparison, calibration: Calibratio
     "the gate below is the derived statistic max(p, 1 - p), computed the same way on both sides.",
     "",
   );
+
+  if (comparison.dropped[0] > 0 || comparison.dropped[1] > 0) {
+    lines.push(
+      `Paired on (fixture, question). Left out because the other side has no answer for them:`,
+      `${comparison.dropped[0]} from ${left}, ${comparison.dropped[1]} from ${right}.`,
+      "",
+    );
+  }
 
   lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
   lines.push("|---|---|---|---|---|---|---|");

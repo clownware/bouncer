@@ -122,18 +122,19 @@ https://github.com/clownware/bouncer
   `docs/calibration/` like every other published run. Until then, run 9 is the only thing
   this post may say numbers about.
 - **Commit the answers.** A published run commits its answers beside its write-up, but
-  `--out` cannot be combined with `--compare`. Pairing two recorded logs is issue #101.
-  Until that lands, also record each arm with `--backend <arm> --out` and commit those,
-  saying they are separate samples from the compare's; or say plainly that the compare's
-  own answers are not committed.
+  `--out` cannot be combined with `--compare`. Record each arm with `--backend <arm> --out`
+  and commit those; since 0.2.10 `calibrate --from a.jsonl,b.jsonl` prints the paired table
+  from them with no key (#101) and says how far apart the arms were answered. Say in the
+  write-up whether the table is the live compare's or the recorded arms', since those are
+  different samples.
 - **Fill the table from one run.** Since 0.2.8 `--compare` takes any number of arms and
   compares each against the first, so `--compare jev,jev@<modal-url>,chat@<url>[,local]`
   produces every row against a single Jev sample, and the Jev column is one number. Runs A,
   B and C above are the arms, not separate invocations. If they do end up as separate
   paired runs, each has its own Jev sample: a Jev row filled from run A and a gap filled
   from run B describe two different samples, so state the Jev mean from the run each gap
-  was computed in, or give the range. Either way the `--out`/`--compare` caveat above
-  stands (#101).
+  was computed in, or give the range. Either way the note above on committing answers
+  stands.
 - **"Within 5 Brier points" is loose at this scale.** PRD §12's bar is a mean Brier gap of
   0.05, and run 9's Jev mean across the seven questions is 0.059, so an arm can nearly
   double Jev's error and still be inside it. State the gap as a number and do not call an

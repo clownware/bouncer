@@ -1,6 +1,6 @@
 ---
 description: Run bouncer's fixtures through its classifier and show the reliability table
-argument-hint: "[--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b,...] [--out run.jsonl] [--from run.jsonl] [--set name] [--fixtures path]"
+argument-hint: "[--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b,...] [--out run.jsonl] [--from [name=]run.jsonl[,...]] [--set name] [--fixtures path]"
 allowed-tools: Bash(node:*)
 ---
 
@@ -43,7 +43,11 @@ server said it cut the state, so the difference may be the cut rather than the m
 scores that file instead of calling a backend — no key, no network. Reach for the pair when
 the user asks what moving a threshold would do: edit the threshold, re-run with `--from`,
 and the answer comes from the run they already paid for rather than from a fresh sample.
-`--from` also reads `decisions.jsonl` and a `bouncer judge` log. `--set` names the policy
+`--from` also reads `decisions.jsonl` and a `bouncer judge` log. Given several files,
+`--from a.jsonl,b.jsonl` compares them exactly as `--compare` compares live backends, with
+no key. It refuses files answered under different question wordings. It also prints how far
+apart the arms were answered; mention that gap when presenting the result, since recorded
+arms are separate samples. `--set` names the policy
 set to score against (default `gate`) and `--fixtures` the labelled file (default the
 bundled `fixtures/gate.jsonl`).
 
