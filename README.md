@@ -359,6 +359,11 @@ reversed forms and rewordings in [`fixtures/variants/`](fixtures/variants) are u
 drafts that `--gate` will not ask until each is stamped with the wording it was written
 against. What it gives you today is the report.
 
+A run recorded with `--out-dir` is scored again with `--gate <arm> --from <dir>`, with no key
+and no server, which is how to try a different margin or threshold against answers you have
+already paid for. It refuses answers given under another wording of the questions, and it
+cannot attest anything.
+
 Stamping is `bouncer calibrate --stamp <question>` (or `all`), run once you have read a
 question's lines and agree they mean what they should. If you edit a question afterwards, its
 variants go stale and stop being asked; reread them and stamp again with `--restamp`. A

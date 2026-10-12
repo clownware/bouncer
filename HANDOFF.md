@@ -38,7 +38,7 @@ landed.
    Its `git_branch` cases need a `git` field the fixture loader does not read yet.
 4. Decide the margins in ADR-011 decision 4 once Jev has been measured on the new sets.
 
-**Built so far (0.2.14).** `bouncer calibrate --gate <backend> [--reference jev]` runs and
+**Built so far (0.2.15).** `bouncer calibrate --gate <backend> [--reference jev]` runs and
 reports five of the six parts: accuracy, calibration (with AUC), polarity, rephrase and
 injection. `src/commands/gate.ts` is the runner, `src/gatereport.ts` the verdict and the
 report, `src/gatemetrics.ts` the arithmetic, `src/gatefixtures.ts` the loaders. Seven margins
@@ -54,8 +54,8 @@ variant drafts carry no `base`.
    `--policy policy/default.yaml`.
 2. `--fit` as a command (the arithmetic is `fitTemperature` and `crossValidateTemperature`),
    which needs a `fit` split, which needs the trace set committed.
-3. `--gate --from <dir>,<dir>`: the `--out-dir` files are written already, one per arm and
-   pass, with each variant pass under its own questions fingerprint.
+3. Done in 0.2.15: `--gate <arm> --from <dir>[,<dir>]` scores a recorded run. Live and
+   recorded runs both build their arms in `buildArm`, from `planGate`'s passes.
 4. Strata: `--traces`, per-stratum tables, `min_stratum_n`.
 5. The first live reference run of Jev on the new sets, then choose the margins.
 6. The hook half: `jev@` in `adapterFor`, the attestation check, `on_error: ask`, and

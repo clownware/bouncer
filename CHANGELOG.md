@@ -8,6 +8,31 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.15
+
+**`bouncer calibrate --gate <arm> --from <dir>`** (#127). Scores a gate run that `--out-dir`
+recorded, with no key and no server:
+
+```bash
+bouncer calibrate --gate clef-flash --reference jev --out-dir run/   # live, once
+bouncer calibrate --gate clef-flash --from run/                      # as often as you like
+```
+
+A moved margin, a changed threshold or a relabelled fixture now costs nothing to try after
+the answers have been paid for. Name the candidate as the report printed it or by its file
+name; the reference defaults to the one the run recorded, and `--from a/,b/` finds the two
+arms in different directories.
+
+- It refuses a file answered under another wording of the questions than that pass would
+  ask today, base and variants alike, and names the file.
+- A pass that was not recorded is reported as not measured, never filled in.
+- It never attests a backend. An attestation says a server answered today, and this read a
+  file; the report says so, and says when each arm answered.
+
+`--out-dir` now also writes `gate.json`, which records which arm was the reference. A
+directory recorded by 0.2.13 or 0.2.14 has none and still works: name the reference with
+`--reference`.
+
 ## 0.2.14
 
 **`bouncer calibrate --stamp <question>`** (#127). `--gate` asks a reversed form or a
