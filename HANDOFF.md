@@ -78,6 +78,25 @@ variant drafts carry no `base`.
   [run 10](docs/calibration/2026-10-11-jev-10.md). What it left is #130: a `Write` or `Edit`
   outside the project still prompts wherever the file is, because the state cannot say.
 
+## In flight: judgment-model consumers
+
+The gate has produced almost no value on the owner's machine (117 denies in 10,439 calls,
+roughly 90 of them wrong, and the classifier's verdicts emit nothing in `seatbelt`). The
+use that has evidence behind it is offloading classification and verification from a
+reasoning model: on the corpus's triage set, judging everything with Jev and re-asking a
+reasoning model only on the uncertain rows matched the reasoning model's accuracy with 41 to
+55 percent fewer calls (#75).
+
+- **`bouncer ready` shipped in 0.2.17** (#93): four questions about a change before it is
+  pushed. Observing by default. Fixtures and one live run exist; no real-history evidence
+  does. What is next for it: compare `readiness.jsonl` with CI results on the same head
+  commits; read long diffs in pieces (#53); repository-specific checks (a version bump, a
+  rebuilt bundle) as computed facts.
+- **Not started:** #92 (validate an agent's output against criteria), #91, #95, and the
+  skill router (ADR-006, four open questions in #58).
+- **Parked:** the rest of the ADR-011 gate work, apart from the noisy hard rules (#122,
+  #126, #98, #87), which are the denies the owner actually sees.
+
 ## Other open threads
 
 Unchanged by this session; see the issues. The ones that touch this work: #55 (the logit

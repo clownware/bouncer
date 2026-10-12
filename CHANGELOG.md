@@ -8,6 +8,30 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.17
+
+**`bouncer ready`: is this change finished enough to push?** (#93). A new command, and a
+`/bouncer:ready` slash command for it. It reads the commits ahead of the base branch and
+asks four questions: whether the commit messages describe the change, whether behaviour
+changed with no test, and, one file at a time, whether a debugging statement or an
+unfinished marker was added. It prints `READY`, or `HOLD` with the file and the question
+that fired.
+
+- **It sends content, which the gate never does:** commit messages and diff text go to the
+  backend after redaction. Nothing runs until you run the command. `--backend mock` sends
+  nothing.
+- **It only reports.** Exit status 0 unless you pass `--enforce`, where a `HOLD` exits 1. It
+  never holds on its own failure: no key, no repository or an unanswered request is said
+  and exits 0.
+- **It lists what it did not read:** lockfiles, generated files, documentation, binaries and
+  any file whose diff is too long for one request.
+- Real runs are recorded in `readiness.jsonl` in the data directory, with the head commit
+  and the answers and no diff text, so the check can later be compared with CI.
+
+The questions and thresholds are in the new `policy/push.yaml`, which is separate from the
+gate's policy; copy it and pass `--policy`, or set `BOUNCER_PUSH_POLICY`, to change them.
+Nothing about the hook or the gate changes.
+
 ## 0.2.16
 
 **An agent editing the policy that gates it is now stopped** (#141, ADR-013). Before this, a

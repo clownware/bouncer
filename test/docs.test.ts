@@ -81,7 +81,7 @@ describe("the subcommands", () => {
       "The subcommands src/cli.ts dispatches on changed. Update this list and name the new one " +
         "in README.md in the same change. A new hook entrypoint is also a decision with its own " +
         "record: `userpromptsubmit` is docs/adr/006, accepted and not built.",
-    ).toEqual(["pretooluse", "status", "explain", "calibrate", "judge", "measure", "export", "skills"]);
+    ).toEqual(["pretooluse", "status", "explain", "calibrate", "judge", "measure", "export", "ready", "skills"]);
   });
 
   it("are each named in the README, except the hook entry, which hooks.json names", () => {

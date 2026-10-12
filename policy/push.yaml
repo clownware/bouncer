@@ -1,0 +1,70 @@
+# Push readiness: what `bouncer ready` asks about a change before it is pushed.
+#
+# This is not the safety gate. The gate asks whether a command is dangerous; this asks
+# whether the work is finished, which nothing else in bouncer asks. It is a command you or
+# your agent run, and it only reports unless you pass `--enforce`.
+#
+# Unlike the gate it sends content: your commit messages and the text of your diff go to
+# the backend below, after redaction. Use `--backend mock` to see the report with nothing
+# sent.
+#
+# Two sets, because two kinds of question. `push` is asked once, of the whole change.
+# `push_file` is asked of each changed file that is worth reading, one file at a time, so a
+# question about one file is shown one file. To change either, copy this file and pass it
+# with `--policy`, or name it in $BOUNCER_PUSH_POLICY.
+#
+# Everything countable is computed and handed over as a field (`tests_changed`,
+# `lines_added`), never asked. The classifier is documented to count badly and to read
+# scoping words literally, so the questions are written positively and the exclusions sit
+# in `criteria.false`.
+
+version: 1
+backend: jev
+mode: observe
+timeout_ms: 30000
+
+policies:
+  push:
+    questions:
+      message_mismatch:
+        instructions: "The commit messages in `commits` describe a different change from the one that `files` and `added_excerpt` show."
+        criteria:
+          "true": "the message says documentation or a typo while source files change behaviour, the message names a feature or a fix that none of the changed files touch, the message is a placeholder such as wip, fix or update that says nothing about the change"
+          "false": "the message summarises what the files show, the message leaves out minor details, the message carries a conventional prefix such as feat or fix or an issue number, several commits each describe a part of the change"
+
+      untested_behaviour:
+        instructions: "The change alters how the program behaves, and `tests_changed` is false."
+        criteria:
+          "true": "`added_excerpt` adds or changes a function, a condition, a default value, a query or an error path in a source file while `tests_changed` is false"
+          "false": "`tests_changed` is true, `docs_only` is true, the change is confined to comments, formatting, renames, type annotations, dependency versions, configuration or build settings, the change removes dead code"
+
+    rules:
+      # Provisional, like every number here until a run on your own history says otherwise.
+      # There is no uncertainty band on purpose: the baseline is pushing, so an answer the
+      # classifier is unsure of is not a reason to stop.
+      - when: { message_mismatch: { p: ">=0.70" } }
+        then: ask
+      - when: { untested_behaviour: { p: ">=0.70" } }
+        then: ask
+      - default: allow
+
+  push_file:
+    questions:
+      debug_leftover:
+        instructions: "The lines that `diff` adds, which begin with a plus sign, include a statement that was left in from debugging."
+        criteria:
+          "true": "an added console.log, print, dbg!, var_dump or debugger statement that dumps a value in source code, an added test restricted with .only or fit, an added sleep of a fixed length to wait out a race, a block of code added already commented out"
+          "false": "output that is the program's purpose such as a command-line tool printing its result, a message through the project's logger, an error message, an assertion, a line that `diff` removes, prints inside a test file's helper output"
+
+      unfinished:
+        instructions: "The lines that `diff` adds, which begin with a plus sign, mark the work as unfinished."
+        criteria:
+          "true": "an added TODO, FIXME, XXX or HACK comment, an added function body that only throws not implemented or returns a placeholder, an added hard-coded stand-in value described as temporary, an added test marked skipped or pending"
+          "false": "a comment explaining a known limit and naming an issue that tracks it, a TODO that `diff` removes, documentation of future plans, an intentional no-op with a comment saying why it is one"
+
+    rules:
+      - when: { debug_leftover: { p: ">=0.70" } }
+        then: ask
+      - when: { unfinished: { p: ">=0.70" } }
+        then: ask
+      - default: allow
