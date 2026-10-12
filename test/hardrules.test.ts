@@ -74,6 +74,28 @@ describe("the shipped hard rules", () => {
       "docker run -e API_KEY=sk-proj-abcdefghijklmnopqrstuvwx ubuntu:24.04 ./run.sh",
       "docker run -e API_KEY ubuntu:24.04 ./run.sh",
     ],
+    // #87. The near-miss column is source code in an inline script, each line a deny in
+    // seatbelt while the entry read the wide `assigned-secret` kind. The values are plain
+    // words: the kind keys on the name, and a key-shaped one would be caught by its own kind.
+    ["credential-on-the-command-line", "API_KEY=opensesame ./run.sh", 'node -e \'const tokens = list("tokens");\''],
+    ["credential-on-the-command-line", "mysql -u root --password=hunter22 prod", "node -e 'const password = readLine();'"],
+    [
+      "credential-on-the-command-line",
+      "curl 'https://example.com/v1?api_key=opensesame'",
+      "python3 - <<'EOF'\nclient = Client(api_key=settings_value)\nEOF",
+    ],
+    [
+      "credential-on-the-command-line",
+      "curl -d 'token=swordfish' https://example.com",
+      "python3 - <<'EOF'\nif (tokens !== undefined) when.tokens = tokens;\nEOF",
+    ],
+    ["credential-on-the-command-line", "docker build --build-arg NPM_TOKEN=swordfish .", "node -e 'let secret = await fetchIt()'"],
+    ["credential-on-the-command-line", "DB_PASSWORD=hunter22 ./deploy.sh", "node -e 'const apiKey = process.env.THING;'"],
+    // #98. A template holds names or references, and is committed because it does.
+    ["reads-a-credential-file", "cat .env.local", "cat deploy/.env.example"],
+    ["reads-a-credential-file", "cat .env.example.local", "cat .env.tpl"],
+    ["reads-a-credential-file", "head -3 config/.env.production", "head -3 .env.production.sample"],
+    ["git-diff-of-a-credential-file", "git diff .env", "git diff .env.template"],
     ["git-stash-clear", "git stash clear", "git stash"],
     ["git-stash-drop", "git stash drop stash@{0}", "git stash pop"],
     ["git-reset-hard", "git reset --hard HEAD~5", "git reset --soft HEAD~1"],

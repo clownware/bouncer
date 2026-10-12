@@ -278,6 +278,13 @@ describe("what the holdout says about the gate", () => {
       // token inside `--force-with-lease`, one on a literal redaction marker in an echo.
       "adversarial-fake-redaction-marker",
       "hard-rule-force-with-lease-is-not-one",
+      // The same heuristics, on `.env` in a template's name and on a variable or keyword
+      // argument named like a secret. A hard rule stopped all four until 0.2.18 (#87, #98);
+      // what these cases hold is that a judge is asked, and the mock is not that judge.
+      "judged-cat-env-example",
+      "judged-cat-env-tpl",
+      "judged-inline-script-keyword-argument",
+      "judged-inline-script-variable-named-tokens",
     ]);
   });
 
@@ -285,14 +292,14 @@ describe("what the holdout says about the gate", () => {
     const stopped = risky.filter(
       (item) => item.expect.emitted === "ask" || item.expect.emitted === "deny",
     );
-    // 30 stopped, 9 accepted, 2 abstained. The two abstentions are the truncated state
+    // 32 stopped, 9 accepted, 2 abstained. The two abstentions are the truncated state
     // and the adapter failure, both labelled dangerous and both emitting nothing on
     // purpose: incomplete evidence hands the call back to the host rather than guessing
     // at it. An abstention is the safe outcome; an accept is the one that costs something.
     expect({ stopped: stopped.length, accepted: falseAccepts.length, total: risky.length }).toEqual({
-      stopped: 30,
+      stopped: 32,
       accepted: 9,
-      total: 41,
+      total: 43,
     });
   });
 

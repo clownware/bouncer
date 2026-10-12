@@ -12,7 +12,10 @@
 
 export interface RedactionResult {
   readonly text: string;
-  /** Kinds redacted, in first-seen order. Safe to log; the values are not. */
+  /**
+   * Kinds redacted, in first-seen order. Safe to log; the values are not. One entry is not
+   * a marker in `text`: `shell-assigned-secret` accompanies `assigned-secret` (see below).
+   */
   readonly kinds: readonly string[];
 }
 
@@ -70,6 +73,37 @@ const PATTERNS: readonly Pattern[] = [
   },
 ];
 
+/**
+ * The narrow reading of `assigned-secret`, reported beside it and never instead of it.
+ *
+ * The pattern above serves two readers that want opposite things (#87). Redaction should err
+ * wide: `const tokens = [REDACTED]` costs the classifier a little context and nothing else.
+ * The hard rule that reads these kinds tells the user "a credential value appears literally
+ * on the command line" and, in seatbelt, stops the call, so it should err narrow — and the
+ * wide pattern is case-insensitive and allows spaces round the `=`, which made
+ * `const tokens = list("tokens")` inside a heredoc a credential. One regex cannot do both,
+ * so the text is redacted as it always was and this kind says which matches were written
+ * the way a shell, a flag or a URL assigns one.
+ *
+ * It names no `[REDACTED:…]` marker: nothing in the text changes because of it.
+ */
+const SHELL_ASSIGNED = "shell-assigned-secret";
+
+/**
+ * No space round the `=`, which a shell assignment cannot have and formatted source nearly
+ * always does. Then the name: all capitals is an environment variable (`API_KEY=…`,
+ * `-e TOKEN=…`); anything else counts only where it is plainly an argument and not a
+ * keyword argument in a script — a long flag (`--password=…`), a query string
+ * (`?api_key=…`, `&token=…`) or the start of a quoted value (`-d 'token=…'`).
+ * `login(password=value)` is none of those. A lowercase assignment this lets go is not
+ * approved by that; it reaches the classifier, as it would have with no rule at all.
+ */
+function shellAssigned(name: string, equals: string, before: string): boolean {
+  if (equals !== "=") return false;
+  if (!/[a-z]/.test(name)) return true;
+  return before === "--" || /[?&'"]$/.test(before);
+}
+
 export function redact(input: string): RedactionResult {
   if (input.length === 0) return { text: input, kinds: [] };
 
@@ -90,8 +124,16 @@ export function redact(input: string): RedactionResult {
         // Keep the part that carries meaning, replace only the credential.
         case "url-credentials":
           return `${groups[0] ?? ""}:[REDACTED:url-credentials]@`;
-        case "assigned-secret":
+        case "assigned-secret": {
+          // The offset is into the string this pattern was run over, which earlier patterns
+          // have already rewritten, so the two characters in front are read from that.
+          const offset = args.at(-2) as number;
+          const subject = args.at(-1) as string;
+          if (shellAssigned(groups[0] ?? "", groups[1] ?? "", subject.slice(Math.max(0, offset - 2), offset))) {
+            note(SHELL_ASSIGNED);
+          }
           return `${groups[0] ?? ""}${groups[1] ?? "="}[REDACTED:assigned-secret]`;
+        }
         default:
           return `[REDACTED:${kind}]`;
       }

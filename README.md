@@ -481,6 +481,10 @@ It ships in `observe`, which emits nothing at all. To change that, copy the poli
 bundled default is overwritten by plugin updates. Which mode to move to is the section
 above — `seatbelt` if you run `--dangerously-skip-permissions`.
 
+A copy does not follow those updates: a hard rule fixed in a later release stays as you
+copied it. `/bouncer:status` lists every hard rule in your policy that differs from the
+bundled one of the same name, and every bundled one yours lacks.
+
 Then watch it: [docs/dogfooding.md](docs/dogfooding.md) covers where the log lives, how it
 rotates, and the queries worth having.
 

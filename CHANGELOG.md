@@ -8,6 +8,35 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.18
+
+**Two hard rules stop firing on things that are not credentials, and `bouncer status` says
+when your copy of the policy has an older rule than the bundled one** (#87, #98, #126). In
+`seatbelt` each of these was a denied call.
+
+- `credential-on-the-command-line` no longer fires on source code in an inline script. A
+  heredoc, `node -e` or `sed` expression holding `const tokens = list("tokens")`,
+  `const password = readLine()` or `Client(api_key=value)` is judged like any other call.
+  `API_KEY=…`, `-e DB_PASSWORD=…`, `--password=…`, `?api_key=…` and `-d 'token=…'` are stopped
+  as before. What is sent and logged is redacted exactly as it was.
+- **If you copied the policy, this fix does not reach you until you edit the copy.** Under
+  `credential-on-the-command-line`, change `- assigned-secret` to `- shell-assigned-secret`.
+  The old name still loads and still means the wide match.
+- **No longer stopped by that rule:** a lowercase assignment that is not a flag, a query
+  string or the start of a quoted value, such as `password=hunter2 ./deploy.sh` or
+  `curl -d token=value`. It is judged by the `secrets` question. An uppercase name is
+  stopped wherever it is.
+- `.env.example`, `.env.sample`, `.env.template` and `.env.tpl` are no longer treated as
+  environment files, so reading one is not stopped and a `Write` to one no longer carries
+  `sensitive: environment_file` to the classifier. `.env`, `.env.local`, `.env.production`
+  and `.env.example.local` are unchanged.
+- `bouncer status` compares your hard rules with the bundled ones by name. It prints each
+  entry whose `when` differs, with only the part that differs, and each bundled entry your
+  policy does not have. It prints nothing when they match, and it cannot tell an old copy
+  from an edit you made on purpose, so it says "differs" and leaves the choice to you.
+- `redacted_kinds` in the log gains `shell-assigned-secret` beside `assigned-secret` on the
+  lines it applies to.
+
 ## 0.2.17
 
 **`bouncer ready`: is this change finished enough to push?** (#93). A new command, and a

@@ -4,7 +4,7 @@
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { status } from "../src/commands/status.js";
 import * as breaker from "../src/io/breaker.js";
@@ -153,5 +153,71 @@ describe("mock-backend records", () => {
     expect(out).toContain("Last 2 decisions:");
     expect(out).toContain("Switching to guard would have added 1 prompt across these 2 calls.");
     expect(out).not.toContain("Ignoring");
+  });
+});
+
+// #126. A copied policy keeps the hard rule it was copied with, and nothing said so: the
+// 0.2.4 fix to `git-push-force-refspec` reached the bundled file and no copy of it, and the
+// copy went on denying commits whose message held a " +".
+describe("hard rules that are not the bundled ones", () => {
+  beforeEach(() => {
+    process.env["CLAUDE_PLUGIN_ROOT"] = resolve(".");
+  });
+
+  afterEach(() => {
+    delete process.env["CLAUDE_PLUGIN_ROOT"];
+  });
+
+  const OLD_REFSPEC = '        tokens: [git, push]\n        text: [" +"]';
+
+  it("says nothing about a copy that matches", () => {
+    expect(status()).not.toContain("not the bundled ones");
+  });
+
+  it("names an entry whose `when` is the superseded spelling, with both spellings", () => {
+    expect(POLICY, "the bundled entry is no longer spelled the way this test rewrites").toContain(
+      '        tokens: [git, push]\n        token_prefix: ["+"]',
+    );
+    writeFileSync(policyPath, POLICY.replace('        tokens: [git, push]\n        token_prefix: ["+"]', OLD_REFSPEC), "utf8");
+
+    const out = status();
+    expect(out).toContain("  git-push-force-refspec differs");
+    expect(out).toContain('    token_prefix: ["+"] is only in the bundled entry');
+    expect(out).toContain('    text: [" +"] is only in yours');
+    expect(out, "a predicate both spell the same way is not a difference").not.toContain("    tokens:");
+    expect(out).toContain(join(resolve("."), "policy", "default.yaml"));
+    expect(out).not.toContain("not in your policy");
+  });
+
+  it("names a bundled entry the copy does not have, and not one only the copy has", () => {
+    const without = POLICY.replace(
+      /^    - name: git-filter-branch\n(?:      .*\n)+/m,
+      '    - name: mine-alone\n      because: "A rule only this copy has."\n      when:\n        tokens: [dd]\n',
+    );
+    expect(without).not.toBe(POLICY);
+    writeFileSync(policyPath, without, "utf8");
+
+    const out = status();
+    expect(out).toContain("  not in your policy: git-filter-branch");
+    expect(out).not.toContain("mine-alone");
+  });
+
+  it("prints the one kind that changed in a long list, and not the list", () => {
+    expect(POLICY).toContain("          - shell-assigned-secret\n");
+    writeFileSync(policyPath, POLICY.replace("          - shell-assigned-secret\n", "          - assigned-secret\n"), "utf8");
+
+    expect(status()).toContain(
+      '  credential-on-the-command-line differs\n    redacts_as: yours has "assigned-secret"; the bundled entry has "shell-assigned-secret"\n',
+    );
+  });
+
+  it("does not call a reordered list a difference", () => {
+    writeFileSync(policyPath, POLICY.replace("        tokens: [git, stash, clear]", "        tokens: [stash, clear, git]"), "utf8");
+    expect(status()).not.toContain("not the bundled ones");
+  });
+
+  it("says nothing when the policy in use is the bundled one", () => {
+    process.env["BOUNCER_POLICY"] = join(resolve("."), "policy", "default.yaml");
+    expect(status()).not.toContain("not the bundled ones");
   });
 });
