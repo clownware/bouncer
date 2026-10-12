@@ -5,7 +5,36 @@ document before this one. `CLAUDE.md` holds the standing rules and the pinned fa
 file holds only what is open right now. Update it when a thread ends, and delete what has
 landed.
 
-## In flight: the local decision backend (ADR-011)
+## Direction, as of 2026-10-12
+
+The priority moved from the gate to the judgment-model consumers, at the owner's suggestion.
+On his machine the gate has shown little: he runs with no prompts, so there is no friction
+to remove, and most of the denies he saw were hard-rule false positives. The use with
+evidence is taking classification and verification off a reasoning model; the first real
+`bouncer measure` run is written up on #75, with its caveats.
+
+So the ADR-011 work below is parked, not abandoned, and the order is:
+
+1. Compare `readiness.jsonl` with CI results on the same head commits, once a few real
+   `bouncer ready` runs exist. None did on 2026-10-12. Its thresholds are provisional and
+   its fixtures were written alongside its questions, so this is its first real evidence.
+2. The last noisy hard rule: #122, `git branch -D` after a squash merge. It needs the hook
+   to ask git whether the branch's content is on the default branch, and every hard-rule
+   predicate today is a string operation, so it starts as an amendment to ADR-004. #87, #98
+   and #126 shipped in 0.2.18.
+3. The next consumer: #92, then the skill router (ADR-006, open questions in #58).
+4. Filed and not started: #138, #139, #140, #130, #134, #53.
+
+**Waiting on the owner.**
+
+- `~/.bouncer/bouncer.yaml` is a copy, and no agent may edit it (0.2.16). Run
+  `/bouncer:status`: from 0.2.18 it lists each hard rule that differs from the bundled one.
+  The `egress` and `outside_repo` questions in the copy also predate 0.2.11's wording, and
+  `status` does not compare questions.
+- A working Anthropic API key, to rerun the triage measurement with one call per row and
+  get the token count #75 lacks.
+
+## Parked: the local decision backend (ADR-011)
 
 **Where it stands.** [ADR-011](docs/adr/011-the-local-backend-is-chosen-by-a-gate.md) was
 **accepted on 2026-10-11** (merge of #128) and nothing in it is built.
@@ -26,8 +55,8 @@ landed.
 
 1. Review the draft trace labels. `bouncer export` has been run (#113 has the counts) and a
    280-case stratified sample is labelled as a first pass in `fixtures/traces.draft.jsonl`.
-   It exists only in the owner's `bouncer-wt-adr-011` worktree and is git-excluded: real
-   commands, public repository. The owner has ruled that work in another checkout is not
+   It exists only in the owner's main checkout, with `.trace-labelling/`, and both are
+   git-excluded: real commands, public repository. The owner has ruled that work in another checkout is not
    `outside_repo` and that `gh issue create` / `gh pr create` are not `egress`; the draft
    reflects both, and 7 of the 280 should prompt. Not reviewed line by line.
 2. Review the drafts in `fixtures/variants/` (7 reversed forms, 21 rewordings; spec §2.2).
@@ -77,6 +106,11 @@ variant drafts carry no `base`.
 - 0.2.11 (#129): `egress` and `outside_repo` reworded from real traffic, eight fixtures,
   [run 10](docs/calibration/2026-10-11-jev-10.md). What it left is #130: a `Write` or `Edit`
   outside the project still prompts wherever the file is, because the state cannot say.
+- 0.2.12 to 0.2.15 (#133, #135, #136, #137): the `calibrate --gate` work described above.
+- 0.2.16 (#145, ADR-013): an agent editing the gate's own policy file is stopped.
+- 0.2.17 (#146): `bouncer ready`, the push-readiness check (#93).
+- 0.2.18 (#147): `credential-on-the-command-line` and `reads-a-credential-file` stop firing
+  on source code and on env templates, and `status` names hard rules a copy has left behind.
 
 ## In flight: judgment-model consumers
 

@@ -223,13 +223,17 @@ gate:
         tokens: [git, log, -p]
         path_labelled: [environment_file, credentials_file, ssh_key, ssh_configuration]
 
-    # Reuses src/engine/redact.ts's shape table rather than restating it. `assigned-secret`
+    # Reuses src/engine/redact.ts's shape table rather than restating it. An assignment
     # needs a value, so `docker run -e API_KEY ubuntu` does not match and `-e API_KEY=sk-…` does.
+    # `shell-assigned-secret` and not `assigned-secret`, which is what this entry named until
+    # 0.2.18: that kind is as wide as redaction wants to be, and it read `const tokens =
+    # list("tokens")` in an inline script as a credential. This one is the same match where it
+    # is written as a shell, a flag or a URL writes it: `API_KEY=…`, `--password=…`, `?token=…`.
     - name: credential-on-the-command-line
       because: "A credential value appears literally on the command line, so it lands in shell history too."
       when:
         redacts_as:
-          - assigned-secret
+          - shell-assigned-secret
           - private-key
           - stripe-key
           - openai-key

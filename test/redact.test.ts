@@ -155,6 +155,27 @@ describe("redact", () => {
     expect(redact(input).kinds).toContain("assigned-secret");
   });
 
+  // #87. Redaction stays wide and the hard rule reads the narrow kind beside it, so each
+  // row here is redacted either way and only the left column is a credential on a command
+  // line. The right column is the issue's own table: source code in an inline script.
+  const shellShaped: ReadonlyArray<readonly [string, string]> = [
+    ["API_KEY=opensesame ./run.sh", 'const tokens = list("tokens");'],
+    ["docker run -e DB_PASSWORD=hunter22 ubuntu", "const password = readLine();"],
+    ["mysql -u root --db-password=hunter22 prod", "let secret = await fetchIt()"],
+    ["curl 'https://example.com/v1?page=2&token=swordfish'", "if (tokens !== undefined) when.tokens = tokens;"],
+    ["curl -d 'password=hunter22' https://example.com", "const apiKey = process.env.THING;"],
+    ['curl -d "api_key=opensesame" https://example.com', "client = Client(api_key=settings_value)"],
+  ];
+
+  it.each(shellShaped)("reports `%s` as shell-assigned, and `%s` only as assigned", (shell, source) => {
+    expect(redact(shell).kinds).toEqual(["assigned-secret", "shell-assigned-secret"]);
+    expect(redact(source).kinds).toEqual(["assigned-secret"]);
+  });
+
+  it("adds no marker of its own for the narrow kind", () => {
+    expect(redact("API_KEY=opensesame ./run.sh").text).toBe("API_KEY=[REDACTED:assigned-secret] ./run.sh");
+  });
+
   it.each(innocuous)("leaves %s alone", (_label, input) => {
     const result = redact(input);
     expect(result.kinds).toEqual([]);

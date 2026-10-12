@@ -300,7 +300,12 @@ export function describeSensitivity(path: string): string | undefined {
   if (parts.includes(".git")) return "git_internals";
   if (parts.includes(".ssh")) return "ssh_configuration";
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
-  if (/^\.env(\..+)?$/.test(name)) return "environment_file";
+  // A template is not the file. `.env.example`, `.env.sample` and `.env.template` are
+  // committed precisely because they hold names and no values, and `.env.tpl` is the
+  // 1Password `op run --env-file` form, which holds references. Labelling them made
+  // `cat .env.example` a credential read, and a deny in seatbelt (#98). The suffix is read
+  // last, so `.env.production.example` is a template and `.env.example.local` is not.
+  if (/^\.env(\..+)?$/.test(name) && !/\.(example|sample|template|tpl)$/.test(name)) return "environment_file";
   if (/^(\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.dockercfg)$/.test(name)) return "credentials_file";
   // The canonical credential files of the tools an agent actually drives. Added for the
   // hard rules rather than for the state: no fixture's Write or Edit targets any of these,

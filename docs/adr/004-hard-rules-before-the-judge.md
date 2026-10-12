@@ -183,6 +183,21 @@ to the fixture set at all.
 > shell parser. Read "a property of the rule rather than of a model's answer on the day"
 > under "The population this is actually for" with both halves of that in mind.
 
+> **Amended on 2026-10-12 (0.2.18).** Both are closed, each by editing the rule's input and
+> not the matcher. `credential-on-the-command-line` reads `shell-assigned-secret`, a kind
+> `redact()` reports beside `assigned-secret` when the assignment has no space round its `=`
+> and its name is all capitals, a long flag, a query parameter or the start of a quoted
+> value. Redaction itself is as wide as it was: the two readers want opposite errors, and
+> one pattern could not serve both (#87). `describeSensitivity` no longer labels a template
+> (`.env.example`, `.sample`, `.template`, `.tpl`) as `environment_file` (#98). The twelve
+> fixtures hard rules decide are the same twelve. What the narrowing gives up is named in
+> the changelog: a lowercase assignment in a bare argument reaches the classifier.
+>
+> A third cost of a deterministic rule turned up with these: a fix to one reaches the
+> bundled policy and no copy of it (#126). `bouncer status` now lists the entries of a
+> policy that differ from the bundled entry of the same name. It reports and does not
+> rewrite, because a difference may be the user's own edit.
+
 What that changes depends on the mode, and it is worth being exact rather than claiming a
 verdict flip that does not happen:
 

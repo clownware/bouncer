@@ -7647,7 +7647,7 @@ function backoffFor(attempt, response) {
 }
 function delay(ms, deadline) {
   const capped = Math.max(0, Math.min(ms, deadline - Date.now()));
-  return new Promise((resolve5) => setTimeout(resolve5, capped));
+  return new Promise((resolve6) => setTimeout(resolve6, capped));
 }
 async function safeText(response) {
   try {
@@ -8832,6 +8832,12 @@ var PATTERNS = [
     re: /\b((?:[A-Za-z_][A-Za-z0-9_-]*)?(?:PASSWORD|PASSWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIALS?)S?(?:[_-][A-Za-z0-9_-]*|\d+)?)(\s*=\s*)(?!\s)(?!["']?\[REDACTED:)(?!"?\$\()(?!"?\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"?(?=[\s;&|)]|$))(?:"[^"]{4,}"|'[^']{4,}'|[^\s;&|)"']{4,})/gi
   }
 ];
+var SHELL_ASSIGNED = "shell-assigned-secret";
+function shellAssigned(name, equals, before) {
+  if (equals !== "=") return false;
+  if (!/[a-z]/.test(name)) return true;
+  return before === "--" || /[?&'"]$/.test(before);
+}
 function redact(input) {
   if (input.length === 0) return { text: input, kinds: [] };
   const kinds = [];
@@ -8848,8 +8854,14 @@ function redact(input) {
         // Keep the part that carries meaning, replace only the credential.
         case "url-credentials":
           return `${groups[0] ?? ""}:[REDACTED:url-credentials]@`;
-        case "assigned-secret":
+        case "assigned-secret": {
+          const offset = args.at(-2);
+          const subject = args.at(-1);
+          if (shellAssigned(groups[0] ?? "", groups[1] ?? "", subject.slice(Math.max(0, offset - 2), offset))) {
+            note(SHELL_ASSIGNED);
+          }
           return `${groups[0] ?? ""}${groups[1] ?? "="}[REDACTED:assigned-secret]`;
+        }
         default:
           return `[REDACTED:${kind}]`;
       }
@@ -9016,7 +9028,7 @@ function describeSensitivity(path) {
   if (parts.includes(".git")) return "git_internals";
   if (parts.includes(".ssh")) return "ssh_configuration";
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
-  if (/^\.env(\..+)?$/.test(name)) return "environment_file";
+  if (/^\.env(\..+)?$/.test(name) && !/\.(example|sample|template|tpl)$/.test(name)) return "environment_file";
   if (/^(\.npmrc|\.pypirc|\.netrc|\.gitconfig|\.dockercfg)$/.test(name)) return "credentials_file";
   if (parts.includes(".aws")) return "credentials_file";
   if (parts.includes(".kube") && name === "config") return "credentials_file";
@@ -9963,6 +9975,7 @@ function status() {
   lines2.push(`Log:     ${(0, import_node_path7.join)(dir, LOG_FILE)}`);
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
   for (const w of warnings) lines2.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
+  lines2.push(...hardRuleDrift(policy.gate.hardRules, resolved.source, cwd));
   const standingDown = readAll(dir).filter((s) => s.tripped !== void 0);
   if (standingDown.length > 0) lines2.push("");
   for (const s of standingDown) {
@@ -9990,6 +10003,70 @@ function status() {
   }
   return `${lines2.join("\n")}
 `;
+}
+function hardRuleDrift(mine, source, cwd) {
+  const root = pluginRoot();
+  if (root === void 0) return [];
+  const bundledPath = (0, import_node_path7.join)(root, "policy", "default.yaml");
+  if ((0, import_node_path7.resolve)(source) === (0, import_node_path7.resolve)(bundledPath)) return [];
+  const bundled = resolvePolicy(cwd, root, bundledPath).policy?.gate.hardRules;
+  if (bundled === void 0) return [];
+  const { differing, missing } = compareHardRules(mine, bundled);
+  if (differing.length === 0 && missing.length === 0) return [];
+  const lines2 = ["", "Hard rules that are not the bundled ones:"];
+  for (const d of differing) lines2.push(`  ${d.name} differs`, ...d.details.map((detail) => `    ${detail}`));
+  if (missing.length > 0) lines2.push(`  not in your policy: ${missing.join(", ")}`);
+  lines2.push(
+    `A copied policy keeps the rules it was copied with. If you did not change these on purpose, take them from ${bundledPath}.`
+  );
+  return lines2;
+}
+function compareHardRules(mine, bundled) {
+  const byName = new Map(mine.map((r) => [r.name, r]));
+  const differing = [];
+  const missing = [];
+  for (const rule of bundled) {
+    const own = byName.get(rule.name);
+    if (own === void 0) {
+      missing.push(rule.name);
+      continue;
+    }
+    const details = whenDifferences(own.when, rule.when);
+    if (details.length > 0) differing.push({ name: rule.name, details });
+  }
+  return { differing, missing };
+}
+function whenDifferences(mine, bundled) {
+  const keys = [
+    ["first_token", "firstToken"],
+    ["tokens", "tokens"],
+    ["token_prefix", "tokenPrefix"],
+    ["not_tokens", "notTokens"],
+    ["text", "text"],
+    ["path_labelled", "pathLabelled"],
+    ["redacts_as", "redactsAs"],
+    ["target_labelled", "targetLabelled"]
+  ];
+  const show = (values) => values.map((v) => JSON.stringify(v)).join(", ");
+  const details = [];
+  for (const [key, field] of keys) {
+    const own = mine[field];
+    const theirs = bundled[field];
+    if (own === void 0 && theirs === void 0) continue;
+    if (theirs === void 0) details.push(`${key}: [${show(own ?? [])}] is only in yours`);
+    else if (own === void 0) details.push(`${key}: [${show(theirs)}] is only in the bundled entry`);
+    else {
+      const onlyMine = own.filter((v) => !theirs.includes(v));
+      const onlyTheirs = theirs.filter((v) => !own.includes(v));
+      if (onlyMine.length === 0 && onlyTheirs.length === 0) continue;
+      const sides = [
+        ...onlyMine.length > 0 ? [`yours has ${show(onlyMine)}`] : [],
+        ...onlyTheirs.length > 0 ? [`the bundled entry has ${show(onlyTheirs)}`] : []
+      ];
+      details.push(`${key}: ${sides.join("; ")}`);
+    }
+  }
+  return details;
 }
 function summarize(records) {
   const counts = /* @__PURE__ */ new Map();
@@ -13346,7 +13423,7 @@ var CommandReasoning = class {
    * is not attacker-influenced input, and bouncer runs nothing else anywhere.
    */
   spawn(input) {
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const child = (0, import_node_child_process.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
@@ -13376,7 +13453,7 @@ var CommandReasoning = class {
           reject(new Error(`the reasoning command exited ${code}: ${stderr.trim().slice(0, 500)}`));
           return;
         }
-        resolve5({ stdout });
+        resolve6({ stdout });
       });
       child.stdin.on("error", () => {
       });
@@ -14610,10 +14687,10 @@ async function readPayload() {
   }
 }
 function readAll2() {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const chunks = [];
     process.stdin.on("data", (c) => chunks.push(c));
-    process.stdin.on("end", () => resolve5(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("end", () => resolve6(Buffer.concat(chunks).toString("utf8")));
     process.stdin.on("error", reject);
   });
 }
@@ -14655,7 +14732,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.17\n");
+      process.stdout.write("0.2.18\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
