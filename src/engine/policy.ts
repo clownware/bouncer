@@ -151,6 +151,26 @@ export function loadPolicy(source: string): LoadResult {
       ? undefined
       : readStringList(calibrationFields["no_false_allows"], [], "calibration.no_false_allows", error);
 
+  // The gate's margins (ADR-011). Same rule as the three above: optional, and unset means
+  // that part of `calibrate --gate` is not evaluated rather than held to a default.
+  const margin = (key: string): number | undefined =>
+    calibrationFields[key] === undefined ? undefined : readProbability(calibrationFields[key], 0, `calibration.${key}`, error);
+  const frictionWithin = margin("friction_within");
+  const eceWithin = margin("ece_within");
+  const aucWithin = margin("auc_within");
+  const polarityWithin = margin("polarity_within");
+  const rephraseWithin = margin("rephrase_within");
+  const injectionWithin = margin("injection_within");
+  let injectionMinN: number | undefined;
+  const rawMinN = calibrationFields["injection_min_n"];
+  if (rawMinN !== undefined) {
+    if (typeof rawMinN !== "number" || !Number.isInteger(rawMinN) || rawMinN < 1) {
+      error("calibration.injection_min_n", "must be a whole number of cases, at least 1");
+    } else {
+      injectionMinN = rawMinN;
+    }
+  }
+
   const located = locateSets(raw, error);
   if (located === undefined) return { diagnostics };
 
@@ -185,6 +205,13 @@ export function loadPolicy(source: string): LoadResult {
       ...(brierWithin !== undefined ? { brierWithin } : {}),
       ...(agreementFloor !== undefined ? { agreementFloor } : {}),
       ...(noFalseAllows !== undefined && noFalseAllows.length > 0 ? { noFalseAllows } : {}),
+      ...(frictionWithin !== undefined ? { frictionWithin } : {}),
+      ...(eceWithin !== undefined ? { eceWithin } : {}),
+      ...(aucWithin !== undefined ? { aucWithin } : {}),
+      ...(polarityWithin !== undefined ? { polarityWithin } : {}),
+      ...(rephraseWithin !== undefined ? { rephraseWithin } : {}),
+      ...(injectionWithin !== undefined ? { injectionWithin } : {}),
+      ...(injectionMinN !== undefined ? { injectionMinN } : {}),
     },
     fingerprint: fingerprint(source),
   };

@@ -38,19 +38,28 @@ landed.
    Its `git_branch` cases need a `git` field the fixture loader does not read yet.
 4. Decide the margins in ADR-011 decision 4 once Jev has been measured on the new sets.
 
-**Built so far (0.2.12).** `src/gatemetrics.ts` has the arithmetic for every part but
-latency: AUC, disposition and flip rates, polarity, rephrase, attack success, the stratum
-mean and the temperature fit with cross-validation. `src/gatefixtures.ts` loads traces,
-variants and the injection set and refuses what would make a part measure something else.
-Both are tested (spec tests 23 to 28 and 30 to 37) and neither is reachable from a command,
-except AUC, which is in the Arms table.
+**Built so far (0.2.13).** `bouncer calibrate --gate <backend> [--reference jev]` runs and
+reports five of the six parts: accuracy, calibration (with AUC), polarity, rephrase and
+injection. `src/commands/gate.ts` is the runner, `src/gatereport.ts` the verdict and the
+report, `src/gatemetrics.ts` the arithmetic, `src/gatefixtures.ts` the loaders. Seven margins
+are policy keys, commented out in `policy/default.yaml`. It cannot pass: latency is never
+evaluated, and on the files that ship polarity and rephrase are not either, because the
+variant drafts carry no `base`.
 
-**Next for a session.** The runner: `calibrate --gate`, which asks the base set, the reversed
-set and three reworded sets (one variant kind per request, probes kept), scores the
-injection set, reads the new `calibration` keys, and prints the report in spec §6. Then
-`--fit`, `--gate --from` and the attestation file. All of it against stubs. The hook half
-(attestation check, `jev@` in `adapterFor`, `on_error: ask`) comes after the first live
-reference run, bumps the version, and is benched with `--against`.
+**Next for a session, in this order.**
+
+1. Stamp and unblock the variants. Once the owner has reviewed `fixtures/variants/`, each
+   line needs `base` set to `questionFingerprint()` of its question; a small command or
+   script to do that does not exist yet. The `egress` and `outside_repo` lines must be
+   redrafted first.
+2. `--fit` as a command (the arithmetic is `fitTemperature` and `crossValidateTemperature`),
+   which needs a `fit` split, which needs the trace set committed.
+3. `--gate --from <dir>,<dir>`: the `--out-dir` files are written already, one per arm and
+   pass, with each variant pass under its own questions fingerprint.
+4. Strata: `--traces`, per-stratum tables, `min_stratum_n`.
+5. The first live reference run of Jev on the new sets, then choose the margins.
+6. The hook half: `jev@` in `adapterFor`, the attestation check, `on_error: ask`, and
+   latency measured through the hook. Version bump, `bench --against`.
 
 **Not verified, so do not build on it.**
 

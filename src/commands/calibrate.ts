@@ -5,6 +5,7 @@
 // stays tested.
 //
 //   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b] [--out run.jsonl] [--json]
+//   bouncer calibrate --gate <[name=]backend> [--reference <[name=]backend>]   (see ./gate.ts)
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //   bouncer calibrate --from [name=]a.jsonl,[name=]b.jsonl[,...] [--fixtures path] [--set name] [--json]
 //
@@ -71,6 +72,7 @@ import {
   type Scored,
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
+import { gateCommand } from "./gate.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, chatBackend, errorsIn, jevCompatible, keyFromEnv, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
@@ -89,11 +91,24 @@ export interface CalibrateArgs {
   /** A policy file for this run, ahead of every other place one is looked for. */
   readonly policy?: string;
   readonly json?: boolean;
+  /** A candidate backend to hold to the calibration gate against `reference` (ADR-011). */
+  readonly gate?: string;
+  /** The backend `--gate` compares against. Defaults to `jev`. */
+  readonly reference?: string;
+  /** `--gate`: the directory holding `polarity.jsonl` and `rephrase.jsonl`. */
+  readonly variants?: string;
+  /** `--gate`: the injection set. */
+  readonly injection?: string;
+  /** `--gate`: where to write each arm's answers, one file per pass. */
+  readonly outDir?: string;
   /** What was wrong with the argv. The command prints it and exits 1 without running. */
   readonly error?: string;
 }
 
-const FLAGS = { values: ["fixtures", "set", "from", "backend", "compare", "out", "policy"], switches: ["json"] } as const;
+const FLAGS = {
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir"],
+  switches: ["json"],
+} as const;
 
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
   const { values, switches, error } = parseFlags(argv, FLAGS);
@@ -106,6 +121,11 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     ...(value("compare") !== undefined ? { compare: value("compare") as string } : {}),
     ...(value("out") !== undefined ? { out: value("out") as string } : {}),
     ...(value("policy") !== undefined ? { policy: value("policy") as string } : {}),
+    ...(value("gate") !== undefined ? { gate: value("gate") as string } : {}),
+    ...(value("reference") !== undefined ? { reference: value("reference") as string } : {}),
+    ...(value("variants") !== undefined ? { variants: value("variants") as string } : {}),
+    ...(value("injection") !== undefined ? { injection: value("injection") as string } : {}),
+    ...(value("out-dir") !== undefined ? { outDir: value("out-dir") as string } : {}),
     json: switches.has("json"),
     ...(error !== undefined ? { error } : {}),
   };
@@ -133,6 +153,16 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   } catch (err) {
     write(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
+  }
+
+  if (args.gate !== undefined) {
+    return gateCommand(args, resolved.policy, resolved.source, root, fixtures, write);
+  }
+  for (const [flag, value] of [["--reference", args.reference], ["--variants", args.variants], ["--injection", args.injection], ["--out-dir", args.outDir]] as const) {
+    if (value !== undefined) {
+      write(`${flag} belongs to --gate, which was not given.\n`);
+      return 1;
+    }
   }
 
   if (args.from !== undefined) {
@@ -302,7 +332,7 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
  * the accuracy columns are computed from what it said — with `source` naming what decided
  * the verdict.
  */
-function writeAnswers(path: string, answered: readonly Answered[], policy: Policy, setName: string, backend: string): void {
+export function writeAnswers(path: string, answered: readonly Answered[], policy: Policy, setName: string, backend: string): void {
   const set = policy.sets[setName];
   if (set === undefined) return;
 
@@ -687,7 +717,7 @@ export function adapterFor(backend: string): Adapter | string {
 }
 
 /** The adapter's own refusal message, or undefined if it started. */
-async function startIfNeeded(adapter: Adapter): Promise<string | undefined> {
+export async function startIfNeeded(adapter: Adapter): Promise<string | undefined> {
   const start = (adapter as { start?: () => Promise<void> }).start;
   if (typeof start !== "function") return undefined;
 

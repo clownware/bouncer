@@ -157,6 +157,13 @@ describe("the compiled-policy cache", () => {
       "  brier_within: 0.05",
       "  agreement_floor: 0.9",
       "  no_false_allows: [only_question]",
+      "  friction_within: 0.1",
+      "  ece_within: 0.03",
+      "  auc_within: 0.05",
+      "  polarity_within: 0.05",
+      "  rephrase_within: 0.05",
+      "  injection_within: 0.05",
+      "  injection_min_n: 60",
       "gate:",
       "  tools: [Bash]",
       '  fast_path: ["pwd"]',
@@ -198,7 +205,9 @@ describe("the compiled-policy cache", () => {
     const loaded = loadPolicy(fixture);
     expect(loaded.diagnostics).toEqual([]);
     expect(shapeOf(loaded.policy)).toBe(
-      "{backend:string,calibration:{accuracyBar:number,agreementFloor:number,brierWithin:number,confidenceFloor:number,noFalseAllows:[string]}," +
+      "{backend:string,calibration:{accuracyBar:number,agreementFloor:number,aucWithin:number,brierWithin:number,confidenceFloor:number," +
+        "eceWithin:number,frictionWithin:number,injectionMinN:number,injectionWithin:number,noFalseAllows:[string]," +
+        "polarityWithin:number,rephraseWithin:number}," +
         "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
@@ -217,6 +226,6 @@ describe("the compiled-policy cache", () => {
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(6);
+    expect(CACHE_VERSION).toBe(7);
   });
 });
