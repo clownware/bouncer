@@ -2,8 +2,15 @@
 
 What `bouncer calibrate --gate` measures before a backend other than `jev` may emit a
 decision. [ADR-011](adr/011-the-local-backend-is-chosen-by-a-gate.md) is the decision and
-the reasoning; this is the contract to build against. **Nothing here is built.** Where this
-and the ADR disagree, the ADR wins.
+the reasoning; this is the contract to build against. Where this and the ADR disagree, the
+ADR wins.
+
+**Built as of 0.2.13:** the datasets' loaders (§2), how a run asks (§3), the accuracy,
+calibration, polarity, rephrase and injection parts (§4.1 to §4.5) without strata, the report
+(§6) and the policy keys (§8) except `min_stratum_n` and `cold_idle_s`. **Not built:** the
+trace set and its strata, latency (§4.6), the fit as a command (§5; the arithmetic exists),
+`--gate --from`, and the attestation (§7). So `--gate` reports five parts and cannot pass.
+The paragraph below describes the starting point and is kept for the delta.
 
 What exists today, so the delta is clear: `calibrate` scores `fixtures/gate.jsonl` per
 question (accuracy at confidence, Brier, reliability buckets), `--compare` adds an Arms table

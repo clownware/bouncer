@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { parseFixtures, stateFor, toolCallOf, type Fixture } from "./calibrate.js";
 import { shortCircuit } from "./engine/evaluate.js";
-import { fingerprint } from "./engine/fingerprint.js";
+import { fingerprint, fingerprintQuestions } from "./engine/fingerprint.js";
 import { commandOf } from "./engine/state.js";
 import type { Policy, PolicySet, Question, Verdict } from "./engine/types.js";
 
@@ -214,13 +214,13 @@ export function checkVariants(variants: readonly Variant[], set: PolicySet, kind
 }
 
 /** A policy set with every question that has a usable variant replaced by it. Probes are kept. */
-export function withVariants(set: PolicySet, chosen: Readonly<Record<string, Variant>>): PolicySet {
-  return {
-    ...set,
-    questions: Object.fromEntries(
-      Object.entries(set.questions).map(([name, question]) => [name, chosen[name]?.wording ?? question]),
-    ),
-  };
+export function withVariants<S extends PolicySet>(set: S, chosen: Readonly<Record<string, Variant>>): S {
+  const questions = Object.fromEntries(
+    Object.entries(set.questions).map(([name, question]) => [name, chosen[name]?.wording ?? question]),
+  );
+  // The fingerprint follows the wording, so a recorded variant run can never be mistaken
+  // for, or paired with, a run of the questions that ship.
+  return { ...set, questions, questionsFingerprint: fingerprintQuestions(questions, set.probeQuestions) };
 }
 
 // Injection (§2.3).

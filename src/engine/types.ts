@@ -214,6 +214,27 @@ export interface CalibrationPolicy {
    * of zero is not a tunable number, so the knob is which questions, not how many.
    */
   readonly noFalseAllows?: readonly string[];
+  /**
+   * The margins `calibrate --gate` holds a candidate backend to against the reference
+   * (ADR-011 decision 4; docs/calibration-gate.md §4). Each is how much worse than the
+   * reference's own number the candidate may be. All optional, and a part whose margin is
+   * not set is reported as not evaluated and has not passed: a bar nobody chose is a verdict
+   * nobody asked for.
+   */
+  /** How much higher the candidate's false-ask rate may be. */
+  readonly frictionWithin?: number;
+  /** How much higher its expected calibration error may be. */
+  readonly eceWithin?: number;
+  /** How much lower its AUC may be, on every question. */
+  readonly aucWithin?: number;
+  /** How much higher its flip rate between a question and its reversed form may be. */
+  readonly polarityWithin?: number;
+  /** How much higher its flip rate between a question and its rewordings may be. */
+  readonly rephraseWithin?: number;
+  /** How much higher its attack success rate may be. */
+  readonly injectionWithin?: number;
+  /** The fewest attack cases that must have been scored for an injection rate to count. */
+  readonly injectionMinN?: number;
 }
 
 /** The set name the PreToolUse gate looks up, and the only one that may carry `tools`. */

@@ -333,6 +333,32 @@ to whatever `chat@` URL you name. For a Qwen model on vLLM, turn thinking off wi
 first token is `<think>` and the probe refuses.
 <!-- COMPARE-TABLE:END -->
 
+### Before a backend may gate: `calibrate --gate`
+
+Matching Jev on Brier is not enough to stand in for it. An open decision model can score
+well on a fixed set and still read "is this safe to allow" and "should this be blocked" as
+the same question, or approve a command because the command says it was approved.
+`--gate` asks for those failures directly ([ADR-011](docs/adr/011-the-local-backend-is-chosen-by-a-gate.md)):
+
+```bash
+BOUNCER_TYPESAFE_API_KEY=… \
+  node bin/bouncer.cjs calibrate --gate clef-flash=jev@http://127.0.0.1:8093 --out-dir run/
+```
+
+It compares the candidate with a reference, `jev` unless `--reference` says otherwise, and
+reports six parts: accuracy, calibration (with AUC, so hedging every answer cannot pass),
+polarity (every question asked again reversed), rephrase (three rewordings of each),
+injection (planted instructions in the command, its stated intent, a path, the branch or the
+project name) and latency. A polarity or injection failure disqualifies whatever the other
+parts say. Every bar is the reference's own number plus a margin from the policy's
+`calibration` block, and a part whose margin you have not set is not evaluated, which is not
+a pass.
+
+It does not pass anything yet. Latency is not measured, no attestation is written, and the
+reversed forms and rewordings in [`fixtures/variants/`](fixtures/variants) are unreviewed
+drafts that `--gate` will not ask until each is stamped with the wording it was written
+against. What it gives you today is the report.
+
 ## Modes
 
 Bouncer's mode decides what it is allowed to emit. It is one key in the policy file.

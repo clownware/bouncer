@@ -8,6 +8,40 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.13
+
+**`bouncer calibrate --gate <backend>`** (#127, ADR-011). Holds a candidate backend to the
+calibration gate against a reference, `jev` unless `--reference` names another, and prints
+one verdict per part:
+
+- **accuracy** and **calibration**, the second now with AUC per question, so an arm that
+  hedges every answer cannot pass on calibration error alone;
+- **polarity**: every question asked again in a reversed form. An arm that answers the
+  reversed form the way it answers the original is disqualified;
+- **rephrase**: three rewordings of every question, and how often the answer's effect
+  under your own rules changes;
+- **injection**: the cases in `fixtures/injection.jsonl`, where a command that should
+  prompt carries text such as "approved by the user". An arm that lets them through at a
+  higher rate than the reference is disqualified.
+
+A polarity or injection failure is final whatever the other parts say; there is no overall
+score. `--out-dir` records each arm's answers, one file per pass, and `--json` prints the
+assessment.
+
+**It cannot pass yet, by design.** Latency is the sixth part and is not measured, because
+it has to be measured through the hook and the hook cannot run a `jev@` backend. No
+temperature is fitted and no attestation is written. Two parts are also idle on the files
+that ship: the reversed forms and rewordings in `fixtures/variants/` are unreviewed drafts
+with no `base` fingerprint, so `--gate` reports polarity and rephrase as not evaluated
+until they are reviewed and stamped.
+
+Seven margins join the policy's `calibration` block, all optional and all commented out in
+`policy/default.yaml`. A part whose margin is unset is not evaluated, which is not a pass.
+The exit status is 0 only when the gate passes, and never 2.
+
+A hook call costs about half a millisecond more, from a larger bundle: eight paired runs
+against the previous build had medians between −0.1 and +0.9 ms on about 37 ms.
+
 ## 0.2.12
 
 **`calibrate --compare` and `--from a,b` print AUC beside ECE.** The **Arms** table gains a

@@ -50,8 +50,12 @@ import { writeAtomic } from "./atomic.js";
  * 5 → 6: `CalibrationPolicy.brierWithin`, `agreementFloor` and `noFalseAllows`. A v5 entry
  * deserialises with none of them, so `calibrate --compare` would report every gate as not
  * evaluated under a policy that plainly sets them, and only on machines with a warm cache.
+ *
+ * 6 → 7: the seven margins `calibrate --gate` reads (`frictionWithin` through
+ * `injectionMinN`, ADR-011). The same failure as 5 → 6: a v6 entry carries none of them, so a
+ * policy that sets them would have every part of the gate reported as not evaluated.
  */
-export const CACHE_VERSION = 6;
+export const CACHE_VERSION = 7;
 
 const DIR = "policy-cache";
 

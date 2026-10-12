@@ -385,7 +385,7 @@ var require_directives = __commonJS({
         return tag[0] === "!" ? tag : `!<${tag}>`;
       }
       toString(doc) {
-        const lines = this.yaml.explicit ? [`%YAML ${this.yaml.version || "1.2"}`] : [];
+        const lines2 = this.yaml.explicit ? [`%YAML ${this.yaml.version || "1.2"}`] : [];
         const tagEntries = Object.entries(this.tags);
         let tagNames;
         if (doc && tagEntries.length > 0 && identity.isNode(doc.contents)) {
@@ -401,9 +401,9 @@ var require_directives = __commonJS({
           if (handle === "!!" && prefix === "tag:yaml.org,2002:")
             continue;
           if (!doc || tagNames.some((tn) => tn.startsWith(prefix)))
-            lines.push(`%TAG ${handle} ${prefix}`);
+            lines2.push(`%TAG ${handle} ${prefix}`);
         }
-        return lines.join("\n");
+        return lines2.join("\n");
       }
     };
     Directives.defaultYaml = { explicit: false, version: "1.2" };
@@ -1864,22 +1864,22 @@ var require_stringifyCollection = __commonJS({
       const { indent, options: { commentString } } = ctx;
       const itemCtx = Object.assign({}, ctx, { indent: itemIndent, type: null });
       let chompKeep = false;
-      const lines = [];
+      const lines2 = [];
       for (let i = 0; i < items.length; ++i) {
         const item = items[i];
         let comment2 = null;
         if (identity.isNode(item)) {
           if (!chompKeep && item.spaceBefore)
-            lines.push("");
-          addCommentBefore(ctx, lines, item.commentBefore, chompKeep);
+            lines2.push("");
+          addCommentBefore(ctx, lines2, item.commentBefore, chompKeep);
           if (item.comment)
             comment2 = item.comment;
         } else if (identity.isPair(item)) {
           const ik = identity.isNode(item.key) ? item.key : null;
           if (ik) {
             if (!chompKeep && ik.spaceBefore)
-              lines.push("");
-            addCommentBefore(ctx, lines, ik.commentBefore, chompKeep);
+              lines2.push("");
+            addCommentBefore(ctx, lines2, ik.commentBefore, chompKeep);
           }
         }
         chompKeep = false;
@@ -1888,15 +1888,15 @@ var require_stringifyCollection = __commonJS({
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
           chompKeep = false;
-        lines.push(blockItemPrefix + str2);
+        lines2.push(blockItemPrefix + str2);
       }
       let str;
-      if (lines.length === 0) {
+      if (lines2.length === 0) {
         str = flowChars.start + flowChars.end;
       } else {
-        str = lines[0];
-        for (let i = 1; i < lines.length; ++i) {
-          const line = lines[i];
+        str = lines2[0];
+        for (let i = 1; i < lines2.length; ++i) {
+          const line = lines2[i];
           str += line ? `
 ${indent}${line}` : "\n";
         }
@@ -1919,22 +1919,22 @@ ${indent}${line}` : "\n";
       });
       let reqNewline = false;
       let linesAtValue = 0;
-      const lines = [];
+      const lines2 = [];
       for (let i = 0; i < items.length; ++i) {
         const item = items[i];
         let comment = null;
         if (identity.isNode(item)) {
           if (item.spaceBefore)
-            lines.push("");
-          addCommentBefore(ctx, lines, item.commentBefore, false);
+            lines2.push("");
+          addCommentBefore(ctx, lines2, item.commentBefore, false);
           if (item.comment)
             comment = item.comment;
         } else if (identity.isPair(item)) {
           const ik = identity.isNode(item.key) ? item.key : null;
           if (ik) {
             if (ik.spaceBefore)
-              lines.push("");
-            addCommentBefore(ctx, lines, ik.commentBefore, false);
+              lines2.push("");
+            addCommentBefore(ctx, lines2, ik.commentBefore, false);
             if (ik.comment)
               reqNewline = true;
           }
@@ -1951,12 +1951,12 @@ ${indent}${line}` : "\n";
         if (comment)
           reqNewline = true;
         let str = stringify.stringify(item, itemCtx, () => comment = null);
-        reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
+        reqNewline || (reqNewline = lines2.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
         } else if (ctx.options.trailingComma) {
           if (ctx.options.lineWidth > 0) {
-            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str.length + 2) > ctx.options.lineWidth);
+            reqNewline || (reqNewline = lines2.reduce((sum, line) => sum + line.length + 2, 2) + (str.length + 2) > ctx.options.lineWidth);
           }
           if (reqNewline) {
             str += ",";
@@ -1964,35 +1964,35 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           str += stringifyComment.lineComment(str, itemIndent, commentString(comment));
-        lines.push(str);
-        linesAtValue = lines.length;
+        lines2.push(str);
+        linesAtValue = lines2.length;
       }
       const { start, end } = flowChars;
-      if (lines.length === 0) {
+      if (lines2.length === 0) {
         return start + end;
       } else {
         if (!reqNewline) {
-          const len = lines.reduce((sum, line) => sum + line.length + 2, 2);
+          const len = lines2.reduce((sum, line) => sum + line.length + 2, 2);
           reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
         }
         if (reqNewline) {
           let str = start;
-          for (const line of lines)
+          for (const line of lines2)
             str += line ? `
 ${indentStep}${indent}${line}` : "\n";
           return `${str}
 ${indent}${end}`;
         } else {
-          return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
+          return `${start}${fcPadding}${lines2.join(" ")}${fcPadding}${end}`;
         }
       }
     }
-    function addCommentBefore({ indent, options: { commentString } }, lines, comment, chompKeep) {
+    function addCommentBefore({ indent, options: { commentString } }, lines2, comment, chompKeep) {
       if (comment && chompKeep)
         comment = comment.replace(/^\n+/, "");
       if (comment) {
         const ic = stringifyComment.indentComment(commentString(comment), indent);
-        lines.push(ic.trimStart());
+        lines2.push(ic.trimStart());
       }
     }
     exports2.stringifyCollection = stringifyCollection;
@@ -2371,9 +2371,9 @@ var require_stringifyNumber = __commonJS({
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
         return String(value);
-      const num = typeof value === "number" ? value : Number(value);
-      if (!isFinite(num))
-        return isNaN(num) ? ".nan" : num < 0 ? "-.inf" : ".inf";
+      const num2 = typeof value === "number" ? value : Number(value);
+      if (!isFinite(num2))
+        return isNaN(num2) ? ".nan" : num2 < 0 ? "-.inf" : ".inf";
       let n = Object.is(value, -0) ? "-0" : JSON.stringify(value);
       if (!format && minFractionDigits && (!tag || tag === "tag:yaml.org,2002:float") && /^-?\d/.test(n) && !n.includes("e")) {
         let i = n.indexOf(".");
@@ -2413,8 +2413,8 @@ var require_float = __commonJS({
       test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
       resolve: (str) => parseFloat(str),
       stringify(node) {
-        const num = Number(node.value);
-        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num2 = Number(node.value);
+        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -2630,11 +2630,11 @@ var require_binary = __commonJS({
         if (type !== Scalar.Scalar.QUOTE_DOUBLE) {
           const lineWidth = Math.max(ctx.options.lineWidth - ctx.indent.length, ctx.options.minContentWidth);
           const n = Math.ceil(str.length / lineWidth);
-          const lines = new Array(n);
+          const lines2 = new Array(n);
           for (let i = 0, o = 0; i < n; ++i, o += lineWidth) {
-            lines[i] = str.substr(o, lineWidth);
+            lines2[i] = str.substr(o, lineWidth);
           }
-          str = lines.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
+          str = lines2.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
         }
         return stringifyString.stringifyString({ comment, type, value: str }, ctx, onComment, onChompKeep);
       }
@@ -2853,8 +2853,8 @@ var require_float2 = __commonJS({
       test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
       resolve: (str) => parseFloat(str.replace(/_/g, "")),
       stringify(node) {
-        const num = Number(node.value);
-        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num2 = Number(node.value);
+        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -3056,23 +3056,23 @@ var require_timestamp = __commonJS({
     function parseSexagesimal(str, asBigInt) {
       const sign = str[0];
       const parts = sign === "-" || sign === "+" ? str.substring(1) : str;
-      const num = (n) => asBigInt ? BigInt(n) : Number(n);
-      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num(60) + num(p), num(0));
-      return sign === "-" ? num(-1) * res : res;
+      const num2 = (n) => asBigInt ? BigInt(n) : Number(n);
+      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num2(60) + num2(p), num2(0));
+      return sign === "-" ? num2(-1) * res : res;
     }
     function stringifySexagesimal(node) {
       let { value } = node;
-      let num = (n) => n;
+      let num2 = (n) => n;
       if (typeof value === "bigint")
-        num = (n) => BigInt(n);
+        num2 = (n) => BigInt(n);
       else if (isNaN(value) || !isFinite(value))
         return stringifyNumber.stringifyNumber(node);
       let sign = "";
       if (value < 0) {
         sign = "-";
-        value *= num(-1);
+        value *= num2(-1);
       }
-      const _60 = num(60);
+      const _60 = num2(60);
       const parts = [value % _60];
       if (value < 60) {
         parts.unshift(0);
@@ -3314,35 +3314,35 @@ var require_stringifyDocument = __commonJS({
     var stringify = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
-      const lines = [];
+      const lines2 = [];
       let hasDirectives = options.directives === true;
       if (options.directives !== false && doc.directives) {
         const dir = doc.directives.toString(doc);
         if (dir) {
-          lines.push(dir);
+          lines2.push(dir);
           hasDirectives = true;
         } else if (doc.directives.docStart)
           hasDirectives = true;
       }
       if (hasDirectives)
-        lines.push("---");
+        lines2.push("---");
       const ctx = stringify.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
-        if (lines.length !== 1)
-          lines.unshift("");
+        if (lines2.length !== 1)
+          lines2.unshift("");
         const cs = commentString(doc.commentBefore);
-        lines.unshift(stringifyComment.indentComment(cs, ""));
+        lines2.unshift(stringifyComment.indentComment(cs, ""));
       }
       let chompKeep = false;
       let contentComment = null;
       if (doc.contents) {
         if (identity.isNode(doc.contents)) {
           if (doc.contents.spaceBefore && hasDirectives)
-            lines.push("");
+            lines2.push("");
           if (doc.contents.commentBefore) {
             const cs = commentString(doc.contents.commentBefore);
-            lines.push(stringifyComment.indentComment(cs, ""));
+            lines2.push(stringifyComment.indentComment(cs, ""));
           }
           ctx.forceBlockIndent = !!doc.comment;
           contentComment = doc.contents.comment;
@@ -3351,36 +3351,36 @@ var require_stringifyDocument = __commonJS({
         let body = stringify.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
-        if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
-          lines[lines.length - 1] = `--- ${body}`;
+        if ((body[0] === "|" || body[0] === ">") && lines2[lines2.length - 1] === "---") {
+          lines2[lines2.length - 1] = `--- ${body}`;
         } else
-          lines.push(body);
+          lines2.push(body);
       } else {
-        lines.push(stringify.stringify(doc.contents, ctx));
+        lines2.push(stringify.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
           const cs = commentString(doc.comment);
           if (cs.includes("\n")) {
-            lines.push("...");
-            lines.push(stringifyComment.indentComment(cs, ""));
+            lines2.push("...");
+            lines2.push(stringifyComment.indentComment(cs, ""));
           } else {
-            lines.push(`... ${cs}`);
+            lines2.push(`... ${cs}`);
           }
         } else {
-          lines.push("...");
+          lines2.push("...");
         }
       } else {
         let dc = doc.comment;
         if (dc && chompKeep)
           dc = dc.replace(/^\n+/, "");
         if (dc) {
-          if ((!chompKeep || contentComment) && lines[lines.length - 1] !== "")
-            lines.push("");
-          lines.push(stringifyComment.indentComment(commentString(dc), ""));
+          if ((!chompKeep || contentComment) && lines2[lines2.length - 1] !== "")
+            lines2.push("");
+          lines2.push(stringifyComment.indentComment(commentString(dc), ""));
         }
       }
-      return lines.join("\n") + "\n";
+      return lines2.join("\n") + "\n";
     }
     exports2.stringifyDocument = stringifyDocument;
   }
@@ -4442,17 +4442,17 @@ var require_resolve_block_scalar = __commonJS({
       if (!header)
         return { value: "", type: null, comment: "", range: [start, start, start] };
       const type = header.mode === ">" ? Scalar.Scalar.BLOCK_FOLDED : Scalar.Scalar.BLOCK_LITERAL;
-      const lines = scalar.source ? splitLines(scalar.source) : [];
-      let chompStart = lines.length;
-      for (let i = lines.length - 1; i >= 0; --i) {
-        const content = lines[i][1];
+      const lines2 = scalar.source ? splitLines(scalar.source) : [];
+      let chompStart = lines2.length;
+      for (let i = lines2.length - 1; i >= 0; --i) {
+        const content = lines2[i][1];
         if (content === "" || content === "\r")
           chompStart = i;
         else
           break;
       }
       if (chompStart === 0) {
-        const value2 = header.chomp === "+" && lines.length > 0 ? "\n".repeat(Math.max(1, lines.length - 1)) : "";
+        const value2 = header.chomp === "+" && lines2.length > 0 ? "\n".repeat(Math.max(1, lines2.length - 1)) : "";
         let end2 = start + header.length;
         if (scalar.source)
           end2 += scalar.source.length;
@@ -4462,7 +4462,7 @@ var require_resolve_block_scalar = __commonJS({
       let offset = scalar.offset + header.length;
       let contentStart = 0;
       for (let i = 0; i < chompStart; ++i) {
-        const [indent, content] = lines[i];
+        const [indent, content] = lines2[i];
         if (content === "" || content === "\r") {
           if (header.indent === 0 && indent.length > trimIndent)
             trimIndent = indent.length;
@@ -4482,17 +4482,17 @@ var require_resolve_block_scalar = __commonJS({
         }
         offset += indent.length + content.length + 1;
       }
-      for (let i = lines.length - 1; i >= chompStart; --i) {
-        if (lines[i][0].length > trimIndent)
+      for (let i = lines2.length - 1; i >= chompStart; --i) {
+        if (lines2[i][0].length > trimIndent)
           chompStart = i + 1;
       }
       let value = "";
       let sep4 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
-        value += lines[i][0].slice(trimIndent) + "\n";
+        value += lines2[i][0].slice(trimIndent) + "\n";
       for (let i = contentStart; i < chompStart; ++i) {
-        let [indent, content] = lines[i];
+        let [indent, content] = lines2[i];
         offset += indent.length + content.length + 1;
         const crlf = content[content.length - 1] === "\r";
         if (crlf)
@@ -4529,8 +4529,8 @@ var require_resolve_block_scalar = __commonJS({
         case "-":
           break;
         case "+":
-          for (let i = chompStart; i < lines.length; ++i)
-            value += "\n" + lines[i][0].slice(trimIndent);
+          for (let i = chompStart; i < lines2.length; ++i)
+            value += "\n" + lines2[i][0].slice(trimIndent);
           if (value[value.length - 1] !== "\n")
             value += "\n";
           break;
@@ -4605,10 +4605,10 @@ var require_resolve_block_scalar = __commonJS({
       const first = split[0];
       const m = first.match(/^( *)/);
       const line0 = m?.[1] ? [m[1], first.slice(m[1].length)] : ["", first];
-      const lines = [line0];
+      const lines2 = [line0];
       for (let i = 1; i < split.length; i += 2)
-        lines.push([split[i], split[i + 1]]);
-      return lines;
+        lines2.push([split[i], split[i + 1]]);
+      return lines2;
     }
     exports2.resolveBlockScalar = resolveBlockScalar;
   }
@@ -7973,11 +7973,11 @@ var LocalAdapter = class {
   }
 };
 function suffixFor(question) {
-  const lines = ["", "---", `Question: ${question.instructions}`];
-  if (question.criteria?.true !== void 0) lines.push(`True when: ${question.criteria.true}`);
-  if (question.criteria?.false !== void 0) lines.push(`False when: ${question.criteria.false}`);
-  lines.push("Answer with one word, yes or no.", "Answer:");
-  return lines.join("\n");
+  const lines2 = ["", "---", `Question: ${question.instructions}`];
+  if (question.criteria?.true !== void 0) lines2.push(`True when: ${question.criteria.true}`);
+  if (question.criteria?.false !== void 0) lines2.push(`False when: ${question.criteria.false}`);
+  lines2.push("Answer with one word, yes or no.", "Answer:");
+  return lines2.join("\n");
 }
 var PROBE_PROMPT = `Question: Is the sky sometimes blue?
 Answer with one word, yes or no.
@@ -8297,6 +8297,22 @@ function loadPolicy(source) {
   const brierWithin = calibrationFields["brier_within"] === void 0 ? void 0 : readProbability2(calibrationFields["brier_within"], 0, "calibration.brier_within", error);
   const agreementFloor = calibrationFields["agreement_floor"] === void 0 ? void 0 : readProbability2(calibrationFields["agreement_floor"], 0, "calibration.agreement_floor", error);
   const noFalseAllows = calibrationFields["no_false_allows"] === void 0 ? void 0 : readStringList(calibrationFields["no_false_allows"], [], "calibration.no_false_allows", error);
+  const margin = (key) => calibrationFields[key] === void 0 ? void 0 : readProbability2(calibrationFields[key], 0, `calibration.${key}`, error);
+  const frictionWithin = margin("friction_within");
+  const eceWithin = margin("ece_within");
+  const aucWithin = margin("auc_within");
+  const polarityWithin = margin("polarity_within");
+  const rephraseWithin = margin("rephrase_within");
+  const injectionWithin = margin("injection_within");
+  let injectionMinN;
+  const rawMinN = calibrationFields["injection_min_n"];
+  if (rawMinN !== void 0) {
+    if (typeof rawMinN !== "number" || !Number.isInteger(rawMinN) || rawMinN < 1) {
+      error("calibration.injection_min_n", "must be a whole number of cases, at least 1");
+    } else {
+      injectionMinN = rawMinN;
+    }
+  }
   const located = locateSets(raw, error);
   if (located === void 0) return { diagnostics };
   const sets = {};
@@ -8326,7 +8342,14 @@ function loadPolicy(source) {
       accuracyBar,
       ...brierWithin !== void 0 ? { brierWithin } : {},
       ...agreementFloor !== void 0 ? { agreementFloor } : {},
-      ...noFalseAllows !== void 0 && noFalseAllows.length > 0 ? { noFalseAllows } : {}
+      ...noFalseAllows !== void 0 && noFalseAllows.length > 0 ? { noFalseAllows } : {},
+      ...frictionWithin !== void 0 ? { frictionWithin } : {},
+      ...eceWithin !== void 0 ? { eceWithin } : {},
+      ...aucWithin !== void 0 ? { aucWithin } : {},
+      ...polarityWithin !== void 0 ? { polarityWithin } : {},
+      ...rephraseWithin !== void 0 ? { rephraseWithin } : {},
+      ...injectionWithin !== void 0 ? { injectionWithin } : {},
+      ...injectionMinN !== void 0 ? { injectionMinN } : {}
     },
     fingerprint: fingerprint(source)
   };
@@ -9326,7 +9349,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 6;
+var CACHE_VERSION = 7;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -9615,9 +9638,9 @@ function tail(dir, count, name = LOG_FILE) {
     return [];
   }
   const records = [];
-  const lines = raw.split("\n");
-  for (let i = lines.length - 1; i >= 0 && records.length < count; i--) {
-    const line = lines[i];
+  const lines2 = raw.split("\n");
+  for (let i = lines2.length - 1; i >= 0 && records.length < count; i--) {
+    const line = lines2[i];
     if (line === void 0 || line.trim().length === 0) continue;
     try {
       records.push(JSON.parse(line));
@@ -9895,53 +9918,53 @@ function status() {
   const cwd = process.cwd();
   const resolved = resolvePolicy(cwd, pluginRoot());
   const dir = dataDir();
-  const lines = [];
+  const lines2 = [];
   if (resolved.policy === void 0) {
-    lines.push("bouncer is NOT running.", "");
-    lines.push(`Policy: ${resolved.source}`);
+    lines2.push("bouncer is NOT running.", "");
+    lines2.push(`Policy: ${resolved.source}`);
     for (const d of errorsIn(resolved.diagnostics)) {
-      lines.push(`  error at ${d.path || "the top level"}: ${d.message}`);
+      lines2.push(`  error at ${d.path || "the top level"}: ${d.message}`);
     }
-    lines.push("", "Claude Code's own permission prompts are unaffected.");
-    return `${lines.join("\n")}
+    lines2.push("", "Claude Code's own permission prompts are unaffected.");
+    return `${lines2.join("\n")}
 `;
   }
   const policy = resolved.policy;
   const sampled = tail(dir, SAMPLE);
   const setAside = policy.backend === "mock" ? [] : sampled.filter((r) => r.backend === "mock");
   const records = setAside.length === 0 ? sampled : sampled.filter((r) => r.backend !== "mock");
-  lines.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
-  lines.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
-  lines.push(`Policy:  ${resolved.source}`);
-  lines.push(`Log:     ${(0, import_node_path7.join)(dir, LOG_FILE)}`);
+  lines2.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
+  lines2.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
+  lines2.push(`Policy:  ${resolved.source}`);
+  lines2.push(`Log:     ${(0, import_node_path7.join)(dir, LOG_FILE)}`);
   const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
-  for (const w of warnings) lines.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
+  for (const w of warnings) lines2.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
   const standingDown = readAll(dir).filter((s) => s.tripped !== void 0);
-  if (standingDown.length > 0) lines.push("");
+  if (standingDown.length > 0) lines2.push("");
   for (const s of standingDown) {
-    lines.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
+    lines2.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
   }
-  lines.push("");
+  lines2.push("");
   if (records.length === 0) {
-    lines.push("No decisions logged yet.");
-    if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
-    return `${lines.join("\n")}
+    lines2.push("No decisions logged yet.");
+    if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
+    return `${lines2.join("\n")}
 `;
   }
-  lines.push(`Last ${records.length} decisions:`);
-  lines.push(...summarize(records));
-  if (setAside.length > 0) lines.push("", mockNote(setAside.length, policy.backend));
+  lines2.push(`Last ${records.length} decisions:`);
+  lines2.push(...summarize(records));
+  if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
   if (policy.mode === "observe") {
     const wouldPrompt = records.filter(
       (r) => r.error === void 0 && r.reason.kind !== "truncated" && (r.verdict === "ask" || r.verdict === "deny")
     ).length;
-    lines.push(
+    lines2.push(
       "",
       `In observe mode nothing was emitted. Switching to guard would have added ${wouldPrompt} prompt${wouldPrompt === 1 ? "" : "s"} across these ${records.length} calls.`,
       "Run `bouncer calibrate` before trusting that number."
     );
   }
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 function summarize(records) {
@@ -9950,36 +9973,36 @@ function summarize(records) {
     if (r.error !== void 0 || r.verdict === void 0) continue;
     counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
   }
-  const lines = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
+  const lines2 = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
   const undecided = records.filter((r) => r.error !== void 0 || r.verdict === void 0).length;
   if (undecided > 0) {
-    lines.push(`  (${undecided} more concluded nothing \u2014 the classifier could not answer \u2014 and are not counted above)`);
+    lines2.push(`  (${undecided} more concluded nothing \u2014 the classifier could not answer \u2014 and are not counted above)`);
   }
   const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
   if (fastPath > 0) {
-    lines.push(`  (${fastPath} of these never reached the classifier \u2014 fast path)`);
+    lines2.push(`  (${fastPath} of these never reached the classifier \u2014 fast path)`);
   }
   const judged = records.filter((r) => r.source === "judge");
   if (judged.length > 0) {
     const escalated = judged.map((r) => r.escalation).filter((e) => e !== void 0);
     const manifest = manifestOf(escalated, judged.length);
-    const pct = (manifest.escalationRate * 100).toFixed(1);
-    lines.push(
+    const pct2 = (manifest.escalationRate * 100).toFixed(1);
+    lines2.push(
       "",
-      `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct}%) \u2014 the calls a rule could not settle on the classifier's answer alone.`
+      `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct2}%) \u2014 the calls a rule could not settle on the classifier's answer alone.`
     );
   }
   const adapterCalls = records.filter((r) => typeof r.latency_ms.adapter === "number").map((r) => r.latency_ms.adapter).sort((a, b) => a - b);
   if (adapterCalls.length > 0) {
     const p = (q) => adapterCalls[Math.min(adapterCalls.length - 1, Math.floor(adapterCalls.length * q))];
-    lines.push("", `Classifier latency over ${adapterCalls.length} calls: p50 ${p(0.5)}ms, p95 ${p(0.95)}ms`);
+    lines2.push("", `Classifier latency over ${adapterCalls.length} calls: p50 ${p(0.5)}ms, p95 ${p(0.95)}ms`);
   }
   const errors = records.filter((r) => r.error !== void 0);
   if (errors.length > 0) {
     const last = errors[0];
-    lines.push("", `${errors.length} error${errors.length === 1 ? "" : "s"}; most recent: ${last?.error?.kind} \u2014 ${last?.error?.message}`);
+    lines2.push("", `${errors.length} error${errors.length === 1 ? "" : "s"}; most recent: ${last?.error?.kind} \u2014 ${last?.error?.message}`);
   }
-  return lines;
+  return lines2;
 }
 function mockNote(count, backend) {
   const s = count === 1 ? "" : "s";
@@ -10021,51 +10044,51 @@ function explain2(toolUseId) {
   return render(record2);
 }
 function render(record2) {
-  const lines = [];
-  lines.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
+  const lines2 = [];
+  lines2.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
   const concluded = record2.error === void 0 && record2.verdict !== void 0;
   const emitted = record2.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record2.mode} mode` : ""})` : `  (emitted ${record2.emitted})`;
-  lines.push(`Verdict: ${concluded ? record2.verdict : "none"}${emitted}`);
-  lines.push(
+  lines2.push(`Verdict: ${concluded ? record2.verdict : "none"}${emitted}`);
+  lines2.push(
     `Because: ${record2.error !== void 0 ? `the classifier could not answer (${record2.error.kind}: ${record2.error.message})` : describe(record2)}`
   );
   if (record2.permission_mode !== void 0) {
-    lines.push(`Permission mode: ${record2.permission_mode}`);
+    lines2.push(`Permission mode: ${record2.permission_mode}`);
   }
   if (record2.agent_type !== void 0) {
-    lines.push(`Called by subagent: ${record2.agent_type}`);
+    lines2.push(`Called by subagent: ${record2.agent_type}`);
   }
   if (record2.answers !== void 0 && Object.keys(record2.answers).length > 0) {
-    lines.push("", "Judgments:");
+    lines2.push("", "Judgments:");
     const entries = Object.entries(record2.answers).sort((a, b) => b[1] - a[1]);
     const width = Math.max(...entries.map(([name]) => name.length));
     for (const [name, p] of entries) {
-      lines.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
+      lines2.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
     }
   }
   if (record2.escalation !== void 0 && record2.escalation.signals.length > 0) {
-    lines.push("", `Escalated as ${record2.escalation.verdict}, on:`);
+    lines2.push("", `Escalated as ${record2.escalation.verdict}, on:`);
     for (const signal of record2.escalation.signals) {
       const mark = signal.decided ? "\u2192" : " ";
-      lines.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
-      lines.push(`      ${signal.asks}`);
+      lines2.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
+      lines2.push(`      ${signal.asks}`);
     }
     if (record2.escalation.signals.length > 1) {
-      lines.push("  \u2192 marks the one that decided; first match wins.");
+      lines2.push("  \u2192 marks the one that decided; first match wins.");
     }
   }
   if (record2.error !== void 0) {
-    lines.push("", `Error: ${record2.error.kind} \u2014 ${record2.error.message}`);
+    lines2.push("", `Error: ${record2.error.kind} \u2014 ${record2.error.message}`);
   }
   if (record2.state !== void 0) {
-    lines.push("", "What was sent to the classifier:", `  ${record2.state}`);
+    lines2.push("", "What was sent to the classifier:", `  ${record2.state}`);
   }
   if (record2.redacted_kinds !== void 0 && record2.redacted_kinds.length > 0) {
-    lines.push("", `Redacted before sending: ${record2.redacted_kinds.join(", ")}`);
+    lines2.push("", `Redacted before sending: ${record2.redacted_kinds.join(", ")}`);
   }
   const adapter = record2.latency_ms.adapter;
-  lines.push("", `Latency: ${record2.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record2.warmup === true ? "  (first call of the session)" : ""}`);
-  return `${lines.join("\n")}
+  lines2.push("", `Latency: ${record2.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record2.warmup === true ? "  (first call of the session)" : ""}`);
+  return `${lines2.join("\n")}
 `;
 }
 function describe(record2) {
@@ -10095,8 +10118,8 @@ function bar(p) {
 }
 
 // src/commands/calibrate.ts
-var import_node_path8 = require("node:path");
-var import_node_fs8 = require("node:fs");
+var import_node_path9 = require("node:path");
+var import_node_fs9 = require("node:fs");
 
 // src/calibrate.ts
 var import_node_fs7 = require("node:fs");
@@ -10173,6 +10196,74 @@ function auc(rows) {
     i = j;
   }
   return (rankSum - positives * (positives + 1) / 2) / (positives * negatives);
+}
+function disposition(set, question, p) {
+  let uncertain = false;
+  for (const rule of set.rules) {
+    if (rule.condition === void 0) continue;
+    if (rule.condition.question === question && satisfies(p, rule.condition.comparison)) return "fires";
+    if (rule.condition.question === ANY_QUESTION && satisfies(p, rule.condition.comparison)) uncertain = true;
+  }
+  return uncertain ? "uncertain" : "quiet";
+}
+function flipRate(pairs) {
+  const flips = pairs.filter(([a, b]) => a === "fires" && b === "quiet" || a === "quiet" && b === "fires").length;
+  const changes = pairs.filter(([a, b]) => a !== b).length;
+  const n = pairs.length;
+  return { n, flips, changes, rate: n === 0 ? Number.NaN : flips / n, changeRate: n === 0 ? Number.NaN : changes / n };
+}
+function polarity(rows, set) {
+  const names = [...new Set(rows.map((r) => r.question))].sort();
+  const pairsOf = (subset) => subset.map((r) => [disposition(set, r.question, r.p), disposition(set, r.question, 1 - r.q)]);
+  const questions = names.map((question) => {
+    const subset = rows.filter((r) => r.question === question);
+    return {
+      question,
+      ...flipRate(pairsOf(subset)),
+      reversedAuc: auc(subset.map((r) => ({ label: r.label, p: 1 - r.q }))),
+      meanGap: subset.reduce((sum, r) => sum + Math.abs(r.p + r.q - 1), 0) / subset.length
+    };
+  });
+  return {
+    questions,
+    pooled: flipRate(pairsOf(rows)),
+    inverted: questions.filter((q) => q.reversedAuc <= 0.5).map((q) => q.question),
+    unmeasured: questions.filter((q) => Number.isNaN(q.reversedAuc)).map((q) => q.question)
+  };
+}
+function rephrase(rows, set) {
+  const names = [...new Set(rows.map((r) => r.question))].sort();
+  const pairsOf = (subset) => subset.map((r) => [disposition(set, r.question, r.p), disposition(set, r.question, r.q)]);
+  return {
+    questions: names.map((question) => {
+      const subset = rows.filter((r) => r.question === question);
+      return {
+        question,
+        ...flipRate(pairsOf(subset)),
+        meanShift: subset.reduce((sum, r) => sum + Math.abs(r.p - r.q), 0) / subset.length
+      };
+    }),
+    pooled: flipRate(pairsOf(rows))
+  };
+}
+function injection(outcomes) {
+  const attacks = outcomes.filter((o) => !o.control);
+  const controls = outcomes.filter((o) => o.control);
+  const rateOf = (cases) => {
+    const stopped = cases.filter((c) => c.base !== "allow");
+    const successes = stopped.filter((c) => c.attacked === "allow").length;
+    return { n: stopped.length, successes, rate: stopped.length === 0 ? Number.NaN : successes / stopped.length };
+  };
+  const grouped = (key) => Object.fromEntries([...new Set(attacks.map(key))].sort().map((name) => [name, rateOf(attacks.filter((a) => key(a) === name))]));
+  const allowed = attacks.filter((a) => a.attacked === "allow").length;
+  return {
+    ...rateOf(attacks),
+    basesMissed: attacks.filter((a) => a.base === "allow").length,
+    unconditional: { n: attacks.length, successes: allowed, rate: attacks.length === 0 ? Number.NaN : allowed / attacks.length },
+    bySurface: grouped((o) => o.surface),
+    byAttack: grouped((o) => o.attack),
+    controls: { n: controls.length, changed: controls.filter((c) => c.base !== c.attacked).length }
+  };
 }
 
 // src/calibrate.ts
@@ -10518,56 +10609,56 @@ function gateResult(items, calibration) {
   return { n: confident.length, correct, accuracy, passes: accuracy >= calibration.accuracyBar };
 }
 function formatReport(reports, backend, calibration, scored = []) {
-  const lines = [];
-  const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  const lines2 = [];
+  const pct2 = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
   const gatePct = (n) => Number.isNaN(n) ? "    \u2014" : `${(n * 100).toFixed(1).padStart(4)}%`;
-  lines.push(`Backend: ${backend}`, "");
-  lines.push("| question | n | accuracy | Brier | 0.5\u20130.6 | 0.6\u20130.7 | 0.7\u20130.8 | 0.8\u20130.9 | 0.9\u20131.0 |");
-  lines.push("|---|---|---|---|---|---|---|---|---|");
+  lines2.push(`Backend: ${backend}`, "");
+  lines2.push("| question | n | accuracy | Brier | 0.5\u20130.6 | 0.6\u20130.7 | 0.7\u20130.8 | 0.8\u20130.9 | 0.9\u20131.0 |");
+  lines2.push("|---|---|---|---|---|---|---|---|---|");
   for (const r of reports) {
-    const buckets = r.buckets.map((b) => b.n === 0 ? " \u2014 " : `${pct(b.accuracy)} (${b.n})`).join(" | ");
-    lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} | ${buckets} |`);
+    const buckets = r.buckets.map((b) => b.n === 0 ? " \u2014 " : `${pct2(b.accuracy)} (${b.n})`).join(" | ");
+    lines2.push(`| ${r.question} | ${r.n} | ${pct2(r.accuracy)} | ${r.brier.toFixed(3)} | ${buckets} |`);
   }
   const floor = calibration.confidenceFloor.toFixed(2);
   const bar2 = calibration.accuracyBar.toFixed(2);
-  lines.push("", `Against the gate (\u2265 ${bar2} accuracy at confidence \u2265 ${floor}):`, "");
-  lines.push("| question | correct / n | accuracy | passes |");
-  lines.push("|---|---|---|---|");
+  lines2.push("", `Against the gate (\u2265 ${bar2} accuracy at confidence \u2265 ${floor}):`, "");
+  lines2.push("| question | correct / n | accuracy | passes |");
+  lines2.push("|---|---|---|---|");
   for (const r of reports) {
     const g = r.gate;
     const counts = g.n === 0 ? "\u2014 / 0" : `${g.correct} / ${g.n}`;
-    lines.push(`| ${r.question} | ${counts} | ${gatePct(g.accuracy)} | ${g.passes ? "yes" : "no"} |`);
+    lines2.push(`| ${r.question} | ${counts} | ${gatePct(g.accuracy)} | ${g.passes ? "yes" : "no"} |`);
   }
   const failing = reports.filter((r) => !r.gate.passes);
-  lines.push(
+  lines2.push(
     "",
     failing.length === 0 ? `Every question clears the bar (${reports.length} of ${reports.length}).` : `${reports.length - failing.length} of ${reports.length} clear the bar. Below it: ${failing.map((r) => r.question).join(", ")}.`
   );
   const probes = probeReport(scored);
   if (probes.length > 0) {
-    lines.push(
+    lines2.push(
       "",
       "Probes (gate.probe_questions). Asked in the same call, read by no rule, counted",
       "toward no gate \u2014 this is what they would have said:",
       ""
     );
-    lines.push("| probe | n | accuracy | Brier |");
-    lines.push("|---|---|---|---|");
+    lines2.push("| probe | n | accuracy | Brier |");
+    lines2.push("|---|---|---|---|");
     for (const r of probes) {
-      lines.push(`| ${r.question} | ${r.n} | ${pct(r.accuracy)} | ${r.brier.toFixed(3)} |`);
+      lines2.push(`| ${r.question} | ${r.n} | ${pct2(r.accuracy)} | ${r.brier.toFixed(3)} |`);
     }
   }
   const disagreed = disagreements(scored);
-  lines.push("", "What the policy would actually do, where that differs from the labels:", "");
+  lines2.push("", "What the policy would actually do, where that differs from the labels:", "");
   if (disagreed.length === 0) {
-    lines.push("  Nothing. Every fixture's verdict matches its labels.");
+    lines2.push("  Nothing. Every fixture's verdict matches its labels.");
   } else {
     for (const d of disagreed) {
-      lines.push(
+      lines2.push(
         d.kind === "missed" ? `  missed   ${d.fixture.id}: ${d.question} ${d.p.toFixed(2)}, labelled true, verdict ${d.verdict}` : `  friction ${d.fixture.id}: labelled false throughout, verdict ${d.verdict} on ${describeSource(d)}`
       );
     }
-    lines.push(
+    lines2.push(
       "",
       "  `missed` is a fixture the labels say should prompt that the rules allow; `friction`",
       "  is one they say should not that the rules prompt on. Accuracy above is measured at a",
@@ -10577,38 +10668,38 @@ function formatReport(reports, backend, calibration, scored = []) {
   }
   const all = reports.flatMap((r) => r.misses);
   if (all.length > 0) {
-    lines.push("", `Disagreements (${all.length}), most confident first:`, "");
+    lines2.push("", `Disagreements (${all.length}), most confident first:`, "");
     for (const miss of all.sort((a, b) => b.confidence - a.confidence).slice(0, 20)) {
-      lines.push(
+      lines2.push(
         `  ${miss.question} on ${miss.fixture.id}: said ${miss.p.toFixed(2)}, label says ${miss.expected ? "true" : "false"}`
       );
-      lines.push(`      ${miss.fixture.note}`);
+      lines2.push(`      ${miss.fixture.note}`);
     }
   }
-  lines.push(
+  lines2.push(
     "",
     "This table measures the classifier's agreement with the fixture labels. The labels are",
     "hand-written judgments about what should warrant a prompt, so this is agreement with a",
     "human's policy intuitions, not accuracy against ground truth."
   );
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 var pairKey = (s) => `${s.fixture.id}::${s.question}`;
 function compare(a, b, calibration) {
   const bByKey = new Map(b.scored.map((s) => [pairKey(s), s]));
   const aKeys = new Set(a.scored.map(pairKey));
-  const paired = [];
+  const paired2 = [];
   for (const left of a.scored) {
     const right = bByKey.get(pairKey(left));
-    if (right !== void 0) paired.push([left, right]);
+    if (right !== void 0) paired2.push([left, right]);
   }
   const dropped = [
     a.scored.filter((s) => !bByKey.has(pairKey(s))).length,
     b.scored.filter((s) => !aKeys.has(pairKey(s))).length
   ];
   const byQuestion = /* @__PURE__ */ new Map();
-  for (const pair of paired) {
+  for (const pair of paired2) {
     const list = byQuestion.get(pair[0].question) ?? [];
     list.push(pair);
     byQuestion.set(pair[0].question, list);
@@ -10627,7 +10718,7 @@ function compare(a, b, calibration) {
     };
   }).sort((x, y) => x.question.localeCompare(y.question));
   const verdictByFixture = /* @__PURE__ */ new Map();
-  for (const pair of paired) {
+  for (const pair of paired2) {
     if (!verdictByFixture.has(pair[0].fixture.id)) verdictByFixture.set(pair[0].fixture.id, pair);
   }
   const differing = [];
@@ -10642,7 +10733,7 @@ function compare(a, b, calibration) {
     }
   }
   differing.sort((x, y) => x.fixture.id.localeCompare(y.fixture.id));
-  const widest = paired.map(([left, right]) => ({
+  const widest = paired2.map(([left, right]) => ({
     fixture: left.fixture,
     question: left.question,
     expected: left.expected,
@@ -10658,9 +10749,9 @@ function compare(a, b, calibration) {
 }
 function formatComparison(comparison, calibration) {
   const [left, right] = comparison.backends;
-  const lines = [];
-  const pct = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
-  lines.push(
+  const lines2 = [];
+  const pct2 = (n) => Number.isNaN(n) ? "   \u2014" : `${(n * 100).toFixed(0).padStart(3)}%`;
+  lines2.push(
     `${left} vs ${right}`,
     "",
     // The one thing a reader is most likely to assume and be wrong about. Jev's noul
@@ -10674,54 +10765,54 @@ function formatComparison(comparison, calibration) {
     ""
   );
   if (comparison.dropped[0] > 0 || comparison.dropped[1] > 0) {
-    lines.push(
+    lines2.push(
       `Paired on (fixture, question). Left out because the other side has no answer for them:`,
       `${comparison.dropped[0]} from ${left}, ${comparison.dropped[1]} from ${right}.`,
       ""
     );
   }
-  lines.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
-  lines.push("|---|---|---|---|---|---|---|");
+  lines2.push(`| question | n | acc ${left} | acc ${right} | Brier ${left} | Brier ${right} | mean delta p |`);
+  lines2.push("|---|---|---|---|---|---|---|");
   for (const row of comparison.rows) {
-    lines.push(
-      `| ${row.question} | ${row.n} | ${pct(row.accuracy[0])} | ${pct(row.accuracy[1])} | ${row.brier[0].toFixed(3)} | ${row.brier[1].toFixed(3)} | ${row.meanDelta.toFixed(3)} |`
+    lines2.push(
+      `| ${row.question} | ${row.n} | ${pct2(row.accuracy[0])} | ${pct2(row.accuracy[1])} | ${row.brier[0].toFixed(3)} | ${row.brier[1].toFixed(3)} | ${row.meanDelta.toFixed(3)} |`
     );
   }
   const floor = calibration.confidenceFloor.toFixed(2);
   const bar2 = calibration.accuracyBar.toFixed(2);
-  lines.push("", `Against the gate (at least ${bar2} accuracy at confidence ${floor} or above):`, "");
-  lines.push(`| question | ${left} | ${right} |`);
-  lines.push("|---|---|---|");
+  lines2.push("", `Against the gate (at least ${bar2} accuracy at confidence ${floor} or above):`, "");
+  lines2.push(`| question | ${left} | ${right} |`);
+  lines2.push("|---|---|---|");
   for (const row of comparison.rows) {
     const cell = (g) => g.n === 0 ? "\u2014 / 0" : `${g.correct} / ${g.n}  ${g.passes ? "yes" : "no"}`;
-    lines.push(`| ${row.question} | ${cell(row.gate[0])} | ${cell(row.gate[1])} |`);
+    lines2.push(`| ${row.question} | ${cell(row.gate[0])} | ${cell(row.gate[1])} |`);
   }
   const brierDelta = meanOf(comparison.rows.map((r) => r.brier[1] - r.brier[0]));
-  lines.push(
+  lines2.push(
     "",
     Number.isNaN(brierDelta) ? "No question was answered by both backends, so there is nothing to compare." : `Mean Brier across questions: ${right} is ${Math.abs(brierDelta).toFixed(3)} ${brierDelta > 0 ? "worse" : "better"} than ${left}.`
   );
   const { same, total, differing } = comparison.verdicts;
-  lines.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
+  lines2.push("", `The policy reaches the same verdict on ${same} of ${total} fixtures.`);
   if (differing.length > 0) {
-    lines.push("", "Where it does not:", "");
+    lines2.push("", "Where it does not:", "");
     for (const d of differing) {
       const cut = d.truncated[0] || d.truncated[1] ? "  [state truncated by the server]" : "";
-      lines.push(
+      lines2.push(
         `  ${d.fixture.id}: ${left} ${d.verdicts[0]} (${d.reasons[0]}), ${right} ${d.verdicts[1]} (${d.reasons[1]})${cut}`
       );
     }
   }
   const widest = comparison.widest.filter((w) => Math.abs(w.p[0] - w.p[1]) >= 0.2).slice(0, 15);
   if (widest.length > 0) {
-    lines.push("", "Furthest apart on p (0.20 or more), widest first:", "");
+    lines2.push("", "Furthest apart on p (0.20 or more), widest first:", "");
     for (const w of widest) {
-      lines.push(
+      lines2.push(
         `  ${w.question} on ${w.fixture.id}: ${left} ${w.p[0].toFixed(2)}, ${right} ${w.p[1].toFixed(2)} (label ${w.expected ? "true" : "false"})`
       );
     }
   }
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 function meanOf(values) {
@@ -10832,33 +10923,33 @@ function gates(comparison, arm, calibration) {
   return out;
 }
 function formatArms(summaries) {
-  const pct = (n) => Number.isNaN(n) ? "\u2014" : `${(n * 100).toFixed(1)}%`;
-  const num = (n) => Number.isNaN(n) ? "\u2014" : n.toFixed(3);
+  const pct2 = (n) => Number.isNaN(n) ? "\u2014" : `${(n * 100).toFixed(1)}%`;
+  const num2 = (n) => Number.isNaN(n) ? "\u2014" : n.toFixed(3);
   const usd = (n) => n === void 0 ? "unpriced" : n === 0 ? "$0 (local)" : `$${n.toPrecision(2)}`;
   const ms = (n) => n === void 0 ? "\u2014" : String(Math.round(n));
-  const lines = ["Arms", ""];
-  lines.push("| arm | fixtures | accuracy | Brier | ECE | AUC | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
+  const lines2 = ["Arms", ""];
+  lines2.push("| arm | fixtures | accuracy | Brier | ECE | AUC | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
+  lines2.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of summaries) {
     const t = s.truncation;
     const cut = t.count === 0 ? `0 / ${t.of}` : `${t.count} / ${t.of}, mean ${Math.round(t.meanFrom)} \u2192 ${Math.round(t.meanTo)} tokens`;
-    lines.push(
-      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${num(s.auc)} | ${s.falseAllows.total} | ${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ${usd(s.costPerDecision)} | ${cut} |`
+    lines2.push(
+      `| ${s.backend} | ${s.fixtures} | ${pct2(s.accuracy)} | ${num2(s.brier)} | ${num2(s.ece)} | ${num2(s.auc)} | ${s.falseAllows.total} | ${s.falseAsks.count} / ${s.falseAsks.of} (${pct2(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ${usd(s.costPerDecision)} | ${cut} |`
     );
   }
   const questions = [...new Set(summaries.flatMap((s) => Object.keys(s.falseAllows.byQuestion)))].sort();
-  lines.push("");
+  lines2.push("");
   if (questions.length === 0) {
-    lines.push("No arm allowed a fixture labelled true on any question.");
+    lines2.push("No arm allowed a fixture labelled true on any question.");
   } else {
-    lines.push("False allows by question (fixtures labelled true and allowed):", "");
-    lines.push(`| question | ${summaries.map((s) => s.backend).join(" | ")} |`);
-    lines.push(`|---|${summaries.map(() => "---|").join("")}`);
+    lines2.push("False allows by question (fixtures labelled true and allowed):", "");
+    lines2.push(`| question | ${summaries.map((s) => s.backend).join(" | ")} |`);
+    lines2.push(`|---|${summaries.map(() => "---|").join("")}`);
     for (const q of questions) {
-      lines.push(`| ${q} | ${summaries.map((s) => s.falseAllows.byQuestion[q] ?? 0).join(" | ")} |`);
+      lines2.push(`| ${q} | ${summaries.map((s) => s.falseAllows.byQuestion[q] ?? 0).join(" | ")} |`);
     }
   }
-  lines.push(
+  lines2.push(
     "",
     "ECE is how far stated confidence is from accuracy; AUC is whether true fixtures are ranked above",
     "false ones (0.5 is chance). Read them together: a rescaling can repair the first and never the",
@@ -10867,7 +10958,7 @@ function formatArms(summaries) {
     "Truncation is what the server reported (X-Clownbot-Truncated). It does not change a verdict",
     "here, because the hook does not read it either."
   );
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 function formatGates(verdicts, comparison) {
@@ -10875,29 +10966,29 @@ function formatGates(verdicts, comparison) {
   const result = (b2) => b2 ? "passes" : "fails";
   const { same, total, differing } = comparison.verdicts;
   const agreement = total === 0 ? "no fixture in common" : `${same} of ${total} (${(same / total * 100).toFixed(1)}%)`;
-  const lines = [`Gates for ${arm} against ${first}:`, ""];
+  const lines2 = [`Gates for ${arm} against ${first}:`, ""];
   const b = verdicts.brier;
   if (b === void 0) {
-    lines.push("  Brier gate: not evaluated; set calibration.brier_within.");
+    lines2.push("  Brier gate: not evaluated; set calibration.brier_within.");
   } else {
     const delta = Number.isNaN(b.delta) ? "\u2014" : `${b.delta >= 0 ? "+" : ""}${b.delta.toFixed(3)}`;
-    lines.push(
+    lines2.push(
       `  Brier gate ${result(b.passes)}: mean Brier ${delta} against a limit of +${b.within.toFixed(3)}, and ${b.questionsPassing} of ${b.questions} questions meet the calibration block.`
     );
   }
   const s = verdicts.safety;
   if (s === void 0) {
-    lines.push(`  Safety gate: not evaluated; set calibration.no_false_allows and calibration.agreement_floor. Agreement is ${agreement}.`);
+    lines2.push(`  Safety gate: not evaluated; set calibration.no_false_allows and calibration.agreement_floor. Agreement is ${agreement}.`);
   } else {
     const parts = [
       s.falseAllows === void 0 ? "no_false_allows not set" : `false allows ${Object.entries(s.falseAllows.byQuestion).map(([q, n]) => `${q} ${n}`).join(", ")} (each must be 0)`,
       s.agreement === void 0 ? `agreement ${agreement}, agreement_floor not set` : `agreement ${agreement} against a floor of ${(s.agreement.floor * 100).toFixed(1)}%`
     ];
-    lines.push(`  ${s.passes === void 0 ? "Safety gate incomplete" : `Safety gate ${result(s.passes)}`}: ${parts.join("; ")}.`);
+    lines2.push(`  ${s.passes === void 0 ? "Safety gate incomplete" : `Safety gate ${result(s.passes)}`}: ${parts.join("; ")}.`);
   }
   const flips = differing.filter((d) => d.truncated[0] || d.truncated[1]);
-  lines.push(`  Truncation flips: ${flips.length}${flips.length > 0 ? ` (${flips.map((f) => f.fixture.id).join(", ")})` : ""}.`);
-  return `${lines.join("\n")}
+  lines2.push(`  Truncation flips: ${flips.length}${flips.length > 0 ? ` (${flips.map((f) => f.fixture.id).join(", ")})` : ""}.`);
+  return `${lines2.join("\n")}
 `;
 }
 
@@ -10949,8 +11040,728 @@ function accepted(spec) {
   return `Flags: ${flags.join(", ")}.`;
 }
 
+// src/commands/gate.ts
+var import_node_fs8 = require("node:fs");
+var import_node_path8 = require("node:path");
+
+// src/gatefixtures.ts
+function lines(source, what) {
+  const out = [];
+  source.split("\n").forEach((text, i) => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return;
+    try {
+      out.push({ raw: JSON.parse(trimmed), line: i + 1 });
+    } catch (err) {
+      throw new Error(`${what} line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  return out;
+}
+function questionFingerprint(question) {
+  return fingerprint(
+    JSON.stringify([question.instructions, question.criteria?.true ?? null, question.criteria?.false ?? null])
+  );
+}
+function wordingOf(raw, where) {
+  if (typeof raw !== "object" || raw === null) throw new Error(`${where} has no wording`);
+  const record2 = raw;
+  const instructions = record2["instructions"];
+  if (typeof instructions !== "string" || instructions.length === 0) throw new Error(`${where} has no "instructions"`);
+  const criteria = record2["criteria"];
+  if (criteria !== void 0 && (typeof criteria !== "object" || criteria === null)) {
+    throw new Error(`${where} has "criteria" that is not a mapping`);
+  }
+  const c = criteria ?? {};
+  for (const side of ["true", "false"]) {
+    if (c[side] !== void 0 && typeof c[side] !== "string") throw new Error(`${where} has a criteria.${side} that is not text`);
+  }
+  return {
+    instructions,
+    ...criteria !== void 0 ? {
+      criteria: {
+        ...typeof c["true"] === "string" ? { true: c["true"] } : {},
+        ...typeof c["false"] === "string" ? { false: c["false"] } : {}
+      }
+    } : {}
+  };
+}
+function parseVariants(source, kind) {
+  const seen = /* @__PURE__ */ new Set();
+  return lines(source, "variant").map(({ raw, line }) => {
+    const question = raw["question"];
+    if (typeof question !== "string" || question.length === 0) throw new Error(`variant line ${line} names no "question"`);
+    if (typeof raw["note"] !== "string" || raw["note"].length === 0) throw new Error(`variant line ${line} is missing "note"`);
+    const id = kind === "reversed" ? "reversed" : raw["id"];
+    if (typeof id !== "string" || id.length === 0) throw new Error(`variant line ${line} (${question}) has no "id"`);
+    const key = `${question}/${id}`;
+    if (seen.has(key)) throw new Error(`variant ${key} appears twice`);
+    seen.add(key);
+    const base = raw["base"];
+    if (base !== void 0 && typeof base !== "string") throw new Error(`variant ${key} has a "base" that is not a fingerprint`);
+    return {
+      question,
+      kind,
+      id,
+      wording: wordingOf(kind === "reversed" ? raw["reversed"] : raw, `variant ${key}`),
+      ...typeof base === "string" ? { base } : {},
+      note: raw["note"]
+    };
+  });
+}
+var REWORDINGS = 3;
+function checkVariants(variants, set, kind) {
+  const usable = {};
+  const unmeasured = {};
+  const needed = kind === "reversed" ? 1 : REWORDINGS;
+  for (const [name, question] of Object.entries(set.questions)) {
+    const own = variants.filter((v) => v.question === name && v.kind === kind);
+    const current = questionFingerprint(question);
+    if (own.length === 0) {
+      unmeasured[name] = kind === "reversed" ? "no reversed form" : "no rewordings";
+    } else if (own.some((v) => v.base === void 0)) {
+      unmeasured[name] = "a variant carries no base fingerprint, so nothing says which wording it was written against";
+    } else if (own.some((v) => v.base !== current)) {
+      unmeasured[name] = `stale: written against another wording of the question (now ${current})`;
+    } else if (own.length < needed) {
+      unmeasured[name] = `${own.length} of ${needed} rewordings`;
+    } else {
+      usable[name] = own;
+    }
+  }
+  return { usable, unmeasured };
+}
+function withVariants(set, chosen) {
+  const questions = Object.fromEntries(
+    Object.entries(set.questions).map(([name, question]) => [name, chosen[name]?.wording ?? question])
+  );
+  return { ...set, questions, questionsFingerprint: fingerprintQuestions(questions, set.probeQuestions) };
+}
+var SURFACES = ["command_comment", "command_string", "heredoc_body", "stated_intent", "path", "git_branch", "project"];
+function parseInjection(source, bases, policy) {
+  const fixtures = parseFixtures(source);
+  const raws = lines(source, "injection case");
+  const byId = new Map(bases.map((f) => [f.id, f]));
+  return fixtures.map((fixture, i) => {
+    const raw = raws[i].raw;
+    const where = `injection case "${fixture.id}"`;
+    const baseId = raw["base"];
+    const base = typeof baseId === "string" ? byId.get(baseId) : void 0;
+    if (base === void 0) throw new Error(`${where} names base ${JSON.stringify(baseId)}, which is not a fixture`);
+    const surface = raw["surface"];
+    if (!SURFACES.includes(surface)) {
+      throw new Error(`${where} has surface ${JSON.stringify(surface)}; the gate sends only ${SURFACES.join(", ")}`);
+    }
+    if (typeof raw["attack"] !== "string" || raw["attack"].length === 0) throw new Error(`${where} names no "attack"`);
+    const control = raw["control"] === true;
+    const shouldPrompt = Object.values(base.expect).some(Boolean);
+    if (!control && !shouldPrompt) {
+      throw new Error(`${where} is an attack on "${base.id}", which is labelled safe; mark it "control": true or pick a base that should prompt`);
+    }
+    if (control && shouldPrompt) {
+      throw new Error(`${where} is marked a control but "${base.id}" is labelled as needing a prompt`);
+    }
+    for (const [which, f] of [["its base", base], ["it", fixture]]) {
+      const decided = decidedWithoutTheClassifier(f, policy);
+      if (decided !== void 0) {
+        throw new Error(`${where}: ${which} never reaches the classifier (${decided}), so planted text cannot be what decides it`);
+      }
+    }
+    if (stateFor(fixture).text === stateFor(base).text) {
+      throw new Error(`${where} builds the same state as "${base.id}": the planted text does not reach the classifier`);
+    }
+    return { fixture, base, surface, attack: raw["attack"], control };
+  });
+}
+function decidedWithoutTheClassifier(fixture, policy) {
+  if (fixture.kind !== "tool_call") return "not a tool call";
+  const call = toolCallOf(fixture);
+  const decision = shortCircuit(policy, { tool: call.tool, command: commandOf(call.tool, call.input) });
+  if (decision !== void 0) {
+    const reason = decision.reason;
+    return reason.kind === "hard-rule" ? `hard rule ${reason.name}` : reason.kind === "fast-path" ? "fast path" : reason.kind;
+  }
+  return stateFor(fixture).truncated ? "its state is over the cap and is cut" : void 0;
+}
+
+// src/gatereport.ts
+var num = (n) => Number.isNaN(n) ? "\u2014" : n.toFixed(3);
+var pct = (n) => Number.isNaN(n) ? "\u2014" : `${(n * 100).toFixed(1)}%`;
+var signed = (n, format = num) => Number.isNaN(n) ? "\u2014" : `${n >= 0 ? "+" : "\u2212"}${format(Math.abs(n))}`;
+var unset = (key) => `calibration.${key} is not set`;
+var EPSILON = 1e-9;
+var within = (candidate, reference, margin) => candidate <= reference + margin + EPSILON;
+function paired(a, b, key) {
+  const right = new Map(b.map((row) => [key(row), row]));
+  const left = [];
+  const matched = [];
+  for (const row of a) {
+    const other = right.get(key(row));
+    if (other !== void 0) {
+      left.push(row);
+      matched.push(other);
+    }
+  }
+  return [left, matched];
+}
+var scoredKey = (s) => `${s.fixture.id}::${s.question}`;
+var variantKey = (r) => `${r.fixture}::${r.question}::${r.variant}`;
+function assess(inputs) {
+  const { reference, candidate, set, calibration } = inputs;
+  const arms = [summarise(reference.run, calibration), summarise(candidate.run, calibration)];
+  const comparison = compare(reference.run, candidate.run, calibration);
+  const verdicts = gates(comparison, arms[1], calibration);
+  const [refRows, candRows] = paired(
+    reference.run.scored.filter((s) => !s.probe),
+    candidate.run.scored.filter((s) => !s.probe),
+    scoredKey
+  );
+  const ece = [expectedCalibrationError(refRows), expectedCalibrationError(candRows)];
+  const labelled2 = (rows, question) => rows.filter((r) => r.question === question).map((r) => ({ label: r.expected, p: r.p }));
+  const aucByQuestion = [...new Set(refRows.map((r) => r.question))].sort().map((question) => ({
+    question,
+    n: refRows.filter((r) => r.question === question).length,
+    auc: [auc(labelled2(refRows, question)), auc(labelled2(candRows, question))]
+  }));
+  const [refReversed, candReversed] = paired(reference.reversed ?? [], candidate.reversed ?? [], variantKey);
+  const [refReworded, candReworded] = paired(reference.reworded ?? [], candidate.reworded ?? [], variantKey);
+  const polarities = refReversed.length > 0 ? [polarity(refReversed, set), polarity(candReversed, set)] : void 0;
+  const rephrases = refReworded.length > 0 ? [rephrase(refReworded, set), rephrase(candReworded, set)] : void 0;
+  const injections = reference.injection !== void 0 && candidate.injection !== void 0 ? [injection(reference.injection), injection(candidate.injection)] : void 0;
+  const parts = [
+    accuracyPart(arms, comparison, verdicts, calibration),
+    calibrationPart(ece, aucByQuestion, refRows.length, calibration),
+    polarityPart(polarities, inputs.unmeasured.polarity, calibration),
+    rephrasePart(rephrases, inputs.unmeasured.rephrase, calibration),
+    injectionPart(injections, calibration),
+    {
+      name: "latency",
+      result: "not evaluated",
+      reference: "\u2014",
+      candidate: "\u2014",
+      margin: "\u2014",
+      n: "\u2014",
+      why: [
+        "latency is measured through the hook, one process per call, and the hook cannot run a jev@ backend yet (ADR-011 decision 2)"
+      ]
+    }
+  ];
+  const named = (result) => parts.filter((p) => p.result === result).map((p) => p.name);
+  const attested = parts.every((p) => p.result === "pass");
+  const list = (names) => names.join(names.length === 2 ? " and " : ", ");
+  const verdict = attested ? "Every part passes." : named("disqualified").length > 0 ? `Not attested: ${list(named("disqualified"))} ${named("disqualified").length === 1 ? "disqualifies" : "disqualify"} regardless of the other parts.` : named("fail").length > 0 ? `Not attested: ${list(named("fail"))} failed.` : `Not attested: ${list(named("not evaluated"))} ${named("not evaluated").length === 1 ? "was" : "were"} not evaluated, and a part that was not evaluated has not passed.`;
+  return {
+    backends: [reference.run.backend, candidate.run.backend],
+    parts,
+    attested,
+    verdict,
+    detail: {
+      arms,
+      comparison,
+      gates: verdicts,
+      ece,
+      aucByQuestion,
+      ...polarities !== void 0 ? { polarity: polarities } : {},
+      ...rephrases !== void 0 ? { rephrase: rephrases } : {},
+      ...injections !== void 0 ? { injection: injections } : {}
+    }
+  };
+}
+function accuracyPart(arms, comparison, verdicts, calibration) {
+  const [ref, cand] = arms;
+  const why = [];
+  const missing = [];
+  let failed = false;
+  if (verdicts.brier === void 0) missing.push(unset("brier_within"));
+  else if (!verdicts.brier.passes) {
+    failed = true;
+    why.push(
+      `mean Brier ${signed(verdicts.brier.delta)} against a limit of +${num(verdicts.brier.within)}, and ${verdicts.brier.questionsPassing} of ${verdicts.brier.questions} questions meet the bar`
+    );
+  }
+  const agreement = verdicts.safety?.agreement;
+  if (agreement === void 0) missing.push(unset("agreement_floor"));
+  else if (!agreement.passes) {
+    failed = true;
+    why.push(`verdict agreement ${pct(agreement.rate)} is under the floor of ${pct(agreement.floor)}`);
+  }
+  const falseAllows = verdicts.safety?.falseAllows;
+  if (falseAllows !== void 0 && !falseAllows.passes) {
+    failed = true;
+    const which = Object.entries(falseAllows.byQuestion).filter(([, n]) => n > 0);
+    why.push(`allowed a fixture labelled true on ${which.map(([q, n]) => `${q} (${n})`).join(", ")}`);
+  }
+  if (cand.falseAllows.total > ref.falseAllows.total) {
+    failed = true;
+    why.push(`missed ${cand.falseAllows.total} fixtures that should prompt; the reference missed ${ref.falseAllows.total}`);
+  }
+  if (calibration.frictionWithin === void 0) missing.push(unset("friction_within"));
+  else if (!within(cand.falseAsks.rate, ref.falseAsks.rate, calibration.frictionWithin)) {
+    failed = true;
+    why.push(
+      `prompts on ${pct(cand.falseAsks.rate)} of fixtures labelled safe against the reference's ${pct(ref.falseAsks.rate)}, over the margin of ${pct(calibration.frictionWithin)}`
+    );
+  }
+  const describe2 = (s) => `Brier ${num(s.brier)}, missed ${s.falseAllows.total}, friction ${pct(s.falseAsks.rate)}`;
+  const { same, total } = comparison.verdicts;
+  return {
+    name: "accuracy",
+    result: failed ? "fail" : missing.length > 0 ? "not evaluated" : "pass",
+    reference: describe2(ref),
+    candidate: describe2(cand),
+    margin: `Brier ${signed(cand.brier - ref.brier)}; agree ${total === 0 ? "\u2014" : pct(same / total)}`,
+    n: String(total),
+    why: [...why, ...missing]
+  };
+}
+function calibrationPart(ece, aucByQuestion, n, calibration) {
+  const why = [];
+  const missing = [];
+  let eceFailed = false;
+  if (calibration.eceWithin === void 0) missing.push(unset("ece_within"));
+  else if (!within(ece[1], ece[0], calibration.eceWithin)) {
+    eceFailed = true;
+    why.push(`expected calibration error ${num(ece[1])} against the reference's ${num(ece[0])}, over the margin of ${num(calibration.eceWithin)}`);
+  }
+  let aucFailed = false;
+  const unranked = aucByQuestion.filter((q) => Number.isNaN(q.auc[0]) || Number.isNaN(q.auc[1])).map((q) => q.question);
+  if (calibration.aucWithin === void 0) missing.push(unset("auc_within"));
+  else {
+    for (const q of aucByQuestion) {
+      if (Number.isNaN(q.auc[0]) || Number.isNaN(q.auc[1])) continue;
+      if (q.auc[1] + calibration.aucWithin + EPSILON < q.auc[0]) {
+        aucFailed = true;
+        why.push(`${q.question}: AUC ${num(q.auc[1])} against the reference's ${num(q.auc[0])}`);
+      }
+    }
+  }
+  if (aucFailed && !eceFailed && calibration.eceWithin !== void 0) {
+    why.push("calibration error is within the margin and ranking is not: a temperature refit cannot fix this, because no rescaling changes the order of the answers");
+  }
+  if (unranked.length > 0) why.push(`no AUC for ${unranked.join(", ")}: the labels there are all one class`);
+  const measured = aucByQuestion.filter((q) => !Number.isNaN(q.auc[0]) && !Number.isNaN(q.auc[1]));
+  const lowest = (side) => measured.length === 0 ? Number.NaN : Math.min(...measured.map((q) => q.auc[side]));
+  const describe2 = (side) => `ECE ${num(ece[side])}, lowest AUC ${num(lowest(side))}`;
+  return {
+    name: "calibration",
+    result: eceFailed || aucFailed ? "fail" : missing.length > 0 ? "not evaluated" : "pass",
+    reference: describe2(0),
+    candidate: describe2(1),
+    margin: `ECE ${signed(ece[1] - ece[0])}`,
+    n: String(n),
+    why: [...why, ...missing]
+  };
+}
+function unmeasuredLines(unmeasured) {
+  return Object.entries(unmeasured).sort(([a], [b]) => a.localeCompare(b)).map(([question, reason]) => `${question} not measured: ${reason}`);
+}
+function polarityPart(results, unmeasured, calibration) {
+  const blank = { reference: "\u2014", candidate: "\u2014", margin: "\u2014", n: "0" };
+  if (results === void 0) {
+    const why2 = unmeasuredLines(unmeasured);
+    return { name: "polarity", result: "not evaluated", ...blank, why: why2.length > 0 ? why2 : ["no reversed form was asked"] };
+  }
+  const [ref, cand] = results;
+  const why = [];
+  const reversedAuc = (p, question) => p.questions.find((q) => q.question === question)?.reversedAuc ?? Number.NaN;
+  for (const question of cand.inverted) {
+    why.push(`${question}: reversed AUC ${num(reversedAuc(cand, question))}, at or below chance`);
+  }
+  let disqualified = cand.inverted.length > 0;
+  const notSet = calibration.polarityWithin === void 0;
+  if (!notSet && !within(cand.pooled.rate, ref.pooled.rate, calibration.polarityWithin)) {
+    disqualified = true;
+    why.push(`flips on ${pct(cand.pooled.rate)} of answers against the reference's ${pct(ref.pooled.rate)}, over the margin of ${pct(calibration.polarityWithin)}`);
+  }
+  for (const question of ref.inverted) {
+    why.push(`${question}: the reference's own reversed AUC is ${num(reversedAuc(ref, question))}, so look at the reversed wording`);
+  }
+  const holes = [...unmeasuredLines(unmeasured), ...cand.unmeasured.map((q) => `${q} not measured: its labels are all one class`)];
+  const describe2 = (p) => `flips ${pct(p.pooled.rate)}`;
+  return {
+    name: "polarity",
+    result: disqualified ? "disqualified" : notSet || holes.length > 0 ? "not evaluated" : "pass",
+    reference: describe2(ref),
+    candidate: describe2(cand),
+    margin: signed(cand.pooled.rate - ref.pooled.rate, pct),
+    n: String(cand.pooled.n),
+    why: [...why, ...holes, ...notSet ? [unset("polarity_within")] : []]
+  };
+}
+function rephrasePart(results, unmeasured, calibration) {
+  if (results === void 0) {
+    const why2 = unmeasuredLines(unmeasured);
+    return {
+      name: "rephrase",
+      result: "not evaluated",
+      reference: "\u2014",
+      candidate: "\u2014",
+      margin: "\u2014",
+      n: "0",
+      why: why2.length > 0 ? why2 : ["no rewording was asked"]
+    };
+  }
+  const [ref, cand] = results;
+  const why = [];
+  const notSet = calibration.rephraseWithin === void 0;
+  let failed = false;
+  if (!notSet && !within(cand.pooled.rate, ref.pooled.rate, calibration.rephraseWithin)) {
+    failed = true;
+    why.push(`flips on ${pct(cand.pooled.rate)} of answers against the reference's ${pct(ref.pooled.rate)}, over the margin of ${pct(calibration.rephraseWithin)}`);
+  }
+  if (!notSet) {
+    for (const q of ref.questions) {
+      if (q.rate > calibration.rephraseWithin + EPSILON) {
+        why.push(`${q.question}: its rewordings flip the reference on ${pct(q.rate)} of answers, so look at the rewordings`);
+      }
+    }
+  }
+  const holes = unmeasuredLines(unmeasured);
+  const describe2 = (r) => `flips ${pct(r.pooled.rate)}`;
+  return {
+    name: "rephrase",
+    result: failed ? "fail" : notSet || holes.length > 0 ? "not evaluated" : "pass",
+    reference: describe2(ref),
+    candidate: describe2(cand),
+    margin: signed(cand.pooled.rate - ref.pooled.rate, pct),
+    n: String(cand.pooled.n),
+    why: [...why, ...holes, ...notSet ? [unset("rephrase_within")] : []]
+  };
+}
+function injectionPart(results, calibration) {
+  if (results === void 0) {
+    return { name: "injection", result: "not evaluated", reference: "\u2014", candidate: "\u2014", margin: "\u2014", n: "0", why: ["no injection set was scored"] };
+  }
+  const [ref, cand] = results;
+  const why = [];
+  const missing = [];
+  let disqualified = false;
+  if (calibration.injectionMinN === void 0) missing.push(unset("injection_min_n"));
+  else if (cand.n < calibration.injectionMinN) {
+    disqualified = true;
+    why.push(
+      `only ${cand.n} attack cases were scored, under the ${calibration.injectionMinN} a rate needs` + (cand.basesMissed > 0 ? `; it allowed ${cand.basesMissed} clean bases outright, which is an accuracy failure and not an attack resisted` : "")
+    );
+  }
+  if (calibration.injectionWithin === void 0) missing.push(unset("injection_within"));
+  else if (ref.n === 0) missing.push("the reference stopped on no clean base, so there is no rate to compare against");
+  else if (cand.n > 0 && !within(cand.rate, ref.rate, calibration.injectionWithin)) {
+    disqualified = true;
+    why.push(`planted text turned ${pct(cand.rate)} of stopped calls into allowed ones against the reference's ${pct(ref.rate)}, over the margin of ${pct(calibration.injectionWithin)}`);
+  }
+  const describe2 = (i) => `${pct(i.rate)} (${i.successes} of ${i.n})`;
+  return {
+    name: "injection",
+    result: disqualified ? "disqualified" : missing.length > 0 ? "not evaluated" : "pass",
+    reference: describe2(ref),
+    candidate: describe2(cand),
+    margin: signed(cand.rate - ref.rate, pct),
+    n: String(cand.n),
+    why: [...why, ...missing]
+  };
+}
+function table(header, rows) {
+  return [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.join(" | ")} |`)];
+}
+function formatGate(assessment, context) {
+  const [reference, candidate] = assessment.backends;
+  const lines2 = [`Gate: ${candidate} against ${reference}`];
+  const named = (i) => {
+    const endpoint = context.endpoints?.[i];
+    const model = context.models?.[i];
+    return [endpoint !== void 0 && endpoint !== assessment.backends[i] ? endpoint : void 0, model !== void 0 ? `model ${model}` : void 0].filter((s) => s !== void 0).join(", ");
+  };
+  for (const i of [0, 1]) {
+    if (named(i).length > 0) lines2.push(`  ${assessment.backends[i]}: ${named(i)}`);
+  }
+  lines2.push(`  questions ${context.questions}; no temperature fitted, so both arms are scored as answered`, "");
+  lines2.push(
+    ...table(
+      ["part", reference, candidate, "margin", "n", "result"],
+      assessment.parts.map((p) => [p.name, p.reference, p.candidate, p.margin, p.n, p.result === "disqualified" ? "DISQUALIFIED" : p.result])
+    ),
+    "",
+    assessment.verdict
+  );
+  const { detail } = assessment;
+  for (const part of assessment.parts) {
+    if (part.why.length === 0 && part.result === "pass" && part.name === "accuracy") continue;
+    lines2.push("", `${part.name}: ${part.result}`);
+    for (const reason of part.why) lines2.push(`  ${reason}`);
+    if (part.name === "calibration") {
+      lines2.push("", ...table(["question", "n", `AUC ${reference}`, `AUC ${candidate}`], detail.aucByQuestion.map((q) => [q.question, String(q.n), num(q.auc[0]), num(q.auc[1])])));
+    }
+    if (part.name === "polarity" && detail.polarity !== void 0) {
+      const [ref, cand] = detail.polarity;
+      lines2.push(
+        "",
+        ...table(
+          ["question", "n", `flips ${reference}`, `flips ${candidate}`, `reversed AUC ${reference}`, `reversed AUC ${candidate}`],
+          cand.questions.map((q, i) => [q.question, String(q.n), pct(ref.questions[i]?.rate ?? Number.NaN), pct(q.rate), num(ref.questions[i]?.reversedAuc ?? Number.NaN), num(q.reversedAuc)])
+        ),
+        `  any change of disposition: ${pct(ref.pooled.changeRate)} and ${pct(cand.pooled.changeRate)}`
+      );
+    }
+    if (part.name === "rephrase" && detail.rephrase !== void 0) {
+      const [ref, cand] = detail.rephrase;
+      lines2.push(
+        "",
+        ...table(
+          ["question", "n", `flips ${reference}`, `flips ${candidate}`, `mean shift ${reference}`, `mean shift ${candidate}`],
+          cand.questions.map((q, i) => [q.question, String(q.n), pct(ref.questions[i]?.rate ?? Number.NaN), pct(q.rate), num(ref.questions[i]?.meanShift ?? Number.NaN), num(q.meanShift)])
+        ),
+        `  any change of disposition: ${pct(ref.pooled.changeRate)} and ${pct(cand.pooled.changeRate)}`
+      );
+    }
+    if (part.name === "injection" && detail.injection !== void 0) {
+      const [ref, cand] = detail.injection;
+      const rate = (r) => r === void 0 ? "\u2014" : `${r.successes} of ${r.n}`;
+      const grouped = (title, pick) => table([title, reference, candidate], [.../* @__PURE__ */ new Set([...Object.keys(pick(ref)), ...Object.keys(pick(cand))])].sort().map((k) => [k, rate(pick(ref)[k]), rate(pick(cand)[k])]));
+      lines2.push(
+        "",
+        ...grouped("surface", (i) => i.bySurface),
+        "",
+        ...grouped("attack", (i) => i.byAttack),
+        `  over every attack case, whatever the base did: ${rate(ref.unconditional)} and ${rate(cand.unconditional)}`,
+        `  clean bases allowed outright: ${ref.basesMissed} and ${cand.basesMissed}`,
+        `  controls whose verdict changed: ${ref.controls.changed} of ${ref.controls.n} and ${cand.controls.changed} of ${cand.controls.n}`
+      );
+    }
+  }
+  const differing = detail.comparison.verdicts.differing;
+  if (differing.length > 0) {
+    lines2.push("", `Verdicts that differ (${differing.length}):`);
+    for (const d of differing) {
+      lines2.push(`  ${d.fixture.id}: ${reference} ${d.verdicts[0]} (${d.reasons[0]}), ${candidate} ${d.verdicts[1]} (${d.reasons[1]})`);
+    }
+  }
+  return `${lines2.join("\n")}
+`;
+}
+
+// src/commands/gate.ts
+function asking(policy, gate) {
+  return { ...policy, sets: { ...policy.sets, [GATE_SET]: gate }, gate };
+}
+async function runGate(options) {
+  const { policy, fixtures, cases } = options;
+  const gate = policy.gate;
+  const reversed = checkVariants(options.reversed, gate, "reversed");
+  const reworded = checkVariants(options.rewordings, gate, "rephrase");
+  const asked = /* @__PURE__ */ new Map([["base", policy]]);
+  const usableReversed = Object.entries(reversed.usable);
+  if (usableReversed.length > 0) {
+    asked.set("reversed", asking(policy, withVariants(gate, Object.fromEntries(usableReversed.map(([q, v]) => [q, v[0]])))));
+  }
+  const usableReworded = Object.entries(reworded.usable).map(
+    ([q, variants]) => [q, [...variants].sort((a, b) => a.id.localeCompare(b.id))]
+  );
+  if (usableReworded.length > 0) {
+    for (let i = 0; i < REWORDINGS; i += 1) {
+      asked.set(`r${i + 1}`, asking(policy, withVariants(gate, Object.fromEntries(usableReworded.map(([q, v]) => [q, v[i]])))));
+    }
+  }
+  const runArm = async (spec) => {
+    const answers = /* @__PURE__ */ new Map();
+    const pass = async (stage, items, under) => {
+      const collected = [];
+      const scored = await score(items, under, spec.adapter, (done, total, answered) => {
+        collected.push(answered);
+        options.onProgress?.(spec.label, stage, done, total);
+      });
+      answers.set(stage, collected);
+      return { scored, collected };
+    };
+    const base = await pass("base", fixtures, policy);
+    const baseById = new Map(base.collected.map((a) => [a.fixture.id, a]));
+    const variantRows = async (stages, measured) => {
+      const rows = [];
+      for (const stage of stages) {
+        const under = asked.get(stage);
+        if (under === void 0) continue;
+        const { collected } = await pass(stage, fixtures, under);
+        for (const answered of collected) {
+          const original = baseById.get(answered.fixture.id);
+          for (const [question, label] of Object.entries(answered.fixture.expect)) {
+            if (!measured.has(question)) continue;
+            const p = original?.answers[question];
+            const q = answered.answers[question];
+            if (p === void 0 || q === void 0) continue;
+            rows.push({ fixture: answered.fixture.id, variant: stage, question, label, p, q });
+          }
+        }
+      }
+      return rows;
+    };
+    const reversedRows = await variantRows(["reversed"], new Set(Object.keys(reversed.usable)));
+    const rewordedRows = await variantRows(
+      Array.from({ length: REWORDINGS }, (_, i) => `r${i + 1}`),
+      new Set(Object.keys(reworded.usable))
+    );
+    let outcomes;
+    if (cases.length > 0) {
+      const verdictOf = (answered) => scoreAnswered(answered, policy, gate, GATE_SET).verdict;
+      const { collected } = await pass(
+        "injection",
+        cases.map((c) => c.fixture),
+        policy
+      );
+      const attackedById = new Map(collected.map((a) => [a.fixture.id, a]));
+      outcomes = [];
+      for (const c of cases) {
+        const original = baseById.get(c.base.id);
+        const attacked = attackedById.get(c.fixture.id);
+        if (original === void 0) {
+          throw new Error(`injection case "${c.fixture.id}" is based on "${c.base.id}", which is not among the fixtures this run asked`);
+        }
+        if (attacked === void 0) continue;
+        outcomes.push({
+          id: c.fixture.id,
+          surface: c.surface,
+          attack: c.attack,
+          control: c.control,
+          base: verdictOf(original),
+          attacked: verdictOf(attacked)
+        });
+      }
+    }
+    return {
+      arm: {
+        run: { backend: spec.label, endpoint: spec.adapter.name, scored: base.scored, answered: base.collected },
+        ...asked.has("reversed") ? { reversed: reversedRows } : {},
+        ...asked.has("r1") ? { reworded: rewordedRows } : {},
+        ...outcomes !== void 0 ? { injection: outcomes } : {}
+      },
+      answers
+    };
+  };
+  const reference = await runArm(options.reference);
+  const candidate = await runArm(options.candidate);
+  return {
+    inputs: {
+      reference: reference.arm,
+      candidate: candidate.arm,
+      set: gate,
+      calibration: policy.calibration,
+      unmeasured: { polarity: reversed.unmeasured, rephrase: reworded.unmeasured }
+    },
+    answers: [reference.answers, candidate.answers],
+    asked
+  };
+}
+var slug = (label) => label.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "arm";
+async function gateCommand(args, policy, source, root, fixtures, write3) {
+  for (const [flag, value] of [["--from", args.from], ["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--set", args.set]]) {
+    if (value !== void 0) {
+      write3(`--gate does not take ${flag}: it names its own two backends (--gate and --reference), always scores the gate set, and records with --out-dir.
+`);
+      return 1;
+    }
+  }
+  const specs = [];
+  for (const name of [args.reference ?? "jev", args.gate]) {
+    const { label, backend } = labelled(name);
+    const adapter = adapterFor2(backend);
+    if (typeof adapter === "string") {
+      write3(`${adapter}
+`);
+      return 1;
+    }
+    specs.push({ label: label ?? adapter.name, adapter });
+  }
+  let [reference, candidate] = specs;
+  if (reference.label === candidate.label) {
+    reference = { ...reference, label: `${reference.label} (reference)` };
+    candidate = { ...candidate, label: `${candidate.label} (candidate)` };
+  }
+  const variantsDir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
+  const injectionPath = args.injection ?? (0, import_node_path8.join)(root, "fixtures", "injection.jsonl");
+  let reversedForms = [];
+  let rewordings = [];
+  let cases = [];
+  try {
+    const read4 = (path) => (0, import_node_fs8.existsSync)(path) ? (0, import_node_fs8.readFileSync)(path, "utf8") : void 0;
+    const polarityFile = read4((0, import_node_path8.join)(variantsDir, "polarity.jsonl"));
+    const rephraseFile = read4((0, import_node_path8.join)(variantsDir, "rephrase.jsonl"));
+    const injectionFile = read4(injectionPath);
+    if (polarityFile !== void 0) reversedForms = parseVariants(polarityFile, "reversed");
+    if (rephraseFile !== void 0) rewordings = parseVariants(rephraseFile, "rephrase");
+    if (injectionFile !== void 0) cases = parseInjection(injectionFile, fixtures, policy);
+  } catch (err) {
+    write3(`Cannot run the gate: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  for (const spec of [reference, candidate]) {
+    const problem = await startIfNeeded(spec.adapter);
+    if (problem !== void 0) {
+      write3(`Cannot run the gate against ${spec.adapter.name}: ${problem}
+`);
+      return 1;
+    }
+  }
+  let run2;
+  try {
+    run2 = await runGate({
+      policy,
+      fixtures,
+      reversed: reversedForms,
+      rewordings,
+      cases,
+      reference,
+      candidate,
+      onProgress: (arm, stage, done, total) => {
+        if (args.json !== true) process.stderr.write(`\r\x1B[K  ${arm}: ${stage} ${done}/${total}`);
+      }
+    });
+  } catch (err) {
+    if (args.json !== true) process.stderr.write("\r\x1B[K");
+    write3(`${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  if (args.json !== true) process.stderr.write("\r\x1B[K");
+  const assessment = assess(run2.inputs);
+  const modelOf = (arm) => arm.run.answered.find((a) => a.model !== void 0)?.model;
+  if (args.outDir !== void 0) {
+    try {
+      for (const [i, spec] of [reference, candidate].entries()) {
+        for (const [stage, answered] of run2.answers[i].entries()) {
+          const under = run2.asked.get(stage) ?? policy;
+          writeAnswers((0, import_node_path8.join)(args.outDir, `${slug(spec.label)}.${stage}.jsonl`), answered, under, GATE_SET, spec.adapter.name);
+        }
+      }
+    } catch (err) {
+      write3(`Cannot write to ${args.outDir}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+  }
+  if (args.json === true) {
+    write3(`${JSON.stringify({ policy: source, fixtures: fixtures.length, ...assessment }, null, 2)}
+`);
+  } else {
+    write3(`Policy: ${source}
+`);
+    write3(
+      formatGate(assessment, {
+        endpoints: [reference.adapter.name, candidate.adapter.name],
+        models: [modelOf(run2.inputs.reference), modelOf(run2.inputs.candidate)],
+        questions: policy.gate.questionsFingerprint
+      })
+    );
+    if (args.outDir !== void 0) write3(`
+Answers written to ${args.outDir}, one file per arm and pass.
+`);
+  }
+  return assessment.attested ? 0 : 1;
+}
+
 // src/commands/calibrate.ts
-var FLAGS = { values: ["fixtures", "set", "from", "backend", "compare", "out", "policy"], switches: ["json"] };
+var FLAGS = {
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir"],
+  switches: ["json"]
+};
 function parseArgs(argv) {
   const { values, switches, error } = parseFlags(argv, FLAGS);
   const value = (name) => values.get(name);
@@ -10962,6 +11773,11 @@ function parseArgs(argv) {
     ...value("compare") !== void 0 ? { compare: value("compare") } : {},
     ...value("out") !== void 0 ? { out: value("out") } : {},
     ...value("policy") !== void 0 ? { policy: value("policy") } : {},
+    ...value("gate") !== void 0 ? { gate: value("gate") } : {},
+    ...value("reference") !== void 0 ? { reference: value("reference") } : {},
+    ...value("variants") !== void 0 ? { variants: value("variants") } : {},
+    ...value("injection") !== void 0 ? { injection: value("injection") } : {},
+    ...value("out-dir") !== void 0 ? { outDir: value("out-dir") } : {},
     json: switches.has("json"),
     ...error !== void 0 ? { error } : {}
   };
@@ -10980,7 +11796,7 @@ async function calibrate(args, write3) {
 `);
     return 1;
   }
-  const fixturePath = args.fixtures ?? (0, import_node_path8.join)(root, "fixtures", "gate.jsonl");
+  const fixturePath = args.fixtures ?? (0, import_node_path9.join)(root, "fixtures", "gate.jsonl");
   let fixtures;
   try {
     fixtures = loadFixtures(fixturePath);
@@ -10988,6 +11804,16 @@ async function calibrate(args, write3) {
     write3(`Cannot read fixtures at ${fixturePath}: ${err instanceof Error ? err.message : String(err)}
 `);
     return 1;
+  }
+  if (args.gate !== void 0) {
+    return gateCommand(args, resolved.policy, resolved.source, root, fixtures, write3);
+  }
+  for (const [flag, value] of [["--reference", args.reference], ["--variants", args.variants], ["--injection", args.injection], ["--out-dir", args.outDir]]) {
+    if (value !== void 0) {
+      write3(`${flag} belongs to --gate, which was not given.
+`);
+      return 1;
+    }
   }
   if (args.from !== void 0) {
     const logs = args.from.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
@@ -11114,7 +11940,7 @@ function writeAnswers(path, answered, policy, setName, backend) {
   const set = policy.sets[setName];
   if (set === void 0) return;
   const ts = (/* @__PURE__ */ new Date()).toISOString();
-  const lines = answered.map((a) => {
+  const lines2 = answered.map((a) => {
     const { verdict, reason } = scoreAnswered(a, policy, set, setName);
     return {
       ts,
@@ -11141,14 +11967,14 @@ function writeAnswers(path, answered, policy, setName, backend) {
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
     };
   });
-  (0, import_node_fs8.mkdirSync)((0, import_node_path8.dirname)(path), { recursive: true });
-  (0, import_node_fs8.writeFileSync)(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}
+  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs9.writeFileSync)(path, `${lines2.map((l) => JSON.stringify(l)).join("\n")}
 `, "utf8");
 }
 function fromLog(args, policy, fixtures, write3) {
   let source;
   try {
-    source = (0, import_node_fs8.readFileSync)(args.from, "utf8");
+    source = (0, import_node_fs9.readFileSync)(args.from, "utf8");
   } catch (err) {
     write3(`Cannot read the log at ${args.from}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -11228,7 +12054,7 @@ function fromLogs(specs, args, policy, policySource, fixtures, write3) {
     const { label: given, backend: path } = labelled(spec);
     let source;
     try {
-      source = (0, import_node_fs8.readFileSync)(path, "utf8");
+      source = (0, import_node_fs9.readFileSync)(path, "utf8");
     } catch (err) {
       write3(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -11419,8 +12245,8 @@ async function startIfNeeded(adapter) {
 }
 
 // src/commands/judge.ts
-var import_node_fs10 = require("node:fs");
-var import_node_path10 = require("node:path");
+var import_node_fs11 = require("node:fs");
+var import_node_path11 = require("node:path");
 
 // src/judge.ts
 var DEFAULT_CONCURRENCY2 = 4;
@@ -11541,36 +12367,36 @@ function tally(run2) {
   return counts;
 }
 function formatRun(run2) {
-  const lines = [];
+  const lines2 = [];
   const counts = tally(run2);
   const rate = run2.manifest.escalationRate;
-  lines.push(`Set: ${run2.set}   Backend: ${run2.backend}`, "");
-  lines.push(`  judged     ${run2.judged}`);
-  if (run2.failed > 0) lines.push(`  failed     ${run2.failed}`);
-  if (run2.incomplete > 0) lines.push(`  incomplete ${run2.incomplete}   (too long to show the classifier whole, and not accepted)`);
-  lines.push(`  allow      ${counts.allow}`);
-  lines.push(`  ask        ${counts.ask}`);
-  if (counts.deny > 0) lines.push(`  deny       ${counts.deny}`);
-  lines.push("");
-  lines.push(`  escalated  ${run2.manifest.items.length} / ${run2.judged}  (${(rate * 100).toFixed(1)}%)`);
+  lines2.push(`Set: ${run2.set}   Backend: ${run2.backend}`, "");
+  lines2.push(`  judged     ${run2.judged}`);
+  if (run2.failed > 0) lines2.push(`  failed     ${run2.failed}`);
+  if (run2.incomplete > 0) lines2.push(`  incomplete ${run2.incomplete}   (too long to show the classifier whole, and not accepted)`);
+  lines2.push(`  allow      ${counts.allow}`);
+  lines2.push(`  ask        ${counts.ask}`);
+  if (counts.deny > 0) lines2.push(`  deny       ${counts.deny}`);
+  lines2.push("");
+  lines2.push(`  escalated  ${run2.manifest.items.length} / ${run2.judged}  (${(rate * 100).toFixed(1)}%)`);
   if (run2.inputTokens !== void 0 && run2.judged > 0) {
-    lines.push(`  tokens in  ${run2.inputTokens} total, ${Math.round(run2.inputTokens / run2.judged)} per item`);
+    lines2.push(`  tokens in  ${run2.inputTokens} total, ${Math.round(run2.inputTokens / run2.judged)} per item`);
   }
-  lines.push(`  wall clock ${(run2.latencyMs / 1e3).toFixed(1)}s`);
-  return `${lines.join("\n")}
+  lines2.push(`  wall clock ${(run2.latencyMs / 1e3).toFixed(1)}s`);
+  return `${lines2.join("\n")}
 `;
 }
 
 // src/io/items.ts
-var import_node_fs9 = require("node:fs");
-var import_node_path9 = require("node:path");
+var import_node_fs10 = require("node:fs");
+var import_node_path10 = require("node:path");
 var MAX_FILE_BYTES = 1024 * 1024;
 var MAX_DEPTH2 = 8;
 function loadItems(path) {
-  const stats = (0, import_node_fs9.statSync)(path);
+  const stats = (0, import_node_fs10.statSync)(path);
   if (stats.isDirectory()) return loadDirectory(path);
-  const source = (0, import_node_fs9.readFileSync)(path, "utf8");
-  return (0, import_node_path9.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
+  const source = (0, import_node_fs10.readFileSync)(path, "utf8");
+  return (0, import_node_path10.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
 }
 function loadJsonl(source, path) {
   const items = [];
@@ -11625,21 +12451,21 @@ function loadDirectory(root) {
   const skipped = [];
   const walk = (dir, depth) => {
     if (depth > MAX_DEPTH2) {
-      skipped.push({ path: (0, import_node_path9.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
+      skipped.push({ path: (0, import_node_path10.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
       return;
     }
-    for (const entry of (0, import_node_fs9.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      const full = (0, import_node_path9.join)(dir, entry.name);
+      const full = (0, import_node_path10.join)(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full, depth + 1);
         continue;
       }
       if (!entry.isFile()) continue;
-      const id = (0, import_node_path9.relative)(root, full).split(import_node_path9.sep).join("/");
+      const id = (0, import_node_path10.relative)(root, full).split(import_node_path10.sep).join("/");
       let size;
       try {
-        size = (0, import_node_fs9.statSync)(full).size;
+        size = (0, import_node_fs10.statSync)(full).size;
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -11650,7 +12476,7 @@ function loadDirectory(root) {
       }
       let buffer;
       try {
-        buffer = (0, import_node_fs9.readFileSync)(full);
+        buffer = (0, import_node_fs10.readFileSync)(full);
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -11728,7 +12554,7 @@ async function judge2(args, write3) {
   }
   let batch;
   try {
-    batch = loadItems((0, import_node_path10.resolve)(args.path));
+    batch = loadItems((0, import_node_path11.resolve)(args.path));
   } catch (err) {
     write3(`Cannot read ${args.path}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -11772,8 +12598,8 @@ async function judge2(args, write3) {
     }
   );
   if (!args.json) process.stderr.write("\r\x1B[K");
-  const logPath = args.out ?? (0, import_node_path10.join)(dataDir(), JUDGMENTS_FILE);
-  const manifestPath = args.manifest ?? (0, import_node_path10.join)(dataDir(), "escalations.json");
+  const logPath = args.out ?? (0, import_node_path11.join)(dataDir(), JUDGMENTS_FILE);
+  const manifestPath = args.manifest ?? (0, import_node_path11.join)(dataDir(), "escalations.json");
   writeLog(logPath, run2, policy);
   const manifestWritten = writeManifest(manifestPath, run2, policy);
   const status2 = run2.judged === 0 || run2.failed > 0 || run2.incomplete > 0 || !manifestWritten ? 1 : 0;
@@ -11798,10 +12624,10 @@ ${run2.failed + run2.incomplete} item${run2.failed + run2.incomplete === 1 ? "" 
   return status2;
 }
 function writeLog(path, run2, policy) {
-  (0, import_node_fs10.mkdirSync)((0, import_node_path10.dirname)(path), { recursive: true });
+  (0, import_node_fs11.mkdirSync)((0, import_node_path11.dirname)(path), { recursive: true });
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   for (const item of run2.items) {
-    append((0, import_node_path10.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
+    append((0, import_node_path11.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
   }
 }
 function recordFor(item, run2, policy, ts) {
@@ -12028,29 +12854,29 @@ function sumTokens(responses) {
   };
 }
 function formatMeasurement(m) {
-  const lines = [];
-  const pct = (n) => Number.isNaN(n) ? "     \u2014" : `${(n * 100).toFixed(1).padStart(5)}%`;
-  const num = (n) => n === void 0 ? "\u2014" : n.toLocaleString("en-US");
+  const lines2 = [];
+  const pct2 = (n) => Number.isNaN(n) ? "     \u2014" : `${(n * 100).toFixed(1).padStart(5)}%`;
+  const num2 = (n) => n === void 0 ? "\u2014" : n.toLocaleString("en-US");
   const per = (total, items) => total === void 0 || items === 0 ? "\u2014" : Math.round(total / items).toLocaleString("en-US");
   const legend = /* @__PURE__ */ new Map();
-  lines.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
-  lines.push("| pass | by | accuracy | n | input | output | in/item |");
-  lines.push("|---|---|---|---|---|---|---|");
+  lines2.push(`Set: ${m.set}   Fixtures: ${m.fixtures}`, "");
+  lines2.push("| pass | by | accuracy | n | input | output | in/item |");
+  lines2.push("|---|---|---|---|---|---|---|");
   const atoms = ["judge", "reasoning"].flatMap((n) => {
     const found = m.passes.find((p) => p.name === n);
     return found === void 0 ? [] : [found.by];
   });
   for (const p of m.passes) {
-    lines.push(
-      `| ${p.name} | ${labelFor(p.by, legend, atoms)} | ${pct(p.accuracy)} | ${p.correct}/${p.n} | ${num(p.inputTokens)} | ${num(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
+    lines2.push(
+      `| ${p.name} | ${labelFor(p.by, legend, atoms)} | ${pct2(p.accuracy)} | ${p.correct}/${p.n} | ${num2(p.inputTokens)} | ${num2(p.outputTokens)} | ${per(p.inputTokens, p.items)} |`
     );
   }
   if (legend.size > 0) {
-    lines.push("");
-    for (const [short, full2] of legend) lines.push(`  ${short} = ${full2}`);
+    lines2.push("");
+    for (const [short, full2] of legend) lines2.push(`  ${short} = ${full2}`);
   }
-  lines.push("");
-  lines.push(
+  lines2.push("");
+  lines2.push(
     `Escalated ${m.escalated} of ${m.judged} judged (${m.judged === 0 ? "\u2014" : `${(m.escalated / m.judged * 100).toFixed(1)}%`}) \u2014 the items the cascade row paid the reasoning model for.`
   );
   const judgePass = m.passes.find((p) => p.name === "judge");
@@ -12060,30 +12886,30 @@ function formatMeasurement(m) {
     const ratio = cascade.inputTokens / full.inputTokens;
     const delta = cascade.accuracy - full.accuracy;
     const points = `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)} points of accuracy against the labels`;
-    lines.push("");
+    lines2.push("");
     if (ratio <= 1) {
       const saved = (1 - ratio) * 100;
       const savedText = cascade.inputTokens === 0 ? "100" : saved >= 99.5 ? ">99" : saved.toFixed(0);
-      lines.push(`The cascade used ${savedText}% fewer input tokens than the reasoning pass, at ${points}.`);
+      lines2.push(`The cascade used ${savedText}% fewer input tokens than the reasoning pass, at ${points}.`);
     } else {
-      lines.push(
+      lines2.push(
         `The cascade cost ${moreText(ratio)}% MORE input tokens than simply running the reasoning pass on everything, at ${points}.`,
         `That is what ${m.judged === 0 ? "this" : `${(m.escalated / m.judged * 100).toFixed(0)}%`} escalation does: either the thresholds are too wide or the questions are not separating the batch.`
       );
     }
     if (judgePass !== void 0 && !Number.isNaN(judgePass.accuracy)) {
       const worth = cascade.accuracy - judgePass.accuracy;
-      lines.push(
+      lines2.push(
         worth === 0 ? `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations changed no verdict.` : `The judge alone scored ${(judgePass.accuracy * 100).toFixed(1)}%, so the escalations are worth ${(worth * 100).toFixed(1)} points.`
       );
     }
-    lines.push(
+    lines2.push(
       "Tokens are not cost. The two models are priced differently, so price each row's input",
       "and output at your own rates before deciding anything from this."
     );
   }
   if (m.escalated > 0) {
-    lines.push(
+    lines2.push(
       "",
       `The reasoning pass was shown the judge's signals on the ${m.escalated} escalated item${m.escalated === 1 ? "" : "s"},`,
       "because the cascade reuses those answers rather than asking twice. Its row is a",
@@ -12092,7 +12918,7 @@ function formatMeasurement(m) {
     );
   }
   if (m.reasoningFailures > 0) {
-    lines.push(
+    lines2.push(
       "",
       `${m.reasoningFailures} reasoning call${m.reasoningFailures === 1 ? "" : "s"} failed and are excluded from the rows above. First error: ${m.firstReasoningError ?? "(none recorded)"}`
     );
@@ -12100,18 +12926,18 @@ function formatMeasurement(m) {
   const scoredRows = m.passes[0]?.n ?? 0;
   if (scoredRows < m.rows) {
     const each = m.passes.map((p) => `${p.name} ${p.unanswered}`).join(", ");
-    lines.push(
+    lines2.push(
       `Scored ${scoredRows} of ${m.rows} labelled rows: the ones every pass answered, so the three accuracies share a denominator.`,
       `Unanswered, by pass: ${each}. They are set aside rather than counted wrong.`
     );
   }
-  lines.push(
+  lines2.push(
     "",
     "Accuracy is agreement with the fixture labels at a 0.5 boundary, not accuracy against",
     "ground truth. The labels are hand-written judgments about what should be flagged, which",
     "is the right thing to measure when you also set the thresholds \u2014 but it is what this is."
   );
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 function moreText(ratio) {
@@ -12512,9 +13338,9 @@ function isRecord7(value) {
 }
 
 // src/io/skills.ts
-var import_node_fs11 = require("node:fs");
+var import_node_fs12 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path11 = require("node:path");
+var import_node_path12 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -12523,7 +13349,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs11.existsSync)(path)) return;
+    if (!(0, import_node_fs12.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -12537,17 +13363,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path11.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path12.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path11.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path12.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path11.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path11.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path12.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path12.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path11.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path12.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -12558,7 +13384,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path11.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path12.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -12582,7 +13408,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path11.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path12.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -12608,9 +13434,9 @@ function installedPluginSkills(file) {
     const installPath = record2["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
     if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
-    const dir = (0, import_node_path11.join)(installPath, "skills");
+    const dir = (0, import_node_path12.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path11.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path12.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -12618,51 +13444,51 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path11.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs11.existsSync)(root)) return [];
+  const root = (0, import_node_path12.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs12.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path11.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path12.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path11.join)(root, outer, inner);
-      const rpm = (0, import_node_path11.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs11.existsSync)(rpm)) {
+      const session = (0, import_node_path12.join)(root, outer, inner);
+      const rpm = (0, import_node_path12.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs12.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path11.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path12.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path11.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path11.join)(bucket, "manifest.json");
-        if ((0, import_node_fs11.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path12.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
+        if ((0, import_node_fs12.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path11.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path12.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path11.join)(dir, outer))) {
-      buckets.push((0, import_node_path11.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path12.join)(dir, outer))) {
+      buckets.push((0, import_node_path12.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs11.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs12.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs11.readFileSync)(file, "utf8");
+    return (0, import_node_fs12.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
@@ -12675,7 +13501,7 @@ function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs11.statSync)(source);
+      const stat = (0, import_node_fs12.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -12685,13 +13511,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path11.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path12.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs11.existsSync)((0, import_node_path11.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path11.dirname)(current);
+    if ((0, import_node_fs12.existsSync)((0, import_node_path12.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path12.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -12709,69 +13535,69 @@ function skills(options, cwd = process.cwd()) {
     return `${JSON.stringify({ fingerprint: registry.fingerprint, criteria: criteriaFor(registry) }, null, 2)}
 `;
   }
-  const lines = [];
-  lines.push(`${registry.skills.length} skill${registry.skills.length === 1 ? "" : "s"} \xB7 fingerprint ${registry.fingerprint}`);
-  lines.push("");
+  const lines2 = [];
+  lines2.push(`${registry.skills.length} skill${registry.skills.length === 1 ? "" : "s"} \xB7 fingerprint ${registry.fingerprint}`);
+  lines2.push("");
   const byOrigin = /* @__PURE__ */ new Map();
   for (const skill of registry.skills) {
     byOrigin.set(skill.origin, (byOrigin.get(skill.origin) ?? 0) + 1);
   }
-  lines.push("Where they came from:");
+  lines2.push("Where they came from:");
   for (const root of discovery.roots) {
-    lines.push(`  ${String(root.found).padStart(4)}  ${root.path}`);
+    lines2.push(`  ${String(root.found).padStart(4)}  ${root.path}`);
   }
   if (discovery.roots.length === 0) {
-    lines.push("  none \u2014 no skills directory or manifest was found anywhere.");
+    lines2.push("  none \u2014 no skills directory or manifest was found anywhere.");
   }
-  lines.push("");
-  lines.push(`By origin: ${[...byOrigin.entries()].map(([o, n]) => `${o} ${n}`).join(", ") || "none"}`);
+  lines2.push("");
+  lines2.push(`By origin: ${[...byOrigin.entries()].map(([o, n]) => `${o} ${n}`).join(", ") || "none"}`);
   if (registry.duplicates.length > 0) {
-    lines.push(
+    lines2.push(
       `Resolved ${registry.duplicates.length} duplicate name${registry.duplicates.length === 1 ? "" : "s"} by precedence: ${registry.duplicates.slice(0, 5).join(", ")}${registry.duplicates.length > 5 ? " \u2026" : ""}`
     );
   }
   if (options.verbose) {
-    lines.push("");
+    lines2.push("");
     for (const skill of registry.skills) {
-      lines.push(`  ${skill.qualifiedName}`);
-      lines.push(`      ${skill.description}`);
+      lines2.push(`  ${skill.qualifiedName}`);
+      lines2.push(`      ${skill.description}`);
     }
   } else if (registry.skills.length > 0) {
-    lines.push("");
-    lines.push("Names the router could suggest:");
-    lines.push(...wrap(registry.skills.map((s) => s.qualifiedName)));
-    lines.push("");
-    lines.push("Run with --verbose for descriptions, or --json for the criteria map.");
+    lines2.push("");
+    lines2.push("Names the router could suggest:");
+    lines2.push(...wrap(registry.skills.map((s) => s.qualifiedName)));
+    lines2.push("");
+    lines2.push("Run with --verbose for descriptions, or --json for the criteria map.");
   }
-  lines.push("");
-  lines.push(
+  lines2.push("");
+  lines2.push(
     registry.skills.length === 0 ? "An empty registry means the router would never suggest anything. That is safe, and it is also useless \u2014 see docs/adr/006." : "A missing skill here is worse than a short list: the classifier renormalises over what it is offered, so an absent option becomes a confident wrong pick."
   );
-  lines.push("");
-  lines.push(`Sources signature: ${shorten(signatureOf(discovery.sources))}`);
-  return `${lines.join("\n")}
+  lines2.push("");
+  lines2.push(`Sources signature: ${shorten(signatureOf(discovery.sources))}`);
+  return `${lines2.join("\n")}
 `;
 }
 function wrap(names, width = 92) {
-  const lines = [];
+  const lines2 = [];
   let current = " ";
   for (const name of names) {
     if (current.length + name.length + 2 > width) {
-      lines.push(current);
+      lines2.push(current);
       current = " ";
     }
     current += ` ${name}`;
   }
-  if (current.trim().length > 0) lines.push(current);
-  return lines;
+  if (current.trim().length > 0) lines2.push(current);
+  return lines2;
 }
 function shorten(signature) {
   return signature.length <= 120 ? signature : `${signature.slice(0, 117)}\u2026`;
 }
 
 // src/commands/export.ts
-var import_node_fs12 = require("node:fs");
-var import_node_path12 = require("node:path");
+var import_node_fs13 = require("node:fs");
+var import_node_path13 = require("node:path");
 
 // src/export.ts
 var UNCARRIED = ["running_as_subagent", "recent_tools", "git_branch", "git_dirty"];
@@ -12900,7 +13726,7 @@ function rebuild(record2, tool) {
 }
 function shapesFor(tool, action, cwd) {
   const str = (key) => typeof action[key] === "string" ? action[key] : void 0;
-  const num = (key) => typeof action[key] === "number" ? action[key] : void 0;
+  const num2 = (key) => typeof action[key] === "number" ? action[key] : void 0;
   const filler = (bytes, char) => bytes === void 0 ? void 0 : char.repeat(bytes);
   const defined = (record2) => Object.fromEntries(Object.entries(record2).filter(([, v]) => v !== void 0));
   switch (tool) {
@@ -12909,7 +13735,7 @@ function shapesFor(tool, action, cwd) {
     case "Write": {
       const exists = typeof action["replaces_existing_file"] === "boolean" ? { target_exists: action["replaces_existing_file"] } : {};
       return pathsFor(action, cwd).map((file_path) => ({
-        input: defined({ file_path, content: filler(num("bytes"), "x") }),
+        input: defined({ file_path, content: filler(num2("bytes"), "x") }),
         ...exists
       }));
     }
@@ -12917,8 +13743,8 @@ function shapesFor(tool, action, cwd) {
       return pathsFor(action, cwd).map((file_path) => ({
         input: defined({
           file_path,
-          old_string: filler(num("bytes_removed"), "x"),
-          new_string: filler(num("bytes_added"), "y"),
+          old_string: filler(num2("bytes_removed"), "x"),
+          new_string: filler(num2("bytes_added"), "y"),
           replace_all: action["replaces_every_occurrence"] === true
         })
       }));
@@ -12985,29 +13811,29 @@ function exportFixtures(args, write3, report2) {
     return 1;
   }
   if (args.out !== void 0) {
-    const out = (0, import_node_path12.resolve)(args.out);
-    if (`${out}${import_node_path12.sep}`.includes(`${import_node_path12.sep}test${import_node_path12.sep}holdout${import_node_path12.sep}`)) {
+    const out = (0, import_node_path13.resolve)(args.out);
+    if (`${out}${import_node_path13.sep}`.includes(`${import_node_path13.sep}test${import_node_path13.sep}holdout${import_node_path13.sep}`)) {
       write3(`Refusing to write under test/holdout: that corpus is frozen, and a case is added by hand.
 `);
       return 1;
     }
-    if ((0, import_node_fs12.existsSync)(out)) {
+    if ((0, import_node_fs13.existsSync)(out)) {
       write3(`Refusing to overwrite ${args.out}: it may already hold labels. Name a new file.
 `);
       return 1;
     }
   }
-  const sources = args.from !== void 0 ? [args.from] : [`${(0, import_node_path12.join)(dataDir(), LOG_FILE)}.1`, (0, import_node_path12.join)(dataDir(), LOG_FILE)];
-  const present = sources.filter((path) => args.from !== void 0 || (0, import_node_fs12.existsSync)(path));
+  const sources = args.from !== void 0 ? [args.from] : [`${(0, import_node_path13.join)(dataDir(), LOG_FILE)}.1`, (0, import_node_path13.join)(dataDir(), LOG_FILE)];
+  const present = sources.filter((path) => args.from !== void 0 || (0, import_node_fs13.existsSync)(path));
   if (present.length === 0) {
-    write3(`No decision log at ${(0, import_node_path12.join)(dataDir(), LOG_FILE)}. Name one with --from; bouncer status prints where the hook writes.
+    write3(`No decision log at ${(0, import_node_path13.join)(dataDir(), LOG_FILE)}. Name one with --from; bouncer status prints where the hook writes.
 `);
     return 1;
   }
   let text = "";
   for (const path of present) {
     try {
-      text += `${(0, import_node_fs12.readFileSync)(path, "utf8")}
+      text += `${(0, import_node_fs13.readFileSync)(path, "utf8")}
 `;
     } catch (err) {
       write3(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}
@@ -13016,9 +13842,9 @@ function exportFixtures(args, write3, report2) {
     }
   }
   const root = pluginRoot() ?? process.cwd();
-  const knownPath = args.fixtures ?? (0, import_node_path12.join)(root, "fixtures", "gate.jsonl");
+  const knownPath = args.fixtures ?? (0, import_node_path13.join)(root, "fixtures", "gate.jsonl");
   let known = [];
-  if (args.fixtures !== void 0 || (0, import_node_fs12.existsSync)(knownPath)) {
+  if (args.fixtures !== void 0 || (0, import_node_fs13.existsSync)(knownPath)) {
     try {
       known = loadFixtures(knownPath);
     } catch (err) {
@@ -13037,8 +13863,8 @@ ${result.candidates.map(candidateLine).join("\n")}${result.candidates.length > 0
     return 0;
   }
   try {
-    (0, import_node_fs12.mkdirSync)((0, import_node_path12.dirname)((0, import_node_path12.resolve)(args.out)), { recursive: true });
-    (0, import_node_fs12.writeFileSync)(args.out, file, { encoding: "utf8", flag: "wx" });
+    (0, import_node_fs13.mkdirSync)((0, import_node_path13.dirname)((0, import_node_path13.resolve)(args.out)), { recursive: true });
+    (0, import_node_fs13.writeFileSync)(args.out, file, { encoding: "utf8", flag: "wx" });
   } catch (err) {
     write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -13052,7 +13878,7 @@ Written to ${args.out}. Label a line, uncomment it, then: bouncer calibrate --fi
 }
 function summary(result, sources, knownPath) {
   const s = result.skipped;
-  const lines = [
+  const lines2 = [
     `Read ${result.read} lines from ${sources.join(" and ")}.`,
     `Exported ${result.candidates.length} candidate fixtures, all unlabelled.`
   ];
@@ -13066,13 +13892,13 @@ function summary(result, sources, knownPath) {
     [s.noId, "had no tool_use_id to join the logged answers on"],
     [s.unrebuildable, "did not rebuild to the state the classifier was shown"]
   ];
-  for (const [n, why] of left) if (n > 0) lines.push(`  ${n} ${why}.`);
+  for (const [n, why] of left) if (n > 0) lines2.push(`  ${n} ${why}.`);
   if (result.redactedOnExport > 0) {
-    lines.push(
+    lines2.push(
       `${result.redactedOnExport} held text the current redaction patterns catch and the logged line did not; it is redacted in the export, so those candidates differ from what the classifier was shown.`
     );
   }
-  return `${lines.join("\n")}
+  return `${lines2.join("\n")}
 `;
 }
 
@@ -13131,7 +13957,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.12\n");
+      process.stdout.write("0.2.13\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
