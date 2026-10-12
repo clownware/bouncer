@@ -681,6 +681,61 @@ contents come out as filler of the logged size, because the log never held them,
 outside the project comes out as its file name under a representative directory with the
 same labels.
 
+## Before a push: `bouncer ready`
+
+The gate asks whether a command is dangerous. This asks a different question, which nothing
+else here asks: is the work finished?
+
+```bash
+BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs ready
+```
+
+```
+Push readiness: feature/discount against origin/main, 2 commits, 5 files (+84 −12)
+  policy policy/push.yaml · backend jev (jev-1.13.0)
+
+HOLD (observing: nothing is blocked; pass --enforce to make this exit 1)
+  push           untested_behaviour 0.93
+                 The change alters how the program behaves, and `tests_changed` is false.
+  src/total.ts   debug_leftover 0.98
+                 The lines that `diff` adds, which begin with a plus sign, include a statement that was left in from debugging.
+
+Not checked (1):
+  package-lock.json: a lockfile
+```
+
+It reads the commits ahead of the base branch and asks four questions, in two groups
+([`policy/push.yaml`](policy/push.yaml)): of the whole change, whether the commit messages
+describe it and whether behaviour changed with no test; and of each changed file, one file
+at a time, whether a debugging statement was left in and whether the work is marked
+unfinished. Anything countable is counted in code and handed over as a fact. The model is
+asked only for the judgment that is left.
+
+This is the use a judgment model is for: a review pass you would otherwise spend a
+reasoning model's call on, or skip. It takes about as long as one tool call.
+
+Three things to know before relying on it.
+
+- **It sends your diff.** Commit messages and diff text go to the backend, after redaction.
+  That is the batch judge's rule and not the gate's, which never sends content. `--backend
+  mock` shows what would be read and sends nothing.
+- **It observes.** The exit status is 0 whatever it finds. `--enforce` makes a `HOLD` exit 1,
+  which is what stops a push from a `pre-push` hook. If it cannot run (no key, no
+  repository, a backend that did not answer) it says so and exits 0 either way: a check that
+  did not happen has no opinion.
+- **It says what it did not read.** Lockfiles, generated files, documentation, binaries and
+  any file whose diff is longer than one request can carry are listed under "Not checked".
+  `READY` is about the files it read.
+
+Every real run adds a line to `readiness.jsonl` in the data directory: the head commit, the
+verdict and each answer, with no diff text. That is there so the check can be judged
+against what CI later said about the same commit, which costs no labelling. Until someone
+has made that comparison on their own pushes, treat the thresholds in the policy as
+provisional. On the 26 hand-written fixtures in [`fixtures/push.jsonl`](fixtures/push.jsonl)
+and [`fixtures/push-file.jsonl`](fixtures/push-file.jsonl) it reached the labelled verdict
+on 25 ([the run](docs/calibration/2026-10-12-push-1.md)); fixtures the people who wrote the
+questions also wrote are a check that the wording reads as meant, and nothing more.
+
 ## Design commitments
 
 These are the parts worth arguing with, stated up front.

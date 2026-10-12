@@ -14,6 +14,7 @@ import { judge, parseArgs as parseJudgeArgs } from "./commands/judge.js";
 import { measure, parseArgs as parseMeasureArgs } from "./commands/measure.js";
 import { skills, parseArgs as parseSkillsArgs } from "./commands/skills.js";
 import { exportFixtures, parseArgs as parseExportArgs } from "./commands/export.js";
+import { ready, parseArgs as parseReadyArgs } from "./commands/ready.js";
 import { readPayload } from "./io/stdin.js";
 
 const OK = 0;
@@ -58,12 +59,15 @@ async function main(argv: string[]): Promise<number> {
         (text) => process.stderr.write(text),
       );
 
+    case "ready":
+      return ready(parseReadyArgs(argv.slice(3)), (text) => process.stdout.write(text));
+
     case "skills":
       process.stdout.write(skills(parseSkillsArgs(argv.slice(3))));
       return OK;
 
     case "--version":
-      process.stdout.write("0.2.16\n");
+      process.stdout.write("0.2.17\n");
       return OK;
 
     default:

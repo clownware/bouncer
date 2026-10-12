@@ -7577,8 +7577,8 @@ function parseResponse(payload, latencyMs) {
   if (typeof payload !== "object" || payload === null) {
     throw new AdapterError("malformed_response", "response was not an object");
   }
-  const record2 = payload;
-  const rawAnswers = record2["answers"];
+  const record3 = payload;
+  const rawAnswers = record3["answers"];
   if (typeof rawAnswers !== "object" || rawAnswers === null) {
     throw new AdapterError("malformed_response", "response had no answers object");
   }
@@ -7590,44 +7590,44 @@ function parseResponse(payload, latencyMs) {
   if (Object.keys(answers).length === 0) {
     throw new AdapterError("malformed_response", "no readable answers in the response");
   }
-  const usage = record2["usage"];
+  const usage = record3["usage"];
   const inputTokens = typeof usage === "object" && usage !== null && typeof usage["input_tokens"] === "number" ? usage["input_tokens"] : void 0;
   return {
     answers,
-    ...typeof record2["model"] === "string" ? { model: record2["model"] } : {},
+    ...typeof record3["model"] === "string" ? { model: record3["model"] } : {},
     ...inputTokens !== void 0 ? { inputTokens } : {},
     latencyMs
   };
 }
 function parseAnswer(value) {
   if (typeof value !== "object" || value === null) return void 0;
-  const record2 = value;
-  switch (record2["type"]) {
+  const record3 = value;
+  switch (record3["type"]) {
     case "noul": {
-      const noul = record2["noul"];
+      const noul = record3["noul"];
       if (typeof noul !== "number" || !Number.isFinite(noul) || noul < 0 || noul > 1) return void 0;
       return { type: "noul", noul };
     }
     case "choice": {
-      const choice = record2["choice"];
-      const probabilities = record2["probabilities"];
+      const choice = record3["choice"];
+      const probabilities = record3["probabilities"];
       if (typeof choice !== "string" || !isNumberRecord(probabilities)) return void 0;
       return {
         type: "choice",
         choice,
         probabilities,
-        confidence: typeof record2["confidence"] === "number" ? record2["confidence"] : Number.NaN
+        confidence: typeof record3["confidence"] === "number" ? record3["confidence"] : Number.NaN
       };
     }
     case "score": {
-      const score2 = record2["score"];
-      const probabilities = record2["probabilities"];
+      const score2 = record3["score"];
+      const probabilities = record3["probabilities"];
       if (typeof score2 !== "number" || !isNumberRecord(probabilities)) return void 0;
       return {
         type: "score",
         score: score2,
         probabilities,
-        confidence: typeof record2["confidence"] === "number" ? record2["confidence"] : Number.NaN
+        confidence: typeof record3["confidence"] === "number" ? record3["confidence"] : Number.NaN
       };
     }
     default:
@@ -8084,11 +8084,11 @@ function topLogprobs(payload) {
 }
 function readUsage(payload) {
   if (typeof payload !== "object" || payload === null) return {};
-  const record2 = payload;
-  const usage = record2["usage"];
+  const record3 = payload;
+  const usage = record3["usage"];
   const prompt = typeof usage === "object" && usage !== null ? usage["prompt_tokens"] : void 0;
   return {
-    ...typeof record2["model"] === "string" ? { model: record2["model"] } : {},
+    ...typeof record3["model"] === "string" ? { model: record3["model"] } : {},
     ...typeof prompt === "number" ? { inputTokens: prompt } : {}
   };
 }
@@ -8180,7 +8180,7 @@ var import_yaml = __toESM(require_dist(), 1);
 
 // src/engine/fingerprint.ts
 function fingerprintQuestions(questions, probeQuestions) {
-  const sorted = (record2) => Object.keys(record2).sort().map((name) => [name, record2[name]]);
+  const sorted = (record3) => Object.keys(record3).sort().map((name) => [name, record3[name]]);
   return fingerprint(JSON.stringify([sorted(questions), sorted(probeQuestions)]));
 }
 function fingerprint(text) {
@@ -9036,9 +9036,9 @@ function describeOutside(absolute) {
   if (/^\/(home|Users)\//.test(absolute)) return "elsewhere_in_home";
   return "elsewhere_on_machine";
 }
-function truncateStrings(record2, limit) {
+function truncateStrings(record3, limit) {
   return Object.fromEntries(
-    Object.entries(record2).map(
+    Object.entries(record3).map(
       ([key, value]) => typeof value === "string" && value.length > limit ? [key, `${value.slice(0, limit)}\u2026 [truncated]`] : [key, value]
     )
   );
@@ -9603,10 +9603,10 @@ var import_node_path6 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
 var JUDGMENTS_FILE = "judgments.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
-function append(dir, record2, name = LOG_FILE) {
+function append(dir, record3, name = LOG_FILE) {
   try {
     (0, import_node_fs5.mkdirSync)(dir, { recursive: true });
-    const safe = record2.state !== void 0 ? { ...record2, state: redactState(record2.state) } : record2;
+    const safe = record3.state !== void 0 ? { ...record3, state: redactState(record3.state) } : record3;
     const file = (0, import_node_path6.join)(dir, name);
     rotateIfOversized(file);
     (0, import_node_fs5.appendFileSync)(file, `${JSON.stringify(safe)}
@@ -10060,63 +10060,63 @@ function explain2(toolUseId) {
   if (records.length === 0) {
     return "No decisions logged yet.\n";
   }
-  const record2 = toolUseId === void 0 || toolUseId.length === 0 ? records.find((r) => r.reason.kind !== "fast-path") ?? records[0] : records.find((r) => r.tool_use_id === toolUseId);
-  if (record2 === void 0) {
+  const record3 = toolUseId === void 0 || toolUseId.length === 0 ? records.find((r) => r.reason.kind !== "fast-path") ?? records[0] : records.find((r) => r.tool_use_id === toolUseId);
+  if (record3 === void 0) {
     return `No decision logged for ${toolUseId}. It may have scrolled out of the last ${SEARCH_DEPTH} entries.
 `;
   }
-  return render(record2);
+  return render(record3);
 }
-function render(record2) {
+function render(record3) {
   const lines2 = [];
-  lines2.push(`${record2.tool ?? `${record2.set ?? "?"}: ${record2.item ?? "(item)"}`} at ${record2.ts}`);
-  const concluded = record2.error === void 0 && record2.verdict !== void 0;
-  const emitted = record2.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record2.mode} mode` : ""})` : `  (emitted ${record2.emitted})`;
-  lines2.push(`Verdict: ${concluded ? record2.verdict : "none"}${emitted}`);
+  lines2.push(`${record3.tool ?? `${record3.set ?? "?"}: ${record3.item ?? "(item)"}`} at ${record3.ts}`);
+  const concluded = record3.error === void 0 && record3.verdict !== void 0;
+  const emitted = record3.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record3.mode} mode` : ""})` : `  (emitted ${record3.emitted})`;
+  lines2.push(`Verdict: ${concluded ? record3.verdict : "none"}${emitted}`);
   lines2.push(
-    `Because: ${record2.error !== void 0 ? `the classifier could not answer (${record2.error.kind}: ${record2.error.message})` : describe(record2)}`
+    `Because: ${record3.error !== void 0 ? `the classifier could not answer (${record3.error.kind}: ${record3.error.message})` : describe(record3)}`
   );
-  if (record2.permission_mode !== void 0) {
-    lines2.push(`Permission mode: ${record2.permission_mode}`);
+  if (record3.permission_mode !== void 0) {
+    lines2.push(`Permission mode: ${record3.permission_mode}`);
   }
-  if (record2.agent_type !== void 0) {
-    lines2.push(`Called by subagent: ${record2.agent_type}`);
+  if (record3.agent_type !== void 0) {
+    lines2.push(`Called by subagent: ${record3.agent_type}`);
   }
-  if (record2.answers !== void 0 && Object.keys(record2.answers).length > 0) {
+  if (record3.answers !== void 0 && Object.keys(record3.answers).length > 0) {
     lines2.push("", "Judgments:");
-    const entries = Object.entries(record2.answers).sort((a, b) => b[1] - a[1]);
+    const entries = Object.entries(record3.answers).sort((a, b) => b[1] - a[1]);
     const width = Math.max(...entries.map(([name]) => name.length));
     for (const [name, p] of entries) {
       lines2.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
     }
   }
-  if (record2.escalation !== void 0 && record2.escalation.signals.length > 0) {
-    lines2.push("", `Escalated as ${record2.escalation.verdict}, on:`);
-    for (const signal of record2.escalation.signals) {
+  if (record3.escalation !== void 0 && record3.escalation.signals.length > 0) {
+    lines2.push("", `Escalated as ${record3.escalation.verdict}, on:`);
+    for (const signal of record3.escalation.signals) {
       const mark = signal.decided ? "\u2192" : " ";
       lines2.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
       lines2.push(`      ${signal.asks}`);
     }
-    if (record2.escalation.signals.length > 1) {
+    if (record3.escalation.signals.length > 1) {
       lines2.push("  \u2192 marks the one that decided; first match wins.");
     }
   }
-  if (record2.error !== void 0) {
-    lines2.push("", `Error: ${record2.error.kind} \u2014 ${record2.error.message}`);
+  if (record3.error !== void 0) {
+    lines2.push("", `Error: ${record3.error.kind} \u2014 ${record3.error.message}`);
   }
-  if (record2.state !== void 0) {
-    lines2.push("", "What was sent to the classifier:", `  ${record2.state}`);
+  if (record3.state !== void 0) {
+    lines2.push("", "What was sent to the classifier:", `  ${record3.state}`);
   }
-  if (record2.redacted_kinds !== void 0 && record2.redacted_kinds.length > 0) {
-    lines2.push("", `Redacted before sending: ${record2.redacted_kinds.join(", ")}`);
+  if (record3.redacted_kinds !== void 0 && record3.redacted_kinds.length > 0) {
+    lines2.push("", `Redacted before sending: ${record3.redacted_kinds.join(", ")}`);
   }
-  const adapter = record2.latency_ms.adapter;
-  lines2.push("", `Latency: ${record2.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record2.warmup === true ? "  (first call of the session)" : ""}`);
+  const adapter = record3.latency_ms.adapter;
+  lines2.push("", `Latency: ${record3.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record3.warmup === true ? "  (first call of the session)" : ""}`);
   return `${lines2.join("\n")}
 `;
 }
-function describe(record2) {
-  const reason = record2.reason;
+function describe(record3) {
+  const reason = record3.reason;
   switch (reason.kind) {
     case "rule":
       return reason.question === "default" ? "no rule matched, so the policy's default applied" : `rule ${reason.ruleIndex} matched: ${reason.question} was ${reason.p.toFixed(2)}`;
@@ -10450,9 +10450,9 @@ function toolCallOf(fixture) {
     ...branchOf(item["git"]) !== void 0 ? { git: { branch: branchOf(item["git"]) } } : {}
   };
 }
-function branchOf(git) {
-  if (typeof git !== "object" || git === null) return void 0;
-  const branch = git["branch"];
+function branchOf(git2) {
+  if (typeof git2 !== "object" || git2 === null) return void 0;
+  const branch = git2["branch"];
   return typeof branch === "string" && branch.length > 0 ? branch : void 0;
 }
 function stateFor(fixture) {
@@ -10485,12 +10485,12 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
   let unscorable = 0;
   let otherSet = 0;
   let reworded = 0;
-  for (const record2 of parseLog(source)) {
-    if ((record2.set ?? GATE_SET) !== setName) {
+  for (const record3 of parseLog(source)) {
+    if ((record3.set ?? GATE_SET) !== setName) {
       otherSet += 1;
       continue;
     }
-    const key = record2.item ?? record2.tool_use_id;
+    const key = record3.item ?? record3.tool_use_id;
     if (key === void 0) {
       unscorable += 1;
       continue;
@@ -10500,25 +10500,25 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
       unmatched += 1;
       continue;
     }
-    const answers = { ...record2.answers ?? {} };
-    const probes = record2.probes ?? {};
+    const answers = { ...record3.answers ?? {} };
+    const probes = record3.probes ?? {};
     if (Object.keys(answers).length === 0) {
       unscorable += 1;
       continue;
     }
     matched += 1;
-    if (record2.policy !== void 0 && record2.policy.questions !== set.questionsFingerprint) reworded += 1;
-    if (record2.policy !== void 0) questions.add(record2.policy.questions);
-    if (record2.model !== void 0) models.add(record2.model);
-    if (typeof record2.backend === "string") backends.add(record2.backend);
-    if (typeof record2.ts === "string") {
-      if (first === void 0 || record2.ts < first) first = record2.ts;
-      if (last === void 0 || record2.ts > last) last = record2.ts;
+    if (record3.policy !== void 0 && record3.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record3.policy !== void 0) questions.add(record3.policy.questions);
+    if (record3.model !== void 0) models.add(record3.model);
+    if (typeof record3.backend === "string") backends.add(record3.backend);
+    if (typeof record3.ts === "string") {
+      if (first === void 0 || record3.ts < first) first = record3.ts;
+      if (last === void 0 || record3.ts > last) last = record3.ts;
     }
-    const truncated = record2.truncated === true ? { truncated: true } : {};
-    const cut = record2.server_truncated;
+    const truncated = record3.truncated === true ? { truncated: true } : {};
+    const cut = record3.server_truncated;
     const serverTruncation2 = cut !== void 0 && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
-    const latencyMs = record2.latency_ms?.adapter ?? record2.latency_ms?.total ?? Number.NaN;
+    const latencyMs = record3.latency_ms?.adapter ?? record3.latency_ms?.total ?? Number.NaN;
     const one = { fixture, answers, probes, latencyMs, ...truncated, ...serverTruncation2 };
     answered.push(one);
     scored.push(...scoreAnswered(one, policy, set, setName).rows);
@@ -11093,10 +11093,10 @@ function questionFingerprint(question) {
 }
 function wordingOf(raw, where) {
   if (typeof raw !== "object" || raw === null) throw new Error(`${where} has no wording`);
-  const record2 = raw;
-  const instructions = record2["instructions"];
+  const record3 = raw;
+  const instructions = record3["instructions"];
   if (typeof instructions !== "string" || instructions.length === 0) throw new Error(`${where} has no "instructions"`);
-  const criteria = record2["criteria"];
+  const criteria = record3["criteria"];
   if (criteria !== void 0 && (typeof criteria !== "object" || criteria === null)) {
     throw new Error(`${where} has "criteria" that is not a mapping`);
   }
@@ -13781,11 +13781,11 @@ function installedPluginSkills(file) {
   const entries = Array.isArray(parsed["plugins"]) ? parsed["plugins"] : Object.values(parsed);
   for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) continue;
-    const record2 = entry;
-    const name = record2["name"];
-    const installPath = record2["installPath"];
+    const record3 = entry;
+    const name = record3["name"];
+    const installPath = record3["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
-    if (!pluginIsActive({ name, ...preferenceOf(record2) })) continue;
+    if (!pluginIsActive({ name, ...preferenceOf(record3) })) continue;
     const dir = (0, import_node_path12.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
       const frontmatter = read3((0, import_node_path12.join)(dir, skillName, "SKILL.md"));
@@ -13845,8 +13845,8 @@ function read3(file) {
     return void 0;
   }
 }
-function preferenceOf(record2) {
-  const preference = record2["installationPreference"] ?? record2["installation_preference"];
+function preferenceOf(record3) {
+  const preference = record3["installationPreference"] ?? record3["installation_preference"];
   return typeof preference === "string" ? { installationPreference: preference } : {};
 }
 function signatureOf(sources) {
@@ -13974,28 +13974,28 @@ function exportCandidates(records, options = {}) {
     (options.known ?? []).filter((f) => f.kind === "tool_call").map((f) => actionKey(stateFor(f).text))
   );
   const byState = /* @__PURE__ */ new Map();
-  for (const record2 of records) {
-    if ((record2.consumer ?? "gate") !== "gate" || typeof record2.tool !== "string") {
+  for (const record3 of records) {
+    if ((record3.consumer ?? "gate") !== "gate" || typeof record3.tool !== "string") {
       skipped.notGate += 1;
       continue;
     }
-    if (record2.state === void 0) {
+    if (record3.state === void 0) {
       skipped.noState += 1;
       continue;
     }
-    if (record2.backend === "mock" && options.keepMock !== true) {
+    if (record3.backend === "mock" && options.keepMock !== true) {
       skipped.mock += 1;
       continue;
     }
-    if (record2.tool_use_id === void 0) {
+    if (record3.tool_use_id === void 0) {
       skipped.noId += 1;
       continue;
     }
-    if (record2.truncated === true) {
+    if (record3.truncated === true) {
       skipped.truncated += 1;
       continue;
     }
-    const rebuilt = rebuild(record2, record2.tool);
+    const rebuilt = rebuild(record3, record3.tool);
     if (rebuilt === void 0) {
       skipped.unrebuildable += 1;
       continue;
@@ -14004,7 +14004,7 @@ function exportCandidates(records, options = {}) {
     if (existing !== void 0) {
       skipped.duplicate += 1;
       existing.seen += 1;
-      if (record2.ts > existing.last) existing.last = record2.ts;
+      if (record3.ts > existing.last) existing.last = record3.ts;
       continue;
     }
     if (knownActions.has(actionKey(rebuilt.state))) {
@@ -14012,7 +14012,7 @@ function exportCandidates(records, options = {}) {
       continue;
     }
     if (rebuilt.redacted) redactedOnExport += 1;
-    byState.set(rebuilt.state, { ...rebuilt.item, id: record2.tool_use_id, seen: 1, first: record2.ts, last: record2.ts });
+    byState.set(rebuilt.state, { ...rebuilt.item, id: record3.tool_use_id, seen: 1, first: record3.ts, last: record3.ts });
   }
   return { candidates: [...byState.values()], read: records.length, skipped, redactedOnExport };
 }
@@ -14048,10 +14048,10 @@ var HEADER = `// Candidate fixtures exported from a bouncer decision log by \`bo
 //
 //   bouncer calibrate --fixtures <this file> --from <the decision log>
 `;
-function rebuild(record2, tool) {
+function rebuild(record3, tool) {
   let state;
   try {
-    state = JSON.parse(record2.state);
+    state = JSON.parse(record3.state);
   } catch {
     return void 0;
   }
@@ -14064,7 +14064,7 @@ function rebuild(record2, tool) {
   const cwd = project !== void 0 ? `/home/user/${project}` : void 0;
   const context = {
     ...cwd !== void 0 ? { cwd } : {},
-    ...typeof record2.permission_mode === "string" ? { permission_mode: record2.permission_mode } : {}
+    ...typeof record3.permission_mode === "string" ? { permission_mode: record3.permission_mode } : {}
   };
   for (const shape of shapesFor(tool, expected["action"], cwd)) {
     const item = { tool, ...shape, ...context };
@@ -14080,7 +14080,7 @@ function shapesFor(tool, action, cwd) {
   const str = (key) => typeof action[key] === "string" ? action[key] : void 0;
   const num2 = (key) => typeof action[key] === "number" ? action[key] : void 0;
   const filler = (bytes, char) => bytes === void 0 ? void 0 : char.repeat(bytes);
-  const defined = (record2) => Object.fromEntries(Object.entries(record2).filter(([, v]) => v !== void 0));
+  const defined = (record3) => Object.fromEntries(Object.entries(record3).filter(([, v]) => v !== void 0));
   switch (tool) {
     case "Bash":
       return [{ input: defined({ command: str("command"), description: str("stated_intent") }) }];
@@ -14254,6 +14254,347 @@ function summary(result, sources, knownPath) {
 `;
 }
 
+// src/commands/ready.ts
+var import_node_fs14 = require("node:fs");
+var import_node_path14 = require("node:path");
+
+// src/io/git.ts
+var import_node_child_process2 = require("node:child_process");
+var MAX_DIFF_BYTES = 4 * 1024 * 1024;
+function git(cwd, args) {
+  return (0, import_node_child_process2.execFileSync)("git", args, { cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES * 4, stdio: ["ignore", "pipe", "pipe"] });
+}
+function tryGit(cwd, args) {
+  try {
+    return git(cwd, args).trim();
+  } catch {
+    return void 0;
+  }
+}
+function defaultBase(cwd) {
+  const head = tryGit(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  if (head !== void 0 && head.length > 0) return head;
+  for (const candidate of ["origin/main", "origin/master", "main", "master"]) {
+    if (tryGit(cwd, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]) !== void 0) return candidate;
+  }
+  return void 0;
+}
+function readChange(cwd, baseRef) {
+  const root = tryGit(cwd, ["rev-parse", "--show-toplevel"]);
+  if (root === void 0) return "not inside a git repository";
+  const ref = baseRef ?? defaultBase(root);
+  if (ref === void 0) return "no base to compare against: there is no origin/HEAD, origin/main or main. Name one with --base.";
+  const base = tryGit(root, ["merge-base", "HEAD", ref]);
+  if (base === void 0) return `no merge base between HEAD and ${ref}`;
+  const head = git(root, ["rev-parse", "HEAD"]).trim();
+  const branch = tryGit(root, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
+  const commits = git(root, ["log", "--reverse", "--format=%s%x1f%b%x1e", `${base}..${head}`]).split("").map((entry) => entry.replace(/^\n/, "")).filter((entry) => entry.length > 0).map((entry) => {
+    const [subject = "", body = ""] = entry.split("");
+    return { subject: subject.trim(), body: body.trim() };
+  });
+  const range = [base, head];
+  const statusOf = /* @__PURE__ */ new Map();
+  for (const line of git(root, ["diff", "--no-renames", "--name-status", ...range]).split("\n")) {
+    const [code, path] = line.split("	");
+    if (code === void 0 || path === void 0) continue;
+    statusOf.set(path, code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified");
+  }
+  const files = [];
+  for (const line of git(root, ["diff", "--no-renames", "--numstat", ...range]).split("\n")) {
+    const [added, removed, path] = line.split("	");
+    if (added === void 0 || removed === void 0 || path === void 0) continue;
+    const binary = added === "-";
+    const status2 = statusOf.get(path) ?? "modified";
+    let diff = "";
+    if (!binary && status2 !== "deleted") {
+      try {
+        diff = git(root, ["diff", "--no-renames", "--no-color", "--unified=3", ...range, "--", path]);
+      } catch {
+        diff = "";
+      }
+    }
+    files.push({ path, status: status2, added: binary ? 0 : Number(added), removed: binary ? 0 : Number(removed), binary, diff });
+  }
+  return { root, branch, baseRef: ref, base, head, commits, files };
+}
+
+// src/push.ts
+var PUSH_SET = "push";
+var PUSH_FILE_SET = "push_file";
+var EXCERPT_BYTES = 6e3;
+var EXCERPT_FLOOR = 240;
+var FILE_ITEM_OVERHEAD = 1024;
+var TEST_PATH = /(^|\/)(tests?|__tests__|specs?|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py|rb)$|(^|\/)test_[^/]+\.py$|Tests?\.(swift|cs|java|kt)$/;
+var DOC_PATH = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(docs?|documentation)\/|(^|\/)(LICENSE|NOTICE|CHANGELOG|AUTHORS)(\.[a-z]+)?$/i;
+var LOCKFILE = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock|flake\.lock)$/;
+var GENERATED = /(^|\/)(dist|build|out|vendor|node_modules|\.next|coverage)\/|\.min\.(js|css)$|\.(map|snap)$|\.generated\.|_pb2?\.py$|\.pb\.go$/;
+function kindOf(path) {
+  if (LOCKFILE.test(path)) return "lockfile";
+  if (GENERATED.test(path)) return "generated";
+  if (TEST_PATH.test(path)) return "test";
+  if (DOC_PATH.test(path)) return "docs";
+  return "source";
+}
+function addedLines(diff) {
+  return diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).map((line) => line.slice(1));
+}
+function whyUnchecked(file, kind) {
+  if (file.status === "deleted") return "deleted, so it adds nothing to read";
+  if (file.binary) return "binary";
+  if (kind === "lockfile") return "a lockfile";
+  if (kind === "generated") return "generated or vendored";
+  if (kind === "docs") return "documentation";
+  if (file.diff.length === 0) return "its diff could not be read";
+  if (Buffer.byteLength(file.diff, "utf8") > MAX_ITEM_STATE_BYTES - FILE_ITEM_OVERHEAD) {
+    return "its diff is longer than one item can carry (#53)";
+  }
+  return void 0;
+}
+function pushItems(change) {
+  const kinds = new Map(change.files.map((f) => [f.path, kindOf(f.path)]));
+  const kind = (f) => kinds.get(f.path);
+  const live = change.files.filter((f) => f.status !== "deleted");
+  const subjects = change.commits.map((c) => c.subject);
+  const files = [];
+  const unchecked = [];
+  for (const file of change.files) {
+    const why = whyUnchecked(file, kind(file));
+    if (why !== void 0) {
+      unchecked.push({ path: file.path, why });
+      continue;
+    }
+    files.push({
+      path: file.path,
+      item: {
+        kind: "push_file",
+        path: file.path,
+        status: file.status,
+        is_test: kind(file) === "test",
+        commit_subjects: subjects,
+        diff: file.diff
+      }
+    });
+  }
+  const excerptable = live.filter((f) => !f.binary && (kind(f) === "source" || kind(f) === "test") && f.diff.length > 0);
+  const share = excerptable.length === 0 ? 0 : Math.max(EXCERPT_FLOOR, Math.floor(EXCERPT_BYTES / excerptable.length));
+  let budget = EXCERPT_BYTES;
+  const excerpt = [];
+  for (const file of excerptable) {
+    if (budget <= 0) break;
+    const text = addedLines(file.diff).join("\n").slice(0, Math.min(share, budget));
+    if (text.length === 0) continue;
+    excerpt.push(`--- ${file.path}
+${text}`);
+    budget -= text.length;
+  }
+  const count = (k) => live.filter((f) => kind(f) === k).length;
+  const summary2 = {
+    kind: "push",
+    branch: change.branch,
+    commits: change.commits.map((c) => c.body.length > 0 ? { subject: c.subject, body: c.body } : { subject: c.subject }),
+    files: change.files.map((f) => ({ path: f.path, status: f.status, lines_added: f.added, lines_removed: f.removed })),
+    files_changed: change.files.length,
+    lines_added: change.files.reduce((sum, f) => sum + f.added, 0),
+    lines_removed: change.files.reduce((sum, f) => sum + f.removed, 0),
+    // Computed, never asked: "is there a test for this" needs a count across files, and
+    // counting is on the classifier's own list of things it does badly.
+    source_files_changed: count("source"),
+    test_files_changed: count("test"),
+    tests_changed: count("test") > 0,
+    docs_only: live.length > 0 && live.every((f) => kind(f) === "docs"),
+    added_excerpt: excerpt.join("\n")
+  };
+  return { summary: summary2, files, unchecked };
+}
+
+// src/commands/ready.ts
+var READINESS_FILE = "readiness.jsonl";
+var PUSH_POLICY_ENV = "BOUNCER_PUSH_POLICY";
+var FLAGS5 = { values: ["base", "policy", "backend", "concurrency"], switches: ["enforce", "json"] };
+function parseArgs6(argv) {
+  const parsed = parseFlags(argv, FLAGS5);
+  const { values, switches } = parsed;
+  const concurrency = positiveInteger("concurrency", values.get("concurrency"));
+  const error = parsed.error ?? concurrency.error;
+  return {
+    ...values.has("base") ? { base: values.get("base") } : {},
+    ...values.has("policy") ? { policy: values.get("policy") } : {},
+    ...values.has("backend") ? { backend: values.get("backend") } : {},
+    ...concurrency.value !== void 0 ? { concurrency: concurrency.value } : {},
+    enforce: switches.has("enforce"),
+    json: switches.has("json"),
+    ...error !== void 0 ? { error } : {}
+  };
+}
+async function assessChange(options) {
+  const { change, policy, adapter } = options;
+  const sets = { push: policy.sets[PUSH_SET], file: policy.sets[PUSH_FILE_SET] };
+  const items = pushItems(change);
+  const run2 = async (setName, set, stated) => stated.length === 0 ? [] : (await judge(stated, {
+    setName,
+    set,
+    mode: policy.mode,
+    adapter,
+    timeoutMs: policy.timeoutMs,
+    ...options.concurrency !== void 0 ? { concurrency: options.concurrency } : {}
+  })).items;
+  const whole = await run2(PUSH_SET, sets.push, [{ id: "push", state: buildItemState(items.summary) }]);
+  const perFile = await run2(
+    PUSH_FILE_SET,
+    sets.file,
+    items.files.map((f) => ({ id: f.path, state: buildItemState(f.item) }))
+  );
+  const holds2 = [];
+  const unchecked = [...items.unchecked];
+  const answers = {};
+  let judged = 0;
+  let model;
+  const read4 = (results, set) => {
+    for (const item of results) {
+      if (item.outcome === "unjudged") {
+        unchecked.push({ path: item.id, why: `the backend did not answer (${item.error.kind})` });
+        continue;
+      }
+      if (item.outcome === "incomplete") {
+        unchecked.push({ path: item.id, why: "too long to be read whole" });
+        continue;
+      }
+      judged += 1;
+      answers[item.id] = item.answers;
+      model ??= item.model;
+      if (item.verdict === "allow" || item.reason.kind !== "rule") continue;
+      holds2.push({
+        where: item.id,
+        question: item.reason.question,
+        p: item.reason.p,
+        asks: set.questions[item.reason.question]?.instructions ?? ""
+      });
+    }
+  };
+  read4(whole, sets.push);
+  read4(perFile, sets.file);
+  return {
+    verdict: holds2.length > 0 ? "hold" : judged === 0 ? "unchecked" : "ready",
+    holds: holds2,
+    unchecked,
+    answers,
+    filesChecked: perFile.filter((i) => i.outcome === "judged").length,
+    backend: adapter.name,
+    ...model !== void 0 ? { model } : {}
+  };
+}
+function formatReadiness(change, result, context) {
+  const added = change.files.reduce((sum, f) => sum + f.added, 0);
+  const removed = change.files.reduce((sum, f) => sum + f.removed, 0);
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const lines2 = [
+    `Push readiness: ${change.branch} against ${change.baseRef}, ${plural(change.commits.length, "commit")}, ${plural(change.files.length, "file")} (+${added} \u2212${removed})`,
+    `  policy ${context.policy} \xB7 backend ${result.backend}${result.model !== void 0 ? ` (${result.model})` : ""}`,
+    ""
+  ];
+  if (result.verdict === "hold") {
+    lines2.push(context.enforce ? "HOLD" : "HOLD (observing: nothing is blocked; pass --enforce to make this exit 1)");
+    const width = Math.max(...result.holds.map((h) => h.where.length));
+    for (const h of result.holds) {
+      lines2.push(`  ${h.where.padEnd(width)}  ${h.question} ${h.p.toFixed(2)}`, `  ${" ".repeat(width)}  ${h.asks}`);
+    }
+  } else if (result.verdict === "ready") {
+    lines2.push(`READY: no question fired on the push or on the ${plural(result.filesChecked, "file")} read.`);
+  } else {
+    lines2.push("NOT CHECKED: nothing could be asked, so this says nothing about the change.");
+  }
+  if (result.unchecked.length > 0) {
+    lines2.push("", `Not checked (${result.unchecked.length}):`);
+    for (const u of result.unchecked) lines2.push(`  ${u.path}: ${u.why}`);
+  }
+  return `${lines2.join("\n")}
+`;
+}
+function record2(dir, change, result, policy, enforce) {
+  if (result.backend === "mock") return;
+  try {
+    (0, import_node_fs14.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs14.appendFileSync)(
+      (0, import_node_path14.join)(dir, READINESS_FILE),
+      `${JSON.stringify({
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        repo: (0, import_node_path14.basename)(change.root),
+        branch: change.branch,
+        base: change.base,
+        head: change.head,
+        verdict: result.verdict,
+        enforce,
+        backend: result.backend,
+        ...result.model !== void 0 ? { model: result.model } : {},
+        policy: {
+          file: policy.fingerprint,
+          [PUSH_SET]: policy.sets[PUSH_SET]?.questionsFingerprint,
+          [PUSH_FILE_SET]: policy.sets[PUSH_FILE_SET]?.questionsFingerprint
+        },
+        holds: result.holds.map((h) => ({ where: h.where, question: h.question, p: h.p })),
+        answers: result.answers,
+        unchecked: result.unchecked.length
+      })}
+`,
+      "utf8"
+    );
+  } catch {
+  }
+}
+async function ready(args, write3, cwd = process.cwd()) {
+  const skip = (message2) => {
+    write3(`bouncer ready did not run: ${message2}
+`);
+    return 0;
+  };
+  if (args.error !== void 0) {
+    write3(args.error);
+    return 1;
+  }
+  const root = pluginRoot() ?? process.cwd();
+  const explicit = args.policy ?? process.env[PUSH_POLICY_ENV] ?? (0, import_node_path14.join)(root, "policy", "push.yaml");
+  const resolved = resolvePolicy(cwd, root, explicit);
+  if (resolved.policy === void 0) {
+    return skip(`${resolved.source} did not load. ${errorsIn(resolved.diagnostics).map((d) => `${d.path || "(top level)"}: ${d.message}`).join("; ")}`);
+  }
+  const policy = resolved.policy;
+  const missing = [PUSH_SET, PUSH_FILE_SET].filter((name) => policy.sets[name] === void 0);
+  if (missing.length > 0) {
+    return skip(`${resolved.source} defines no set named ${missing.join(" or ")} (it has: ${Object.keys(policy.sets).join(", ") || "none"}).`);
+  }
+  const change = readChange(cwd, args.base);
+  if (typeof change === "string") return skip(change);
+  if (change.commits.length === 0) {
+    write3(`Nothing to push: ${change.branch} has no commits ahead of ${change.baseRef}.
+`);
+    return 0;
+  }
+  const adapter = adapterFor2(args.backend ?? policy.backend);
+  if (typeof adapter === "string") return skip(adapter.replace("Cannot calibrate against", "cannot ask"));
+  const problem = await startIfNeeded(adapter);
+  if (problem !== void 0) return skip(`${adapter.name}: ${problem}`);
+  let result;
+  try {
+    result = await assessChange({
+      change,
+      policy,
+      adapter,
+      ...args.concurrency !== void 0 ? { concurrency: args.concurrency } : {}
+    });
+  } catch (err) {
+    return skip(err instanceof Error ? err.message : String(err));
+  }
+  const enforce = args.enforce === true;
+  record2(dataDir(), change, result, policy, enforce);
+  if (args.json === true) {
+    write3(`${JSON.stringify({ branch: change.branch, base: change.baseRef, head: change.head, policy: resolved.source, enforce, ...result }, null, 2)}
+`);
+  } else {
+    write3(formatReadiness(change, result, { policy: resolved.source, enforce }));
+  }
+  return enforce && result.verdict === "hold" ? 1 : 0;
+}
+
 // src/io/stdin.ts
 async function readPayload() {
   const raw = await readAll2();
@@ -14305,11 +14646,13 @@ async function main(argv) {
         (text) => process.stdout.write(text),
         (text) => process.stderr.write(text)
       );
+    case "ready":
+      return ready(parseArgs6(argv.slice(3)), (text) => process.stdout.write(text));
     case "skills":
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.16\n");
+      process.stdout.write("0.2.17\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
