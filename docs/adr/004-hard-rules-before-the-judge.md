@@ -9,6 +9,9 @@
   a commit message into a forced push (#84). See the predicate table.
 - **Amended 2026-10-12:** an eighth predicate, `target_labelled`, by ADR-013. Until then no
   entry could see a `Write` or an `Edit`, because every predicate read a command line.
+- **Amended 2026-10-12:** an entry may carry `unless`, by ADR-014. A match was final until
+  then; the three force-delete entries are now passed over when git says the branch adds
+  nothing to the remote's default branch.
 - **Corrected 2026-09-18:** an earlier draft said run 7 *allows* the four. It does not — it
   has no `missed` fixtures at all. What it does is catch them by accident. See "Why".
 - **Corrected 2026-09-30:** the payload count under "What is verified", the counts under

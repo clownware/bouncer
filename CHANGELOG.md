@@ -8,6 +8,27 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.19
+
+**Force-deleting a branch whose work is already on the default branch is no longer stopped**
+(#122, ADR-014). After a squash merge `git branch -d` refuses the branch and `-D` was a
+hard-rule hit, so in `seatbelt` every cleanup was denied.
+
+- When a call is `git branch -D <names>` and nothing else, the hook asks git whether merging
+  each branch into the remote's default branch would change anything. If none would, the
+  rule is passed over and the call is judged like any other.
+- **Still stopped:** a branch with work that is not on `origin`'s default branch, any
+  force delete inside a chain (`cd x && git branch -D y`, `git -C x branch -D y`), and any
+  force delete in a repository with no remote. The deny reason now says which form can pass.
+- **Also still stopped:** a squash-merged branch whose lines the default branch has since
+  rewritten. git cannot tell that one from unmerged work.
+- **The hook now runs `git` in your project** on these calls and no others: `symbolic-ref`,
+  `rev-parse` and `merge-tree`. Nothing in your working tree, index or refs changes.
+- **If you copied the policy**, add `unless: branch_adds_nothing_to_default` to the three
+  `git-branch-force-delete` entries, at the same indent as `when:`. `bouncer status` lists
+  them. Delete the line to stop every force delete, as before.
+- A waived call's log line carries `hard_rule_waived`.
+
 ## 0.2.18
 
 **Two hard rules stop firing on things that are not credentials, and `bouncer status` says

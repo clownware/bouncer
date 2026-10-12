@@ -296,10 +296,19 @@ gate:
         tokens: [git, push]
         token_prefix: ["+"]
 
+    # `unless` names a fact the hook asks git for, after the entry has matched and only then:
+    # merging each branch named into the remote's default branch would change nothing. That
+    # is a branch whose pull request was squash-merged, which `git branch -d` refuses because
+    # its commits are on no other branch, though everything they did is. When it holds the
+    # entry is passed over and the call is judged like any other. It is asked only of a call
+    # that is `git branch -D <names>` and nothing else, because a chain can change directory
+    # and the hook looks in its own. Delete the line to stop every force delete again.
+    # See docs/adr/014.
     - name: git-branch-force-delete
       because: "Deletes a branch whose commits are not merged anywhere else."
       when:
         tokens: [git, branch, -D]
+      unless: branch_adds_nothing_to_default
 
     # `-D` is shorthand for these two, and git accepts them spelled out or split. Bundled
     # (`-df`, `-fd`) needs no entry: a run of short flags also counts as each of its letters.
@@ -307,11 +316,13 @@ gate:
       because: "Deletes a branch whose commits are not merged anywhere else."
       when:
         tokens: [git, branch, --delete, --force]
+      unless: branch_adds_nothing_to_default
 
     - name: git-branch-force-delete-split
       because: "Deletes a branch whose commits are not merged anywhere else."
       when:
         tokens: [git, branch, -d, -f]
+      unless: branch_adds_nothing_to_default
 
     - name: git-reflog-expire
       because: "Empties the reflog, which is what every other git recovery depends on."

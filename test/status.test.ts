@@ -211,6 +211,18 @@ describe("hard rules that are not the bundled ones", () => {
     );
   });
 
+  it("names an entry that lacks the bundled one's `unless`", () => {
+    // docs/adr/014. A copy taken before 0.2.19 stops every force delete, and its `when` is
+    // the same as the bundled entry's, so comparing predicates alone would call it current.
+    const line = "      unless: branch_adds_nothing_to_default\n";
+    expect(POLICY.split(line)).toHaveLength(4);
+    writeFileSync(policyPath, POLICY.replace(line, ""), "utf8");
+
+    const out = status();
+    expect(out).toContain("  git-branch-force-delete differs\n    unless: branch_adds_nothing_to_default is only in the bundled entry\n");
+    expect(out).not.toContain("git-branch-force-delete-long differs");
+  });
+
   it("does not call a reordered list a difference", () => {
     writeFileSync(policyPath, POLICY.replace("        tokens: [git, stash, clear]", "        tokens: [stash, clear, git]"), "utf8");
     expect(status()).not.toContain("not the bundled ones");

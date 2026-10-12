@@ -59,8 +59,13 @@ import { writeAtomic } from "./atomic.js";
  * predicate existed cannot hold one, and the source-text key already covers that. The bump
  * is for the other direction: the same text compiled by a build that drops the key would
  * leave an entry whose rule asserts nothing, and `holds` reads that as matching nothing.
+ *
+ * 8 → 9: `HardRule.unless` (docs/adr/014). A build before it ignores the key, so a v8 entry
+ * for a policy that carries one is that policy with the exemption missing: the entry would
+ * go on denying a branch delete the policy says to let through, from a cache nothing else
+ * invalidates.
  */
-export const CACHE_VERSION = 8;
+export const CACHE_VERSION = 9;
 
 const DIR = "policy-cache";
 

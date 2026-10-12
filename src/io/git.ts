@@ -67,6 +67,54 @@ function defaultBase(cwd: string): string | undefined {
 }
 
 /**
+ * Whether each of these local branches would change nothing if merged into the remote's
+ * default branch: the merge is computed, and its tree is the default branch's own.
+ *
+ * This is the hook's one question to a repository (docs/adr/014), asked after a
+ * force-delete has already matched a hard rule and never otherwise. It is what `git branch
+ * -d` cannot say after a squash merge: the branch's commits are on no other branch, and
+ * everything they did is. A merge and not a comparison of two trees, because the default
+ * branch has usually moved on since.
+ *
+ * Every way of not knowing is `false`, and the rule's verdict stands: no remote default, a
+ * branch that does not exist, a conflict, unrelated histories, a git too old for
+ * `merge-tree --write-tree` (before 2.38), or the budget running out. The base is a
+ * remote-tracking ref and never a local branch, so `git branch -D main` in a repository with
+ * no remote is not found to add nothing to itself.
+ *
+ * `merge-tree` writes the tree objects it computes into the object database and touches no
+ * ref, index or working file.
+ */
+export function branchesAddNothing(cwd: string, branches: readonly string[], budgetMs: number): boolean {
+  const deadline = Date.now() + budgetMs;
+  const run = (args: readonly string[]): string | undefined => {
+    const left = deadline - Date.now();
+    if (left <= 0) return undefined;
+    try {
+      return execFileSync("git", args, { cwd, encoding: "utf8", timeout: left, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return undefined;
+    }
+  };
+
+  if (branches.length === 0) return false;
+
+  let base = run(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (base === undefined || base.length === 0) {
+    base = ["refs/remotes/origin/main", "refs/remotes/origin/master"].find(
+      (ref) => run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]) !== undefined,
+    );
+  }
+  if (base === undefined) return false;
+
+  const baseTree = run(["rev-parse", "--verify", "--quiet", `${base}^{tree}`]);
+  if (baseTree === undefined || baseTree.length === 0) return false;
+
+  // A conflict exits 1 and is caught above. A clean merge prints the tree it made.
+  return branches.every((branch) => run(["merge-tree", "--write-tree", base as string, `refs/heads/${branch}`]) === baseTree);
+}
+
+/**
  * The change `HEAD` would push, measured from its merge base with `baseRef`.
  *
  * Returns the sentence to print instead when there is nothing to read: not a repository, no

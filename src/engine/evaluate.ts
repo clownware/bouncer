@@ -6,7 +6,15 @@
 
 import { matchHardRule } from "./hardrules.js";
 import { satisfies } from "./policy.js";
-import { ANY_QUESTION, type HardRule, type Mode, type Policy, type PolicySet, type Verdict } from "./types.js";
+import {
+  ANY_QUESTION,
+  type HardRule,
+  type HardRuleExemption,
+  type Mode,
+  type Policy,
+  type PolicySet,
+  type Verdict,
+} from "./types.js";
 
 export type Reason =
   /** A rule matched. */
@@ -14,7 +22,13 @@ export type Reason =
   /** The command matched an entry in `gate.fast_path`, so no classifier call was made. */
   | { readonly kind: "fast-path"; readonly prefix: string }
   /** The command matched an entry in `gate.hard_rules`, so no classifier call was made. */
-  | { readonly kind: "hard-rule"; readonly name: string; readonly because: string }
+  | {
+      readonly kind: "hard-rule";
+      readonly name: string;
+      readonly because: string;
+      /** The entry's exemption, which was not established for this call. */
+      readonly unless?: HardRuleExemption;
+    }
   /** The tool is not in `gate.tools`. */
   | { readonly kind: "tool-not-gated"; readonly tool: string }
   /** `permission_mode` is listed in `skip_permission_modes`. */
@@ -77,6 +91,12 @@ export function shortCircuit(
     readonly permissionMode?: string;
     /** The file a `Write`, `Edit` or `NotebookEdit` would change (`targetOf`). */
     readonly target?: string;
+    /**
+     * Exemptions the caller has established for this call (`HardRule.unless`). The caller
+     * asks twice: once without, and again with one only if the entry that matched names it
+     * and the fact holds. So the question costs nothing on a call no such entry matched.
+     */
+    readonly established?: readonly HardRuleExemption[];
   },
 ): Decision | undefined {
   if (input.permissionMode !== undefined && policy.skipPermissionModes.includes(input.permissionMode)) {
@@ -87,7 +107,7 @@ export function shortCircuit(
     return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
 
-  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target);
+  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target, input.established);
   if (hard !== undefined) {
     return decideHard(policy, hard);
   }
@@ -113,7 +133,12 @@ function standAside(reason: Reason): Decision {
 
 /** A hard rule's verdict, with `seatbelt`'s promotion applied. */
 function decideHard(policy: Policy, rule: HardRule): Decision {
-  const reason = { kind: "hard-rule", name: rule.name, because: rule.because } as const;
+  const reason = {
+    kind: "hard-rule",
+    name: rule.name,
+    because: rule.because,
+    ...(rule.unless !== undefined ? { unless: rule.unless } : {}),
+  } as const;
   return {
     verdict: rule.verdict,
     reason,

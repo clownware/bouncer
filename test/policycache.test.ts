@@ -179,6 +179,7 @@ describe("the compiled-policy cache", () => {
       "        path_labelled: [credential]",
       "        redacts_as: [api_key]",
       "        target_labelled: [gate_policy]",
+      "      unless: branch_adds_nothing_to_default",
       "  questions:",
       "    only_question:",
       "      instructions: whether the command is the one this shape is pinned against",
@@ -211,7 +212,7 @@ describe("the compiled-policy cache", () => {
         "polarityWithin:number,rephraseWithin:number}," +
         "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
-        "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
+        "unless:string,verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
         "redactsAs:[string],targetLabelled:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
@@ -219,7 +220,7 @@ describe("the compiled-policy cache", () => {
         "index:number,verdict:string}],tools:[string]}," +
         "mode:string,onError:string," +
         "sets:{gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
-        "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
+        "unless:string,verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
         "redactsAs:[string],targetLabelled:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
@@ -227,6 +228,6 @@ describe("the compiled-policy cache", () => {
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(8);
+    expect(CACHE_VERSION).toBe(9);
   });
 });

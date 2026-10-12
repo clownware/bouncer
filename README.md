@@ -385,7 +385,9 @@ Bouncer's mode decides what it is allowed to emit. It is one key in the policy f
 baseline is zero prompts, so `ask` cannot do anything for you — it forces exactly the prompt
 you turned off — which makes `guard` a no-op and `full` nearly one. What `seatbelt` gives
 you is the thing that setup has none of: a floor. It is silent until a hard rule matches,
-and hard rules are deterministic, so what stops you is never a model having a bad day. Every
+and hard rules are deterministic, so what stops you is never a model having a bad day. (One
+entry asks git a question first: a force delete of a branch whose work is already on the
+default branch is not stopped. [ADR-014](docs/adr/014-a-hard-rule-may-name-one-fact-the-hook-asks-git-for.md).) Every
 judgment-derived `ask` is dropped to nothing; a judgment blocks only if it clears a `deny`
 rule you enabled yourself, and those ship commented out. Out of the box that is hard rules
 and silence, which is a coherent default rather than a degenerate one.

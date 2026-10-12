@@ -8202,6 +8202,7 @@ function fingerprint(text) {
 
 // src/engine/types.ts
 var ANY_QUESTION = "any";
+var HARD_RULE_EXEMPTIONS = ["branch_adds_nothing_to_default"];
 var GATE_SET = "gate";
 var EMPTY_GATE = {
   tools: [],
@@ -8564,7 +8565,19 @@ function readHardRules(raw, basePath, error, warn) {
       );
       return;
     }
-    rules.push({ name, verdict: then, because, when, index: i + 1 });
+    const unless = entry["unless"];
+    if (unless !== void 0 && !HARD_RULE_EXEMPTIONS.includes(unless)) {
+      error(`${path}.unless`, `must be one of ${HARD_RULE_EXEMPTIONS.join(", ")}`);
+      return;
+    }
+    rules.push({
+      name,
+      verdict: then,
+      because,
+      when,
+      ...unless !== void 0 ? { unless } : {},
+      index: i + 1
+    });
   });
   return rules;
 }
@@ -9060,15 +9073,22 @@ function isRecord2(value) {
 }
 
 // src/engine/hardrules.ts
-function matchHardRule(rules, command, target) {
+function matchHardRule(rules, command, target, established2 = []) {
   const trimmed = command.trim();
   if (trimmed.length === 0 && target === void 0 || rules.length === 0) return void 0;
   const targetLabel = target === void 0 ? void 0 : labelOf(target);
   const facts = factsFor(trimmed, targetLabel);
   for (const rule of rules) {
+    if (rule.unless !== void 0 && established2.includes(rule.unless)) continue;
     if (facts.some((f) => holds(rule, f))) return rule;
   }
   return void 0;
+}
+function forceDeletedBranches(command) {
+  const match = /^git branch (?:-D|-d -f|-f -d|-df|-fd|--delete --force|--force --delete)((?: [A-Za-z0-9_][A-Za-z0-9._/-]*)+)$/.exec(
+    command.trim()
+  );
+  return match === null ? void 0 : match[1].trim().split(" ");
 }
 function labelOf(path) {
   return describeSensitivity(path.startsWith("~/") ? path.slice(2) : path);
@@ -9213,7 +9233,7 @@ function shortCircuit(policy, input) {
   if (!policy.gate.tools.includes(input.tool)) {
     return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
-  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target);
+  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target, input.established);
   if (hard !== void 0) {
     return decideHard(policy, hard);
   }
@@ -9227,7 +9247,12 @@ function standAside(reason) {
   return { verdict: "allow", reason, emit: void 0 };
 }
 function decideHard(policy, rule) {
-  const reason = { kind: "hard-rule", name: rule.name, because: rule.because };
+  const reason = {
+    kind: "hard-rule",
+    name: rule.name,
+    because: rule.because,
+    ...rule.unless !== void 0 ? { unless: rule.unless } : {}
+  };
   return {
     verdict: rule.verdict,
     reason,
@@ -9383,7 +9408,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 8;
+var CACHE_VERSION = 9;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -9609,6 +9634,89 @@ function localBackend() {
   };
 }
 
+// src/io/git.ts
+var import_node_child_process = require("node:child_process");
+var MAX_DIFF_BYTES = 4 * 1024 * 1024;
+function git(cwd, args) {
+  return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES * 4, stdio: ["ignore", "pipe", "pipe"] });
+}
+function tryGit(cwd, args) {
+  try {
+    return git(cwd, args).trim();
+  } catch {
+    return void 0;
+  }
+}
+function defaultBase(cwd) {
+  const head = tryGit(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  if (head !== void 0 && head.length > 0) return head;
+  for (const candidate of ["origin/main", "origin/master", "main", "master"]) {
+    if (tryGit(cwd, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]) !== void 0) return candidate;
+  }
+  return void 0;
+}
+function branchesAddNothing(cwd, branches, budgetMs) {
+  const deadline = Date.now() + budgetMs;
+  const run2 = (args) => {
+    const left = deadline - Date.now();
+    if (left <= 0) return void 0;
+    try {
+      return (0, import_node_child_process.execFileSync)("git", args, { cwd, encoding: "utf8", timeout: left, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return void 0;
+    }
+  };
+  if (branches.length === 0) return false;
+  let base = run2(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (base === void 0 || base.length === 0) {
+    base = ["refs/remotes/origin/main", "refs/remotes/origin/master"].find(
+      (ref) => run2(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]) !== void 0
+    );
+  }
+  if (base === void 0) return false;
+  const baseTree = run2(["rev-parse", "--verify", "--quiet", `${base}^{tree}`]);
+  if (baseTree === void 0 || baseTree.length === 0) return false;
+  return branches.every((branch) => run2(["merge-tree", "--write-tree", base, `refs/heads/${branch}`]) === baseTree);
+}
+function readChange(cwd, baseRef) {
+  const root = tryGit(cwd, ["rev-parse", "--show-toplevel"]);
+  if (root === void 0) return "not inside a git repository";
+  const ref = baseRef ?? defaultBase(root);
+  if (ref === void 0) return "no base to compare against: there is no origin/HEAD, origin/main or main. Name one with --base.";
+  const base = tryGit(root, ["merge-base", "HEAD", ref]);
+  if (base === void 0) return `no merge base between HEAD and ${ref}`;
+  const head = git(root, ["rev-parse", "HEAD"]).trim();
+  const branch = tryGit(root, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
+  const commits = git(root, ["log", "--reverse", "--format=%s%x1f%b%x1e", `${base}..${head}`]).split("").map((entry) => entry.replace(/^\n/, "")).filter((entry) => entry.length > 0).map((entry) => {
+    const [subject = "", body = ""] = entry.split("");
+    return { subject: subject.trim(), body: body.trim() };
+  });
+  const range = [base, head];
+  const statusOf = /* @__PURE__ */ new Map();
+  for (const line of git(root, ["diff", "--no-renames", "--name-status", ...range]).split("\n")) {
+    const [code, path] = line.split("	");
+    if (code === void 0 || path === void 0) continue;
+    statusOf.set(path, code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified");
+  }
+  const files = [];
+  for (const line of git(root, ["diff", "--no-renames", "--numstat", ...range]).split("\n")) {
+    const [added, removed, path] = line.split("	");
+    if (added === void 0 || removed === void 0 || path === void 0) continue;
+    const binary = added === "-";
+    const status2 = statusOf.get(path) ?? "modified";
+    let diff = "";
+    if (!binary && status2 !== "deleted") {
+      try {
+        diff = git(root, ["diff", "--no-renames", "--no-color", "--unified=3", ...range, "--", path]);
+      } catch {
+        diff = "";
+      }
+    }
+    files.push({ path, status: status2, added: binary ? 0 : Number(added), removed: binary ? 0 : Number(removed), binary, diff });
+  }
+  return { root, branch, baseRef: ref, base, head, commits, files };
+}
+
 // src/io/log.ts
 var import_node_fs5 = require("node:fs");
 var import_node_path6 = require("node:path");
@@ -9708,6 +9816,23 @@ async function runPreToolUse(payload, options = {}) {
   const toolInput = isRecord4(payload.tool_input) ? payload.tool_input : {};
   const agentType = typeof payload["agent_type"] === "string" ? payload["agent_type"] : void 0;
   const permissionMode = typeof payload.permission_mode === "string" ? payload.permission_mode : void 0;
+  const target = targetOf(tool, toolInput);
+  const command = commandOf(tool, toolInput);
+  const input = {
+    tool,
+    command,
+    ...target !== void 0 ? { target } : {},
+    ...permissionMode !== void 0 ? { permissionMode } : {}
+  };
+  let early = shortCircuit(policy, input);
+  let waived;
+  if (early?.reason.kind === "hard-rule" && early.reason.unless !== void 0) {
+    const { name, unless } = early.reason;
+    if (established(unless, command, cwd, policy, options)) {
+      waived = { rule: name, unless };
+      early = shortCircuit(policy, { ...input, established: [unless] });
+    }
+  }
   const base = {
     ts: (/* @__PURE__ */ new Date()).toISOString(),
     session_id: sessionId,
@@ -9718,16 +9843,10 @@ async function runPreToolUse(payload, options = {}) {
     mode: policy.mode,
     backend: options.adapter?.name ?? backendName(policy),
     // On every line, not only judged ones: a hard rule and the fast path are the policy too.
-    policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint }
+    policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint },
+    ...waived !== void 0 ? { hard_rule_waived: waived } : {}
   };
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
-  const target = targetOf(tool, toolInput);
-  const early = shortCircuit(policy, {
-    tool,
-    command: commandOf(tool, toolInput),
-    ...target !== void 0 ? { target } : {},
-    ...permissionMode !== void 0 ? { permissionMode } : {}
-  });
   if (early !== void 0) {
     if (early.reason.kind === "hard-rule") {
       const hardState = buildState({
@@ -9874,7 +9993,7 @@ function explain(decision, policy, escalation) {
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
     case "hard-rule":
-      return `bouncer: ${reason.because} (hard rule: ${reason.name})`;
+      return `bouncer: ${reason.because} (hard rule: ${reason.name})${reason.unless !== void 0 ? ` ${WHEN_IT_IS_NOT_STOPPED[reason.unless]}` : ""}`;
     case "tool-not-gated":
       return `bouncer: ${reason.tool} is not gated by this policy.`;
     case "permission-mode-skipped":
@@ -9885,6 +10004,22 @@ function explain(decision, policy, escalation) {
       return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
     case "truncated":
       return "bouncer: the call was too long to show the classifier whole, so it was not approved.";
+  }
+}
+var WHEN_IT_IS_NOT_STOPPED = {
+  branch_adds_nothing_to_default: "It is not stopped when it is the only command in the call and merging each branch into the remote's default branch would change nothing."
+};
+function established(unless, command, cwd, policy, options) {
+  switch (unless) {
+    case "branch_adds_nothing_to_default": {
+      const branches = forceDeletedBranches(command);
+      if (branches === void 0) return false;
+      try {
+        return (options.branchesAddNothing ?? branchesAddNothing)(cwd, branches, policy.timeoutMs);
+      } catch {
+        return false;
+      }
+    }
   }
 }
 function verdictFields(decision) {
@@ -10032,6 +10167,11 @@ function compareHardRules(mine, bundled) {
       continue;
     }
     const details = whenDifferences(own.when, rule.when);
+    if (own.unless !== rule.unless) {
+      details.push(
+        rule.unless === void 0 ? `unless: ${own.unless} is only in yours` : own.unless === void 0 ? `unless: ${rule.unless} is only in the bundled entry` : `unless: yours has ${own.unless}; the bundled entry has ${rule.unless}`
+      );
+    }
     if (details.length > 0) differing.push({ name: rule.name, details });
   }
   return { differing, missing };
@@ -13392,7 +13532,7 @@ function shortAtom(atom, legend) {
 }
 
 // src/io/reasoning.ts
-var import_node_child_process = require("node:child_process");
+var import_node_child_process2 = require("node:child_process");
 var REASONING_CMD_ENV = "BOUNCER_REASONING_CMD";
 var DEFAULT_TIMEOUT_MS2 = 18e4;
 var CommandReasoning = class {
@@ -13424,7 +13564,7 @@ var CommandReasoning = class {
    */
   spawn(input) {
     return new Promise((resolve6, reject) => {
-      const child = (0, import_node_child_process.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
+      const child = (0, import_node_child_process2.spawn)(this.command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       let settled = false;
@@ -14335,66 +14475,6 @@ function summary(result, sources, knownPath) {
 var import_node_fs14 = require("node:fs");
 var import_node_path14 = require("node:path");
 
-// src/io/git.ts
-var import_node_child_process2 = require("node:child_process");
-var MAX_DIFF_BYTES = 4 * 1024 * 1024;
-function git(cwd, args) {
-  return (0, import_node_child_process2.execFileSync)("git", args, { cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES * 4, stdio: ["ignore", "pipe", "pipe"] });
-}
-function tryGit(cwd, args) {
-  try {
-    return git(cwd, args).trim();
-  } catch {
-    return void 0;
-  }
-}
-function defaultBase(cwd) {
-  const head = tryGit(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
-  if (head !== void 0 && head.length > 0) return head;
-  for (const candidate of ["origin/main", "origin/master", "main", "master"]) {
-    if (tryGit(cwd, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]) !== void 0) return candidate;
-  }
-  return void 0;
-}
-function readChange(cwd, baseRef) {
-  const root = tryGit(cwd, ["rev-parse", "--show-toplevel"]);
-  if (root === void 0) return "not inside a git repository";
-  const ref = baseRef ?? defaultBase(root);
-  if (ref === void 0) return "no base to compare against: there is no origin/HEAD, origin/main or main. Name one with --base.";
-  const base = tryGit(root, ["merge-base", "HEAD", ref]);
-  if (base === void 0) return `no merge base between HEAD and ${ref}`;
-  const head = git(root, ["rev-parse", "HEAD"]).trim();
-  const branch = tryGit(root, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
-  const commits = git(root, ["log", "--reverse", "--format=%s%x1f%b%x1e", `${base}..${head}`]).split("").map((entry) => entry.replace(/^\n/, "")).filter((entry) => entry.length > 0).map((entry) => {
-    const [subject = "", body = ""] = entry.split("");
-    return { subject: subject.trim(), body: body.trim() };
-  });
-  const range = [base, head];
-  const statusOf = /* @__PURE__ */ new Map();
-  for (const line of git(root, ["diff", "--no-renames", "--name-status", ...range]).split("\n")) {
-    const [code, path] = line.split("	");
-    if (code === void 0 || path === void 0) continue;
-    statusOf.set(path, code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified");
-  }
-  const files = [];
-  for (const line of git(root, ["diff", "--no-renames", "--numstat", ...range]).split("\n")) {
-    const [added, removed, path] = line.split("	");
-    if (added === void 0 || removed === void 0 || path === void 0) continue;
-    const binary = added === "-";
-    const status2 = statusOf.get(path) ?? "modified";
-    let diff = "";
-    if (!binary && status2 !== "deleted") {
-      try {
-        diff = git(root, ["diff", "--no-renames", "--no-color", "--unified=3", ...range, "--", path]);
-      } catch {
-        diff = "";
-      }
-    }
-    files.push({ path, status: status2, added: binary ? 0 : Number(added), removed: binary ? 0 : Number(removed), binary, diff });
-  }
-  return { root, branch, baseRef: ref, base, head, commits, files };
-}
-
 // src/push.ts
 var PUSH_SET = "push";
 var PUSH_FILE_SET = "push_file";
@@ -14732,7 +14812,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.18\n");
+      process.stdout.write("0.2.19\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
