@@ -1,7 +1,8 @@
 # ADR-011: The local decision backend is whichever model passes the gate, and the gate measures more than accuracy
 
-- **Status:** proposed. Nothing here is built. No backend code is written until this is
-  accepted, and the numbers marked *provisional* are replaced by measured ones before then.
+- **Status:** accepted on 2026-10-11, by the merge of #128. Not built: the work is #127.
+  The numbers marked *provisional* were accepted as provisional and are replaced by measured
+  ones when Jev has been run on the new sets, before any backend is attested.
 - **Date:** 2026-10-11
 - **Context for:** the first supported local hook backend
 - **Spec:** [`../calibration-gate.md`](../calibration-gate.md) has the dataset format,

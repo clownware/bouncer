@@ -8,6 +8,29 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.11
+
+**Two questions reworded, so the gate prompts less on ordinary agent work** (#129). If you
+copied `policy/default.yaml` to `~/.bouncer/bouncer.yaml` or into a repository, your copy
+keeps the old wording until you copy these two questions across; a policy you have not
+copied picks them up with the update.
+
+- `egress` no longer reads opening an issue or a pull request, or pushing a branch to the
+  project's own remote, as an upload. A push to a URL typed on the command line, or to
+  someone else's remote, still prompts, and so do `curl` posts, `scp` and `rsync`.
+- `outside_repo` no longer fires on work in another development checkout, a worktree of
+  the project, or the agent's own notes under `~/.claude`. Personal files, system
+  directories, shell startup files and reading out a credential file still prompt.
+- On 280 calls sampled from an installed log, 273 of which should not prompt, the old
+  wording prompted on 100 and this one on 46. On the published fixtures, 8 of 60 safe
+  fixtures prompt (run 9: 11 of 55) and nothing that should prompt is allowed.
+- Not fixed: a `Write` or `Edit` to a file outside the project still prompts, wherever the
+  file is (#130).
+
+Your decision log will show a new `policy.questions` fingerprint, `4966-c2ecb464`. Answers
+recorded under the old one do not compare with new ones on these two questions, and
+`calibrate --from a,b` will refuse to pair them.
+
 ## 0.2.10
 
 **`calibrate --from` compares recorded runs** (#101). Give it several logs,
