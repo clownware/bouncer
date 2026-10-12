@@ -4,9 +4,15 @@ A decision layer for Claude Code hooks. A `PreToolUse` hook classifies the propo
 call against a policy the user owns and returns allow / ask / deny, using a fast System One
 model (TypeSafe Jev) instead of a frontier LLM. Ships observing only.
 
-Read `docs/PRD.md` for the product spec and `docs/adr/` for decisions already made and
-the reasoning behind them. The ADRs win over the PRD where they disagree — several PRD
+Read `docs/PRD.md` for the product spec and `docs/adr/README.md` for the decisions: one row
+per record, with what it decides, its status and what has changed it since. Open the record
+before touching what it decided. The ADRs win over the PRD where they disagree — several PRD
 details were corrected once the hook payloads and the Jev API were actually verified.
+
+This file holds the rules and the facts an agent needs on every task. The measurements and
+the history behind a rule live in the record it names, and are stated once, there. When a
+rule here and its record disagree, that is a defect in one of them: fix it in the same
+change, do not pick one quietly.
 
 ## The rules that matter
 
@@ -28,25 +34,22 @@ every individual verdict is correct. This is why observe mode emits nothing rath
 **Latency is a feature.** The design target for hook overhead is 80 ms p95, and the gate is
 relative: CI runs `bench --against` the base commit's bundle and fails a change that makes
 the paired median more than 10% worse (the number lives in `ci.yml`). `npm run bench` prints
-the target and does not enforce it, because an absolute number measures the machine —
-unchanged `main` read p95 36 ms on the M4, 102 on an agent container before the policy cache, and 151 on a runner
-(#73). Adding a dependency has a direct, measurable cost — bundling is what keeps startup at
-~45 ms rather than ~87 ms (ADR-002). After anything that touches imports, run
+the target and does not enforce it, because an absolute number measures the machine (#73).
+After anything that touches imports, run
 `git show origin/main:bin/bouncer.cjs > "$TMPDIR/base.cjs"` and
 `node scripts/bench.mjs --against "$TMPDIR/base.cjs"`; two unpaired runs cannot answer it.
 If the change touched `policy/default.yaml` too, give the base arm the base's policy with
 `--against-policy`: a bundle that cannot load the policy it is handed stops enforcing, does
-no work, and reads as the faster arm (+8.8% for a change that cost nothing, #84). The bench
-now refuses to time an arm in that state.
-Two things measured since: YAML parse cost tracks node count rather than file size, so a
-structured block costs about 5x what the same bytes cost as comments (ADR-004), and the
-compiled policy is cached on disk, so the bench measures the cached path unless you set
-`BOUNCER_NO_CACHE=1` (ADR-007). `--against` gives each arm its own `CLAUDE_PLUGIN_DATA` and
-prints each bundle's `CACHE_VERSION`, because two bundles either side of a bump evicted each
-other's cache entry and the flag then measured the cold parse and called it the diff — 32 ms
-on both arms and the wrong question, with the pairing still cancelling machine drift so it
-all looked sound (ADR-007, 2026-09-19). `node:crypto` is not free either — its first `require` in a
-CJS file costs 10 to 15 ms, which is why nothing in the hot path hashes anything.
+no work, and reads as the faster arm (#84). The bench refuses to time an arm in that state.
+Four costs to know before adding anything, each measured in the record named:
+a dependency, because bundling is what keeps startup at ~45 ms rather than ~87 ms (ADR-002);
+YAML nodes, because parse cost tracks node count and a structured block costs about 5x what
+the same bytes cost as comments (ADR-004); the first `require` of `node:crypto` in a CJS
+file, 10 to 15 ms, which is why nothing in the hot path hashes anything (ADR-007); and the
+bundle's own size (#134). The compiled policy is cached on disk, so the bench measures the
+cached path unless you set `BOUNCER_NO_CACHE=1`, and `--against` gives each arm its own
+`CLAUDE_PLUGIN_DATA` and prints each bundle's `CACHE_VERSION` so two bundles either side of a
+bump cannot evict each other and report the cold parse as the diff (ADR-007).
 
 **The decision log is evidence, so only real judgments belong in it.** `bouncer status`
 summarises it, `calibrate --from` re-scores it and ADR-006's offline replay reads it, so a
@@ -80,20 +83,16 @@ number belongs in `policy/default.yaml` instead.
 but "is every form of it harmless". That excludes anything printing file contents —
 `cat`, `head`, `tail`, `wc`, `git diff`, `git show`, `git log` — because `cat .env` and
 `echo $OPENAI_API_KEY` are the literal examples in the `secrets` question's own criteria.
-Fast-pathing the verb means the gate's headline question can never fire.
-"Every argument" includes the ones that are not the verb's: a redirect (`ls > ~/.ssh/authorized_keys`
-took the fast path until the matcher refused `<` and `>`) and a subcommand behind a flag
-(`git remote -v remove origin` works, which is why `git branch` and `git remote -v` are no
-longer entries). It also includes a flag: `git status -v` prints the diff of what is staged
-and `-vv` adds the unstaged one, which is `git diff` under another name, so `git status` is
-five whole commands rather than one entry taking arguments. Check a candidate by driving the
-built hook with its worst argument, not by reading the list — `test/fastpath.test.ts` does
-exactly that, and its generative half checks every entry the policy lists, so an entry added
-later is checked without anybody remembering to. An entry only takes arguments at all if it
-ends in a space (ADR-010):
-`npm test` is a whole command, because `npm test --script-shell <program>` is not the
-project's script. And do not count on the fast path for latency — agents chain commands,
-chained commands are refused, and it matched 0 of 88 real calls.
+"Every argument" includes the ones that are not the verb's: a redirect
+(`ls > ~/.ssh/authorized_keys`), a subcommand behind a flag (`git remote -v remove origin`)
+and a flag that changes what the verb prints (`git status -v` is `git diff` under another
+name). An entry takes arguments only if it ends in a space; without one it is a whole
+command, because `npm test --script-shell <program>` is not the project's script. Check a
+candidate by driving the built hook with its worst argument, not by reading the list:
+`test/fastpath.test.ts` does exactly that, and its generative half checks every entry the
+policy lists. Do not count on the fast path for latency: agents chain commands, chained
+commands are refused, and it matched 0 of 88 real calls. ADR-010 has the audit, each hole
+that was found and how.
 
 **A good calibration table is not safe gate behaviour.** `fixtures/gate.jsonl` labels
 probabilities and is what `calibrate` tunes against, so it is relabelled every pass and
@@ -173,11 +172,10 @@ stale.
   the policy is a `noul` today. If one becomes a `score`, that is the range it has.
 - Pricing is $0.042 per million input tokens, output free. Cost is not a design constraint.
 - **The hook never gets a warm connection.** It is a process per tool call, so every call
-  pays TCP and TLS setup: ~193 ms of a ~437 ms median adapter call, measured from an
-  installed plugin's log on 2026-09-18 (p95 549 ms, 66 calls, ~95 ms from the host). The
-  "~190 ms steady state" in older notes came from `scripts/jev-latency.mjs` looping inside
-  one process over a kept-alive connection. Do not quote a latency measured that way as
-  the hook's; read `latency_ms.adapter` out of a real `decisions.jsonl` instead.
+  pays TCP and TLS setup: ~193 ms of a ~437 ms median adapter call (ADR-003, corrected
+  2026-09-18). Do not quote a latency measured by `scripts/jev-latency.mjs`, which loops
+  inside one process over a kept-alive connection, as the hook's; read `latency_ms.adapter`
+  out of a real `decisions.jsonl` instead.
 - Limits: 64k tokens for state + all questions, 32k for state + longest question.
   Rate limits documented as dynamically adjusting — do not hardcode them.
 - `jev-1.13` reads negations and scoping words literally, and is unreliable at counting,
@@ -196,23 +194,17 @@ easily got wrong, all confirmed against captured payloads in `test/fixtures/payl
 When a payload question comes up, read a fixture rather than the docs. The fixtures are
 recorded reality; the docs are a description of it.
 
-**The open ecosystem** is what the three-way calibration table compares Jev against, so
-these are the facts that decide which arms can exist and what the README may call them.
-**SemIf** (TheoLeeCJ/SemIf, formerly openjev) reads direct logits off a frozen Qwen3.5-4B,
-and its own `docs/RESULTS.md` puts it at 0.845 against published Jev's 0.883 on TypeSafe's
-public subset: equal-case macro agreement over 102 rows and 20 cases. That is agreement
-with Jev's answers, not calibration against labels, which is the thing our table measures.
-**openjev-sglang** (ekzhang/openjev-sglang) serves `/v1/systemone` in Jev's wire shape from
-Qwen3.6-35B-A3B on SGLang, accepts `jev-latest` as a model alias, and runs unauthenticated
-on its public Modal deploy; its README says its probabilities "are not calibrated estimates
-of correctness", which is exactly the claim `--compare` tests. **`JevAdapter` already takes
-`baseUrl`**, so a Jev-shaped server is a URL and not a new adapter. **Qwen tokenizes `10`
-and `64` as more than one token**, so a label set is only valid for the tokenizer it was
-checked against: labels must be verified single tokens under the model actually served,
-which is ADR-005 step 2 and why the local adapter refuses rather than reading a prefix.
-**Anthropic's API returns no logprobs**, so the LLM one-token-logprob arm is an OpenAI model
-or an open-weights model on vLLM. The README names which, in those words, and never calls
-it "frontier".
+**The open ecosystem** is what the calibration table compares Jev against; ADR-005 has the
+projects, their own published numbers and what each was checked against. Four facts decide
+which arms can exist and what the README may call them. Other projects' headline numbers
+(SemIf's 0.845 against Jev's 0.883) are agreement with Jev's answers, not calibration against
+labels, which is the thing our table measures. **`JevAdapter` already takes `baseUrl`**, so a
+Jev-shaped server such as openjev-sglang is a URL and not a new adapter. **A label set is
+only valid for the tokenizer it was checked against** — Qwen tokenizes `10` and `64` as more
+than one token — so labels are verified single tokens under the model actually served, which
+is why the local adapter refuses rather than reading a prefix. **Anthropic's API returns no
+logprobs**, so the LLM one-token-logprob arm is an OpenAI model or an open-weights model on
+vLLM. The README names which, in those words, and never calls it "frontier".
 
 ## Conventions
 
@@ -273,6 +265,10 @@ it "frontier".
   there would be a fifth place to forget. A bump also gets an entry in `CHANGELOG.md` saying
   what an existing install will notice — that file is for the person deciding whether to
   update, not a commit list. Docs and tests alone need neither.
+- **A test that pins a decision says so in what it prints on failure**, not only in a
+  comment: which rule or record it holds, and the edit that satisfies a deliberate change.
+  No check here blocks a merge (#74), so that text is the one place a decision reaches
+  someone who never opened the record. Relaxing a pin is the edit to read twice (ADR-012).
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
 - **No real API key in any file, message or command line.** Jev calls are stubbed in tests.
