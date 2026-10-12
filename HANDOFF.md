@@ -7,13 +7,12 @@ landed.
 
 ## In flight: the local decision backend (ADR-011)
 
-**Where it stands.** [ADR-011](docs/adr/011-the-local-backend-is-chosen-by-a-gate.md) is
-**proposed, not accepted**. [`docs/calibration-gate.md`](docs/calibration-gate.md) is the
-spec it decides on. No code, no fixtures and no models: the ADR says none of that starts
-before it is accepted. The work is tracked in #127, and Clownbot's side in
-clownware/clownbot#190.
+**Where it stands.** [ADR-011](docs/adr/011-the-local-backend-is-chosen-by-a-gate.md) was
+**accepted on 2026-10-11** (merge of #128) and nothing in it is built.
+[`docs/calibration-gate.md`](docs/calibration-gate.md) is the spec. The work is tracked in
+#127, and Clownbot's side in clownware/clownbot#190.
 
-**What it proposes, in four lines.**
+**What it decides, in four lines.**
 
 - No local model is named. A backend other than `jev` gates only with an attestation that
   `bouncer calibrate --gate` writes when six parts pass against Jev: accuracy, calibration
@@ -23,16 +22,23 @@ clownware/clownbot#190.
 - The questions fingerprint is the wording version. A changed question un-attests a backend.
 - A backend failure still emits nothing (ADR-003). `on_error: ask` is offered as an opt-in.
 
-**Waiting on the owner, in order.**
+**Waiting on the owner.**
 
-1. Read ADR-011 and accept or amend it. The three choices that depart from the original
-   brief are decisions 5 and 6 and the provisional margins in decision 4; each says what was
-   asked for and why it proposes something else.
-2. Run `bouncer export` on the real decision log (#113) and label the result into
-   `fixtures/traces.jsonl` with `strata` and `split` (spec §2.1). Only the owner can label.
-3. Write, or review a draft of, the 7 reversed forms and 21 rewordings (spec §2.2).
+1. Review the draft trace labels. `bouncer export` has been run (#113 has the counts) and a
+   280-case stratified sample is labelled as a first pass in `fixtures/traces.draft.jsonl`.
+   It exists only in the owner's `bouncer-wt-adr-011` worktree and is git-excluded: real
+   commands, public repository. The owner has ruled that work in another checkout is not
+   `outside_repo` and that `gh issue create` / `gh pr create` are not `egress`; the draft
+   reflects both, and 7 of the 280 should prompt. Not reviewed line by line.
+2. Review the drafts in `fixtures/variants/` (7 reversed forms, 21 rewordings; spec §2.2).
+   **The eight lines for `egress` and `outside_repo` are stale:** both questions were
+   reworded in 0.2.11 (#129) after the drafts were written, and need redrafting against
+   the new wording. None carries a `base` fingerprint yet, and no code reads them.
+3. Review the draft `fixtures/injection.jsonl` (63 attack cases, 14 controls; spec §2.3).
+   Its `git_branch` cases need a `git` field the fixture loader does not read yet.
+4. Decide the margins in ADR-011 decision 4 once Jev has been measured on the new sets.
 
-**Next for a session, once 1 is done.** The `calibrate` half of #127 can be built and tested
+**Next for a session.** The `calibrate` half of #127 can be built and tested
 entirely against stubs before any of the owner's data exists: AUC, disposition, the three
 new parts, `--fit`, `--gate --from`. The hook half (attestation check, `jev@` in
 `adapterFor`, `on_error: ask`) comes after the first live reference run, bumps the version,
@@ -48,6 +54,12 @@ and is benched with `--against`.
 - That Workers AI's hosted Clef parses through `JevAdapter`.
 - Whether Kev's and Clef's servers report a `model` string stable enough to bind an
   attestation to.
+
+## Shipped since this file was created
+
+- 0.2.11 (#129): `egress` and `outside_repo` reworded from real traffic, eight fixtures,
+  [run 10](docs/calibration/2026-10-11-jev-10.md). What it left is #130: a `Write` or `Edit`
+  outside the project still prompts wherever the file is, because the state cannot say.
 
 ## Other open threads
 

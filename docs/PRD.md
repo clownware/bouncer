@@ -472,7 +472,7 @@ free number rather than the one it was asked for.
   the log's `consumer` field, three-row measurement, and the reasoning pass as a command.
 - **ADR-010** A fast-path entry is a whole command unless it ends in a space — and what the
   space is asserting about every argument that entry can be given.
-- **ADR-011** (proposed) The local decision backend is whichever model passes the gate —
+- **ADR-011** The local decision backend is whichever model passes the gate —
   attestations, the six-part gate with polarity and injection disqualifying, and why a
   backend failure still emits nothing.
 

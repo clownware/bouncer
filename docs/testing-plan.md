@@ -21,7 +21,7 @@ re-measures what the fixture table already covers is wasted runner time.
 
 | harness | corpus | what a passing result claims |
 |---|---|---|
-| `bouncer calibrate` | `fixtures/gate.jsonl`, 104 hand-labelled near-miss cases | the classifier agrees with the labels, per question, in confidence buckets, with a Brier score |
+| `bouncer calibrate` | `fixtures/gate.jsonl`, 112 hand-labelled near-miss cases | the classifier agrees with the labels, per question, in confidence buckets, with a Brier score |
 | the §12 gate in the same run | the same fixtures | every question clears 0.85 accuracy among answers at confidence ≥ 0.80 — the release gate, published in the README and written up under [docs/calibration/](calibration/) |
 | `calibrate --from <answers>.jsonl` | a committed answers file, e.g. [2026-09-19-jev-9.jsonl](calibration/2026-09-19-jev-9.jsonl) | what a *threshold* change does to a run already paid for, with no key and no network |
 | `calibrate --compare a,b,…` (N-arm since 0.2.8) | the same fixtures, every arm in one run | each arm against the first: accuracy, Brier, ECE, false allows by question, latency and cost per arm, every differing verdict, and a Brier gate and a safety gate per pair. `--out` refuses to combine with it, so each arm is recorded with its own `--out`; `--from a.jsonl,b.jsonl` (0.2.10) re-scores the pair with no key |
