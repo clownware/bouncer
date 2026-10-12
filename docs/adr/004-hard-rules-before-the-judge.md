@@ -7,6 +7,8 @@
   the verb behind a wrapper — see the note under the predicate table.
 - **Amended 2026-09-19:** a seventh predicate, `token_prefix`, after `text` turned a plus sign in
   a commit message into a forced push (#84). See the predicate table.
+- **Amended 2026-10-12:** an eighth predicate, `target_labelled`, by ADR-013. Until then no
+  entry could see a `Write` or an `Edit`, because every predicate read a command line.
 - **Corrected 2026-09-18:** an earlier draft said run 7 *allows* the four. It does not — it
   has no `missed` fixtures at all. What it does is catch them by accident. See "Why".
 - **Corrected 2026-09-30:** the payload count under "What is verified", the counts under
@@ -117,7 +119,7 @@ gate:
         tokens: [git, stash, clear]
 ```
 
-Seven predicates. The first six each exist for a specific near-miss pair in
+Eight predicates. The first six each exist for a specific near-miss pair in
 `fixtures/gate.jsonl`; the pair for `token_prefix` is in `test/holdout/cases.jsonl`, because a
 fixture added to `gate.jsonl` now costs a live calibration run and this one never needed the
 classifier's opinion to be a bug:
@@ -131,6 +133,7 @@ classifier's opinion to be a bug:
 | `text` | one of these appears as a case-insensitive substring | SQL arrives inside a quoted argument, so it is not tokenizable: `drop database` has to be found in `psql … -c '…'` |
 | `path_labelled` | some token is a path carrying one of these sensitivity labels | this is the `sensitive` label the state builder already computes, finally read by something that produces a verdict |
 | `redacts_as` | `redact()` reports one of these kinds for the command | the credential shapes are already a tested table in `src/engine/redact.ts`; a second list would drift from the first |
+| `target_labelled` | the file a `Write`, `Edit` or `NotebookEdit` would change carries one of these labels; never true of `Bash` | added 2026-10-12 (ADR-013). An agent rewrote the policy gating it with the `Edit` tool, and `path_labelled` could not be widened to cover that without also stopping every `cat` of the file |
 
 > **Amended 2026-09-18.** Predicates were read over the whole command string, and are now
 > read per command in a chain (split on `&&`, `||`, `;`, `|`, a lone `&` and newlines, never

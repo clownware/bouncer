@@ -100,7 +100,7 @@ directions: widening it upward reaches nothing at 0.15, and widening it downward
 to reach 0.15 would prompt on nearly every command in the fixture set — and that band was
 already the single largest source of friction in the policy.
 
-So these four stopped being questions. `gate.hard_rules` is a list of nineteen entries in the
+So these four stopped being questions. `gate.hard_rules` is a list of twenty-two entries in the
 policy, evaluated before the classifier is called: when one matches, its verdict is the
 verdict, no model call is made, and the log records `source: hard_rule` with the entry's
 name. It is the symmetric twin of the `fast_path` allowlist. Between them sits everything

@@ -71,7 +71,13 @@ export interface Decision {
  */
 export function shortCircuit(
   policy: Policy,
-  input: { readonly tool: string; readonly command: string; readonly permissionMode?: string },
+  input: {
+    readonly tool: string;
+    readonly command: string;
+    readonly permissionMode?: string;
+    /** The file a `Write`, `Edit` or `NotebookEdit` would change (`targetOf`). */
+    readonly target?: string;
+  },
 ): Decision | undefined {
   if (input.permissionMode !== undefined && policy.skipPermissionModes.includes(input.permissionMode)) {
     return standAside({ kind: "permission-mode-skipped", permissionMode: input.permissionMode });
@@ -81,7 +87,7 @@ export function shortCircuit(
     return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
 
-  const hard = matchHardRule(policy.gate.hardRules, input.command);
+  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target);
   if (hard !== undefined) {
     return decideHard(policy, hard);
   }

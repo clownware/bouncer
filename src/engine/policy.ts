@@ -44,6 +44,7 @@ const HARD_RULE_PREDICATES = [
   "text",
   "path_labelled",
   "redacts_as",
+  "target_labelled",
 ] as const;
 /** Keys only `policies.gate` may carry. On another set they would load and never fire. */
 const GATE_ONLY_KEYS = ["tools", "fast_path", "hard_rules"] as const;
@@ -517,6 +518,7 @@ function readHardRules(
       text?: readonly string[];
       pathLabelled?: readonly string[];
       redactsAs?: readonly string[];
+      targetLabelled?: readonly string[];
     } = {};
 
     let failed = false;
@@ -537,6 +539,7 @@ function readHardRules(
     const text = list("text");
     const pathLabelled = list("path_labelled");
     const redactsAs = list("redacts_as");
+    const targetLabelled = list("target_labelled");
     if (failed) return;
 
     if (firstToken !== undefined) when.firstToken = firstToken;
@@ -546,6 +549,7 @@ function readHardRules(
     if (text !== undefined) when.text = text;
     if (pathLabelled !== undefined) when.pathLabelled = pathLabelled;
     if (redactsAs !== undefined) when.redactsAs = redactsAs;
+    if (targetLabelled !== undefined) when.targetLabelled = targetLabelled;
 
     // `not_tokens` narrows; it cannot be the whole of a rule. On its own it would match
     // every command that merely lacks those tokens, which is most of them.

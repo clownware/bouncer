@@ -60,6 +60,18 @@ export const toolCallState: StateBuilder<StateInput> = {
   build: buildState,
 };
 
+/**
+ * The file a tool call would change, as the tool was given it; undefined for a tool that
+ * names none. `Bash` names none: what a shell command writes is not knowable from its text,
+ * which is why a hard rule reaches it through a verb and a path instead (docs/adr/013).
+ */
+export function targetOf(toolName: string, toolInput: Readonly<Record<string, unknown>>): string | undefined {
+  const key = toolName === "NotebookEdit" ? "notebook_path" : toolName === "Write" || toolName === "Edit" ? "file_path" : undefined;
+  if (key === undefined) return undefined;
+  const path = toolInput[key];
+  return typeof path === "string" && path.length > 0 ? path : undefined;
+}
+
 /** The command a fast-path check should run against; empty for non-Bash tools. */
 export function commandOf(toolName: string, toolInput: Readonly<Record<string, unknown>>): string {
   if (toolName !== "Bash") return "";
@@ -276,6 +288,14 @@ function pathFacts(
 export function describeSensitivity(path: string): string | undefined {
   const parts = path.split(sep).filter((p) => p.length > 0);
   const name = parts.at(-1) ?? "";
+
+  // The gate's own policy, by the two names `resolvePolicy` looks for (src/io/config.ts): a
+  // repository's `.bouncer.yaml` and the user's `~/.bouncer/bouncer.yaml`. First, because a
+  // file that decides what gets judged matters more than whatever directory it sits in. A
+  // policy named by `$BOUNCER_POLICY` can be called anything and is not recognised here;
+  // docs/adr/013 says so.
+  if (/^\.bouncer\.ya?ml$/.test(name)) return "gate_policy";
+  if (parts.includes(".bouncer") && /^bouncer\.ya?ml$/.test(name)) return "gate_policy";
 
   if (parts.includes(".git")) return "git_internals";
   if (parts.includes(".ssh")) return "ssh_configuration";

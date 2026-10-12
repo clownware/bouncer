@@ -182,6 +182,9 @@ gate:
   #                  how to reach SQL and anything else inside a quoted argument
   #   path_labelled  some token is a path bouncer labels as one of these
   #   redacts_as     bouncer's redactor recognises one of these credential shapes
+  #   target_labelled  the file a Write, Edit or NotebookEdit would change is one bouncer
+  #                  labels as one of these. Never true of Bash, which names no target.
+  #                  Needs bouncer 0.2.16 or later: an older one refuses the whole file.
   #
   # Tokens rather than prefixes is deliberate: `git push --force` must not match
   # `git push --force-with-lease`, and a prefix does. In `seatbelt` every entry here denies;
@@ -327,6 +330,39 @@ gate:
       because: "Empties a table. There is no transaction to roll back afterwards."
       when:
         text: ["truncate table"]
+
+    # The file you are reading, and a repository's `.bouncer.yaml`. An agent that can
+    # loosen the policy it is gated by can turn the gate off from inside, and before these
+    # entries nothing said so: the classifier judged the edit `ask`, and in `seatbelt` a
+    # judged `ask` reaches nobody (docs/adr/013).
+    #
+    # In `guard` and `full` these prompt, so asking an agent to change your policy costs one
+    # keystroke. In `seatbelt` they deny, and the way through is to edit the file yourself.
+    # That is on purpose: the mode exists for sessions nobody is watching.
+    #
+    # Reading the policy is not here and never matches: `cat`, `grep` and a `Read` are how
+    # an agent explains a verdict. The first entry is every Write and Edit of the file. The
+    # other two are the shell verbs that can only be changing it; `cp`, a redirect and a
+    # script are not, because each of them also reads, and they are left to the judge.
+    - name: edits-the-gate-policy
+      because: "Changes the policy file that decides what bouncer stops. Edit it yourself."
+      when:
+        target_labelled: [gate_policy]
+
+    - name: removes-or-overwrites-the-gate-policy
+      because: "Removes, moves or overwrites the policy file that decides what bouncer stops."
+      when:
+        first_token: [rm, unlink, shred, mv, truncate, tee]
+        path_labelled: [gate_policy]
+
+    # `token_prefix` so `-i.bak` and BSD's `-i ''` both count; `perl -pi` is split into
+    # `-p` and `-i` like any other bundle of flags.
+    - name: edits-the-gate-policy-in-place
+      because: "Rewrites the policy file that decides what bouncer stops, in place."
+      when:
+        first_token: [sed, gsed, perl]
+        token_prefix: ["-i"]
+        path_labelled: [gate_policy]
 
   # Asked in a single call. Jev evaluates them in parallel, so seven questions cost
   # roughly what one does.

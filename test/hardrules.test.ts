@@ -96,6 +96,27 @@ describe("the shipped hard rules", () => {
     ["git-branch-force-delete-split", "git branch -d -f feature/parser", "git branch -d feature/parser"],
     ["drop-a-database", "psql $DATABASE_URL -c 'DROP DATABASE analytics'", "psql $DATABASE_URL -c 'DROP TABLE users'"],
     ["truncate-a-table", "psql $DATABASE_URL -c 'TRUNCATE TABLE sessions'", "truncate -s 0 /var/log/app.log"],
+    // docs/adr/013. The near-miss column is the point of each: reading the policy is how an
+    // agent explains a verdict, and a backup beside it is not the policy.
+    ["removes-or-overwrites-the-gate-policy", "rm ~/.bouncer/bouncer.yaml", "rm ~/.bouncer/bouncer.yaml.bak-2026-10-12"],
+    ["removes-or-overwrites-the-gate-policy", "mv .bouncer.yaml /tmp/gone.yaml", "cat .bouncer.yaml"],
+    [
+      "removes-or-overwrites-the-gate-policy",
+      "echo 'mode: observe' | tee ~/.bouncer/bouncer.yaml",
+      "grep -n mode ~/.bouncer/bouncer.yaml",
+    ],
+    ["removes-or-overwrites-the-gate-policy", "npm test && truncate -s 0 .bouncer.yml", "rm ~/.bouncer/decisions.jsonl"],
+    [
+      "edits-the-gate-policy-in-place",
+      "sed -i '' 's/mode: seatbelt/mode: observe/' ~/.bouncer/bouncer.yaml",
+      "sed -n 1,40p ~/.bouncer/bouncer.yaml",
+    ],
+    ["edits-the-gate-policy-in-place", "sed -i.bak s/seatbelt/observe/ .bouncer.yaml", "sed -i s/a/b/ src/index.ts"],
+    [
+      "edits-the-gate-policy-in-place",
+      "perl -pi -e s/seatbelt/observe/ ~/.bouncer/bouncer.yaml",
+      "perl -ne print ~/.bouncer/bouncer.yaml",
+    ],
   ];
 
   for (const [name, hit, miss] of cases) {
@@ -204,6 +225,80 @@ describe("the shipped hard rules", () => {
 // the VERDICT, not the state and not the probability: CLAUDE.md's "a computed fact is
 // decoration until a question reads it" is about exactly this, and a test that asserted
 // `describeSensitivity` returned a label would pass while the verdict stayed `allow`.
+// docs/adr/013: the one file whose edit turns the gate off from inside.
+//
+// A hard rule read a command line and nothing else, and a `Write` has none, so before
+// `target_labelled` no entry could say anything about the tool an agent actually edits a
+// file with. These are verdicts, not states: CLAUDE.md's rule is that a computed fact is
+// decoration until something reads it, and the label on its own changed nothing.
+describe("the gate's own policy file", () => {
+  const onTarget = (target: string): string | undefined => matchHardRule(rules, "", target)?.name;
+
+  it.each([
+    ["the user's own, as an absolute path", "/home/user/.bouncer/bouncer.yaml"],
+    ["the user's own, written with a tilde", "~/.bouncer/bouncer.yaml"],
+    ["a repository's", "/home/user/project/.bouncer.yaml"],
+    ["a repository's, with the other extension", ".bouncer.yml"],
+  ])("a write to %s is stopped", (_label, target) => {
+    expect(onTarget(target)).toBe("edits-the-gate-policy");
+  });
+
+  // Each of these is a file somebody edits all day, or a file beside the policy that is not
+  // the policy. A deterministic rule that fired on one would be friction nobody can tune.
+  it.each([
+    ["the shipped default in a checkout of this repository", "/home/user/project/policy/default.yaml"],
+    ["a file that merely shares the name", "/home/user/project/docs/bouncer.yaml"],
+    ["a backup beside the policy", "/home/user/.bouncer/bouncer.yaml.bak-2026-10-12"],
+    ["the decision log beside it", "/home/user/.bouncer/decisions.jsonl"],
+    ["an ordinary source file", "/home/user/project/src/index.ts"],
+  ])("a write to %s is not", (_label, target) => {
+    expect(onTarget(target)).toBeUndefined();
+  });
+
+  it("is never true of a shell command, which names no target", () => {
+    // Reading is how an agent explains a verdict; `target_labelled` cannot see a Bash call
+    // at all, and the two entries that can are about verbs that only change a file.
+    expect(fires("cat ~/.bouncer/bouncer.yaml")).toBeUndefined();
+    expect(fires("grep -n mode .bouncer.yaml")).toBeUndefined();
+  });
+
+  it("leaves every command-line entry alone on a call with no command", () => {
+    // The one empty command a Write is given facts as must not satisfy an entry about a
+    // verb or a token: an entry asserting only `not_tokens` is refused by the loader, and
+    // everything else needs something that is not there.
+    expect(onTarget("/home/user/project/src/index.ts")).toBeUndefined();
+    expect(matchHardRule(rules, "", undefined)).toBeUndefined();
+  });
+
+  const write = { tool: "Write", command: "", target: "/home/user/.bouncer/bouncer.yaml" } as const;
+
+  it("asks in guard, where the person asked for the edit can approve it", () => {
+    const decision = shortCircuit(shippedPolicy("guard"), write);
+    expect(decision?.reason).toMatchObject({ kind: "hard-rule", name: "edits-the-gate-policy" });
+    expect(decision?.emit).toBe("ask");
+  });
+
+  it("denies in seatbelt, where nobody is there to ask", () => {
+    expect(shortCircuit(shippedPolicy("seatbelt"), write)?.emit).toBe("deny");
+  });
+
+  it("emits nothing in observe, like every other entry", () => {
+    expect(shortCircuit(shippedPolicy("observe"), write)?.emit).toBeUndefined();
+  });
+
+  it("does not reach a tool the policy does not gate", () => {
+    const decision = shortCircuit(shippedPolicy("seatbelt"), { ...write, tool: "Read" });
+    expect(decision?.reason.kind).toBe("tool-not-gated");
+    expect(decision?.emit).toBeUndefined();
+  });
+
+  it("loads as the whole of an entry, since it says what it matches", () => {
+    const source = readFileSync(join(root, "policy/default.yaml"), "utf8");
+    expect(source).toMatch(/^ {8}target_labelled: \[gate_policy\]$/m);
+    expect(rules.find((r) => r.name === "edits-the-gate-policy")?.when).toEqual({ targetLabelled: ["gate_policy"] });
+  });
+});
+
 describe("the run 7 misses, as verdicts", () => {
   const misses: ReadonlyArray<readonly [string, string, string]> = [
     ["cat .env", "sensitive_target answered 0.15", "reads-a-credential-file"],

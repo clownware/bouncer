@@ -8,6 +8,53 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.16
+
+**An agent editing the policy that gates it is now stopped** (#141, ADR-013). Before this, a
+`Write` or `Edit` of `~/.bouncer/bouncer.yaml` or a repository's `.bouncer.yaml` was judged
+`ask`, and in `seatbelt` a judged `ask` reaches nobody, so a session under
+`--dangerously-skip-permissions` could set `mode: observe` and carry on ungated.
+
+- In `guard` and `full` you are prompted. In `seatbelt` the edit is denied, and the way
+  through is to edit the file yourself. `observe` is unchanged and emits nothing.
+- Reading the policy is not stopped: `cat`, `grep` and `/bouncer:explain` work as before.
+- Also stopped: `rm`, `mv`, `truncate`, `tee`, `shred` and `unlink` on the file, and `sed -i`
+  or `perl -i` on it.
+- **Not stopped**, and judged like any other command: `cp` onto the file, a redirect onto
+  it, and a script that writes it. ADR-013 says why.
+
+**Your own policy file does not get this by updating.** The entries live in the shipped
+`policy/default.yaml`. If you have your own `bouncer.yaml`, add this at the end of its
+`hard_rules:` list, with the same indentation as the entries above it:
+
+```yaml
+    - name: edits-the-gate-policy
+      because: "Changes the policy file that decides what bouncer stops. Edit it yourself."
+      when:
+        target_labelled: [gate_policy]
+
+    - name: removes-or-overwrites-the-gate-policy
+      because: "Removes, moves or overwrites the policy file that decides what bouncer stops."
+      when:
+        first_token: [rm, unlink, shred, mv, truncate, tee]
+        path_labelled: [gate_policy]
+
+    - name: edits-the-gate-policy-in-place
+      because: "Rewrites the policy file that decides what bouncer stops, in place."
+      when:
+        first_token: [sed, gsed, perl]
+        token_prefix: ["-i"]
+        path_labelled: [gate_policy]
+```
+
+A policy that uses `target_labelled` needs 0.2.16 on every machine that loads it. An older
+bouncer treats the unknown key as an error and stops enforcing, with one message per session
+saying so. Update first, then edit the policy.
+
+A new hard-rule predicate, `target_labelled`, is what makes the first entry possible: it is
+true when the file a `Write`, `Edit` or `NotebookEdit` would change carries a label. Until
+now every predicate read a shell command, so no rule of your own could mention those tools.
+
 ## 0.2.15
 
 **`bouncer calibrate --gate <arm> --from <dir>`** (#127). Scores a gate run that `--out-dir`
