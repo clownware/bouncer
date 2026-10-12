@@ -7,6 +7,7 @@
 //   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b] [--out run.jsonl] [--json]
 //   bouncer calibrate --gate <[name=]backend> [--reference <[name=]backend>]   (see ./gate.ts)
 //   bouncer calibrate --stamp <question[,question…]|all> [--restamp]              (see ./gate.ts)
+//   bouncer calibrate --gate <arm> --from <dir>[,<dir>] [--reference <arm>]         (see ./gate.ts)
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //   bouncer calibrate --from [name=]a.jsonl,[name=]b.jsonl[,...] [--fixtures path] [--set name] [--json]
 //
@@ -73,7 +74,7 @@ import {
   type Scored,
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
-import { gateCommand, stampCommand } from "./gate.js";
+import { gateCommand, gateFromCommand, stampCommand } from "./gate.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, chatBackend, errorsIn, jevCompatible, keyFromEnv, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
@@ -172,6 +173,8 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   }
 
   if (args.gate !== undefined) {
+    // With --from the gate is scored from a recorded run and nothing is asked.
+    if (args.from !== undefined) return gateFromCommand(args, resolved.policy, resolved.source, root, fixtures, write);
     return gateCommand(args, resolved.policy, resolved.source, root, fixtures, write);
   }
   for (const [flag, value] of [["--reference", args.reference], ["--variants", args.variants], ["--injection", args.injection], ["--out-dir", args.outDir]] as const) {

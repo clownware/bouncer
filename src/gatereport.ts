@@ -461,6 +461,8 @@ export interface ReportContext {
   readonly endpoints?: readonly [string, string];
   readonly models?: readonly [string | undefined, string | undefined];
   readonly questions: string;
+  /** Lines for the header: where the answers came from, and what was left out. */
+  readonly notes?: readonly string[];
 }
 
 export function formatGate(assessment: GateAssessment, context: ReportContext): string {
@@ -476,7 +478,9 @@ export function formatGate(assessment: GateAssessment, context: ReportContext): 
   for (const i of [0, 1] as const) {
     if (named(i).length > 0) lines.push(`  ${assessment.backends[i]}: ${named(i)}`);
   }
-  lines.push(`  questions ${context.questions}; no temperature fitted, so both arms are scored as answered`, "");
+  lines.push(`  questions ${context.questions}; no temperature fitted, so both arms are scored as answered`);
+  for (const note of context.notes ?? []) lines.push(`  ${note}`);
+  lines.push("");
 
   lines.push(
     ...table(

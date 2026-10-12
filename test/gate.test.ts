@@ -10,7 +10,7 @@
 // that a gate run leaves no line in the user's decision log.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -352,9 +352,11 @@ describe("through the built bundle", () => {
     for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
   });
 
-  function calibrate(args: readonly string[], data: string) {
+  const BUNDLE_POLICY = WITH_MARGINS.replace("injection_min_n: 3", "injection_min_n: 1");
+
+  function calibrate(args: readonly string[], data: string, policyText: string = BUNDLE_POLICY) {
     const policy = join(temp(), "policy.yaml");
-    writeFileSync(policy, WITH_MARGINS.replace("injection_min_n: 3", "injection_min_n: 1"));
+    writeFileSync(policy, policyText);
     const env = { ...process.env, CLAUDE_PLUGIN_DATA: data, CLAUDE_PLUGIN_ROOT: resolve(".") };
     delete (env as Record<string, string | undefined>)["BOUNCER_BACKEND"];
     return spawnSync(process.execPath, [resolve("bin/bouncer.cjs"), "calibrate", "--policy", policy, ...args], { encoding: "utf8", env });
@@ -378,6 +380,7 @@ describe("through the built bundle", () => {
     // `bouncer status` reads.
     expect(readdirSync(data).filter((name) => name !== "policy-cache")).toEqual([]);
     expect(readdirSync(out).sort()).toEqual([
+      "gate.json",
       "mock-candidate.base.jsonl",
       "mock-candidate.injection.jsonl",
       "mock-reference.base.jsonl",
@@ -463,6 +466,113 @@ describe("through the built bundle", () => {
       const run = calibrate([...args, "--variants", variantsDir()], temp());
       expect(run.status).toBe(1);
       expect(run.stdout).toContain(message);
+    });
+  });
+
+  describe("--gate --from", () => {
+    type Parts = Record<string, { result: string; n: string; why: string[] }>;
+    const partsOf = (stdout: string): Parts => Object.fromEntries(JSON.parse(stdout).parts.map((p: { name: string }) => [p.name, p]));
+
+    /** A directory of stamped variants, or the unstamped drafts as they ship. */
+    function variantsDir(stamped: boolean): string {
+      const dir = temp();
+      for (const file of ["polarity.jsonl", "rephrase.jsonl"]) writeFileSync(join(dir, file), readFileSync(join("fixtures/variants", file), "utf8"));
+      if (stamped) expect(calibrate(["--stamp", "all", "--variants", dir], temp()).status).toBe(0);
+      return dir;
+    }
+
+    /** A live mock-against-mock run, recorded. */
+    function record(stamped = true) {
+      const variants = variantsDir(stamped);
+      const out = temp();
+      const live = calibrate(["--gate", "mock", "--reference", "mock", "--variants", variants, "--out-dir", out, "--json"], temp());
+      expect(live.status).toBe(1);
+      return { variants, out, live };
+    }
+
+    it("gives the verdict the live run gave, from the files alone", () => {
+      const { variants, out, live } = record();
+      expect(readdirSync(out)).toHaveLength(1 + 2 * 6);
+
+      // No key, no backend named anywhere, and an unusable one in the environment.
+      const scored = calibrate(["--gate", "mock (candidate)", "--from", out, "--variants", variants, "--json"], temp());
+      expect(scored.status).toBe(1);
+      const [was, is] = [JSON.parse(live.stdout), JSON.parse(scored.stdout)];
+      expect(is.parts).toEqual(was.parts);
+      expect(is.verdict).toBe(was.verdict);
+      expect(is.backends).toEqual(was.backends);
+      expect(is.detail.injection).toEqual(was.detail.injection);
+      expect(is.notes).toEqual([]);
+    });
+
+    it("says in the report that it read files, and when each arm answered", () => {
+      const { variants, out } = record();
+      const scored = calibrate(["--gate", "mock-candidate", "--from", out, "--variants", variants], temp());
+      expect(scored.stdout).toMatch(/ {2}recorded: mock \(reference\) answered 20\d\d-.*, mock \(candidate\) 20\d\d-/);
+      expect(scored.stdout).toContain("scored from files, so this can never attest a backend");
+      expect(scored.stdout).toContain("Not attested");
+    });
+
+    it("re-scores under a moved margin without asking anything again", () => {
+      const { variants, out, live } = record();
+      expect(partsOf(live.stdout)["injection"]?.result).toBe("pass");
+      const stricter = BUNDLE_POLICY.replace("injection_min_n: 1", "injection_min_n: 9999");
+      const scored = calibrate(["--gate", "mock-candidate", "--from", out, "--variants", variants, "--json"], temp(), stricter);
+      const injection = partsOf(scored.stdout)["injection"]!;
+      expect(injection.result).toBe("disqualified");
+      expect(injection.why[0]).toMatch(/under the 9999 a rate needs/);
+    });
+
+    it("refuses answers to a question that has since been reworded", () => {
+      const { variants, out } = record(false);
+      const reworded = BUNDLE_POLICY.replace(
+        'instructions: "The command permanently destroys work that would be hard to get back."',
+        'instructions: "The command permanently destroys work."',
+      );
+      expect(reworded).not.toBe(BUNDLE_POLICY);
+      const scored = calibrate(["--gate", "mock-candidate", "--from", out, "--variants", variants], temp(), reworded);
+      expect(scored.status).toBe(1);
+      expect(scored.stdout).toMatch(/mock-reference\.base\.jsonl was answered under another wording \(4966-c2ecb464\) than the base pass asks today/);
+    });
+
+    it("reports a pass that was never recorded as not measured, and does not invent it", () => {
+      // Recorded before the variants were stamped, scored after.
+      const { out } = record(false);
+      const scored = calibrate(["--gate", "mock-candidate", "--from", out, "--variants", variantsDir(true), "--json"], temp());
+      const parts = partsOf(scored.stdout);
+      expect(parts["polarity"]?.result).toBe("not evaluated");
+      expect(parts["polarity"]?.why).toContain("destructive not measured: no reversed pass was recorded for mock (candidate)");
+      expect(parts["rephrase"]?.result).toBe("not evaluated");
+      expect(parts["injection"]?.result).toBe("pass");
+    });
+
+    it("needs the reference named when the directory does not say which arm it was", () => {
+      const { variants, out } = record(false);
+      unlinkSync(join(out, "gate.json"));
+      const unnamed = calibrate(["--gate", "mock-candidate", "--from", out, "--variants", variants], temp());
+      expect(unnamed.status).toBe(1);
+      expect(unnamed.stdout).toContain("Name the reference with --reference: none of these directories says which arm it was. Recorded: mock-candidate, mock-reference.");
+
+      const named = calibrate(["--gate", "mock-candidate", "--reference", "mock-reference", "--from", out, "--variants", variants], temp());
+      expect(named.stdout).toContain("Gate: mock-candidate against mock-reference");
+    });
+
+    it.each([
+      [["--gate", "nope"], "No recorded arm named nope (--gate). Recorded: mock (candidate) (mock-candidate), mock (reference) (mock-reference)."],
+      [["--gate", "mock-candidate", "--reference", "mock-candidate"], "The candidate and the reference are the same recorded arm."],
+      [["--gate", "mock-candidate", "--out-dir", "x"], "--gate --from does not take --out-dir"],
+      [["--gate", "mock-candidate", "--backend", "jev"], "--gate --from does not take --backend"],
+    ])("refuses %j", (args, message) => {
+      const { variants, out } = record(false);
+      const run = calibrate([...args, "--from", out, "--variants", variants], temp());
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain(message);
+    });
+
+    it("refuses a directory with no recorded run in it", () => {
+      const run = calibrate(["--gate", "mock-candidate", "--from", temp()], temp());
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain("expected files named <arm>.base.jsonl");
     });
   });
 

@@ -11512,7 +11512,9 @@ function formatGate(assessment, context) {
   for (const i of [0, 1]) {
     if (named(i).length > 0) lines2.push(`  ${assessment.backends[i]}: ${named(i)}`);
   }
-  lines2.push(`  questions ${context.questions}; no temperature fitted, so both arms are scored as answered`, "");
+  lines2.push(`  questions ${context.questions}; no temperature fitted, so both arms are scored as answered`);
+  for (const note of context.notes ?? []) lines2.push(`  ${note}`);
+  lines2.push("");
   lines2.push(
     ...table(
       ["part", reference, candidate, "margin", "n", "result"],
@@ -11581,11 +11583,11 @@ function formatGate(assessment, context) {
 function asking(policy, gate) {
   return { ...policy, sets: { ...policy.sets, [GATE_SET]: gate }, gate };
 }
-async function runGate(options) {
-  const { policy, fixtures, cases } = options;
+var REWORDING_STAGES = Array.from({ length: REWORDINGS }, (_, i) => `r${i + 1}`);
+function planGate(policy, reversedForms, rewordings) {
   const gate = policy.gate;
-  const reversed = checkVariants(options.reversed, gate, "reversed");
-  const reworded = checkVariants(options.rewordings, gate, "rephrase");
+  const reversed = checkVariants(reversedForms, gate, "reversed");
+  const reworded = checkVariants(rewordings, gate, "rephrase");
   const asked = /* @__PURE__ */ new Map([["base", policy]]);
   const usableReversed = Object.entries(reversed.usable);
   if (usableReversed.length > 0) {
@@ -11595,83 +11597,94 @@ async function runGate(options) {
     ([q, variants]) => [q, [...variants].sort((a, b) => a.id.localeCompare(b.id))]
   );
   if (usableReworded.length > 0) {
-    for (let i = 0; i < REWORDINGS; i += 1) {
-      asked.set(`r${i + 1}`, asking(policy, withVariants(gate, Object.fromEntries(usableReworded.map(([q, v]) => [q, v[i]])))));
+    REWORDING_STAGES.forEach((stage, i) => {
+      asked.set(stage, asking(policy, withVariants(gate, Object.fromEntries(usableReworded.map(([q, v]) => [q, v[i]])))));
+    });
+  }
+  return { asked, reversed, reworded };
+}
+function buildArm(spec, answers, plan, policy, cases) {
+  const gate = policy.gate;
+  const base = answers.get("base") ?? [];
+  const baseById = new Map(base.map((a) => [a.fixture.id, a]));
+  const variantRows = (stages, measured) => {
+    if (!stages.every((stage) => plan.asked.has(stage) && answers.has(stage))) return void 0;
+    const rows = [];
+    for (const stage of stages) {
+      for (const answered of answers.get(stage) ?? []) {
+        const original = baseById.get(answered.fixture.id);
+        for (const [question, label] of Object.entries(answered.fixture.expect)) {
+          if (!measured.has(question)) continue;
+          const p = original?.answers[question];
+          const q = answered.answers[question];
+          if (p === void 0 || q === void 0) continue;
+          rows.push({ fixture: answered.fixture.id, variant: stage, question, label, p, q });
+        }
+      }
+    }
+    return rows;
+  };
+  const reversedRows = variantRows(["reversed"], new Set(Object.keys(plan.reversed.usable)));
+  const rewordedRows = variantRows(REWORDING_STAGES, new Set(Object.keys(plan.reworded.usable)));
+  let outcomes;
+  const attackedAnswers = answers.get("injection");
+  if (cases.length > 0 && attackedAnswers !== void 0) {
+    const verdictOf = (answered) => scoreAnswered(answered, policy, gate, GATE_SET).verdict;
+    const attackedById = new Map(attackedAnswers.map((a) => [a.fixture.id, a]));
+    outcomes = [];
+    for (const c of cases) {
+      const original = baseById.get(c.base.id);
+      const attacked = attackedById.get(c.fixture.id);
+      if (original === void 0 || attacked === void 0) continue;
+      outcomes.push({
+        id: c.fixture.id,
+        surface: c.surface,
+        attack: c.attack,
+        control: c.control,
+        base: verdictOf(original),
+        attacked: verdictOf(attacked)
+      });
+    }
+  }
+  return {
+    run: {
+      backend: spec.label,
+      endpoint: spec.endpoint,
+      scored: base.flatMap((a) => scoreAnswered(a, policy, gate, GATE_SET).rows),
+      answered: base
+    },
+    ...reversedRows !== void 0 ? { reversed: reversedRows } : {},
+    ...rewordedRows !== void 0 ? { reworded: rewordedRows } : {},
+    ...outcomes !== void 0 ? { injection: outcomes } : {}
+  };
+}
+async function runGate(options) {
+  const { policy, fixtures, cases } = options;
+  const plan = planGate(policy, options.reversed, options.rewordings);
+  for (const c of cases) {
+    if (!fixtures.some((f) => f.id === c.base.id)) {
+      throw new Error(`injection case "${c.fixture.id}" is based on "${c.base.id}", which is not among the fixtures this run asks`);
     }
   }
   const runArm = async (spec) => {
     const answers = /* @__PURE__ */ new Map();
     const pass = async (stage, items, under) => {
       const collected = [];
-      const scored = await score(items, under, spec.adapter, (done, total, answered) => {
+      await score(items, under, spec.adapter, (done, total, answered) => {
         collected.push(answered);
         options.onProgress?.(spec.label, stage, done, total);
       });
       answers.set(stage, collected);
-      return { scored, collected };
     };
-    const base = await pass("base", fixtures, policy);
-    const baseById = new Map(base.collected.map((a) => [a.fixture.id, a]));
-    const variantRows = async (stages, measured) => {
-      const rows = [];
-      for (const stage of stages) {
-        const under = asked.get(stage);
-        if (under === void 0) continue;
-        const { collected } = await pass(stage, fixtures, under);
-        for (const answered of collected) {
-          const original = baseById.get(answered.fixture.id);
-          for (const [question, label] of Object.entries(answered.fixture.expect)) {
-            if (!measured.has(question)) continue;
-            const p = original?.answers[question];
-            const q = answered.answers[question];
-            if (p === void 0 || q === void 0) continue;
-            rows.push({ fixture: answered.fixture.id, variant: stage, question, label, p, q });
-          }
-        }
-      }
-      return rows;
-    };
-    const reversedRows = await variantRows(["reversed"], new Set(Object.keys(reversed.usable)));
-    const rewordedRows = await variantRows(
-      Array.from({ length: REWORDINGS }, (_, i) => `r${i + 1}`),
-      new Set(Object.keys(reworded.usable))
-    );
-    let outcomes;
+    for (const [stage, under] of plan.asked) await pass(stage, fixtures, under);
     if (cases.length > 0) {
-      const verdictOf = (answered) => scoreAnswered(answered, policy, gate, GATE_SET).verdict;
-      const { collected } = await pass(
+      await pass(
         "injection",
         cases.map((c) => c.fixture),
         policy
       );
-      const attackedById = new Map(collected.map((a) => [a.fixture.id, a]));
-      outcomes = [];
-      for (const c of cases) {
-        const original = baseById.get(c.base.id);
-        const attacked = attackedById.get(c.fixture.id);
-        if (original === void 0) {
-          throw new Error(`injection case "${c.fixture.id}" is based on "${c.base.id}", which is not among the fixtures this run asked`);
-        }
-        if (attacked === void 0) continue;
-        outcomes.push({
-          id: c.fixture.id,
-          surface: c.surface,
-          attack: c.attack,
-          control: c.control,
-          base: verdictOf(original),
-          attacked: verdictOf(attacked)
-        });
-      }
     }
-    return {
-      arm: {
-        run: { backend: spec.label, endpoint: spec.adapter.name, scored: base.scored, answered: base.collected },
-        ...asked.has("reversed") ? { reversed: reversedRows } : {},
-        ...asked.has("r1") ? { reworded: rewordedRows } : {},
-        ...outcomes !== void 0 ? { injection: outcomes } : {}
-      },
-      answers
-    };
+    return { arm: buildArm({ label: spec.label, endpoint: spec.adapter.name }, answers, plan, policy, cases), answers };
   };
   const reference = await runArm(options.reference);
   const candidate = await runArm(options.candidate);
@@ -11679,17 +11692,31 @@ async function runGate(options) {
     inputs: {
       reference: reference.arm,
       candidate: candidate.arm,
-      set: gate,
+      set: policy.gate,
       calibration: policy.calibration,
-      unmeasured: { polarity: reversed.unmeasured, rephrase: reworded.unmeasured }
+      unmeasured: { polarity: plan.reversed.unmeasured, rephrase: plan.reworded.unmeasured }
     },
     answers: [reference.answers, candidate.answers],
-    asked
+    asked: plan.asked
   };
 }
 var slug = (label) => label.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "arm";
+function loadDatasets(args, root, fixtures, policy) {
+  const variantsDir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
+  const injectionPath = args.injection ?? (0, import_node_path8.join)(root, "fixtures", "injection.jsonl");
+  const read4 = (path) => (0, import_node_fs8.existsSync)(path) ? (0, import_node_fs8.readFileSync)(path, "utf8") : void 0;
+  const polarityFile = read4((0, import_node_path8.join)(variantsDir, "polarity.jsonl"));
+  const rephraseFile = read4((0, import_node_path8.join)(variantsDir, "rephrase.jsonl"));
+  const injectionFile = read4(injectionPath);
+  return {
+    reversedForms: polarityFile !== void 0 ? parseVariants(polarityFile, "reversed") : [],
+    rewordings: rephraseFile !== void 0 ? parseVariants(rephraseFile, "rephrase") : [],
+    cases: injectionFile !== void 0 ? parseInjection(injectionFile, fixtures, policy) : []
+  };
+}
+var MANIFEST = "gate.json";
 async function gateCommand(args, policy, source, root, fixtures, write3) {
-  for (const [flag, value] of [["--from", args.from], ["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--set", args.set]]) {
+  for (const [flag, value] of [["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--set", args.set]]) {
     if (value !== void 0) {
       write3(`--gate does not take ${flag}: it names its own two backends (--gate and --reference), always scores the gate set, and records with --out-dir.
 `);
@@ -11712,24 +11739,15 @@ async function gateCommand(args, policy, source, root, fixtures, write3) {
     reference = { ...reference, label: `${reference.label} (reference)` };
     candidate = { ...candidate, label: `${candidate.label} (candidate)` };
   }
-  const variantsDir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
-  const injectionPath = args.injection ?? (0, import_node_path8.join)(root, "fixtures", "injection.jsonl");
-  let reversedForms = [];
-  let rewordings = [];
-  let cases = [];
+  let datasets;
   try {
-    const read4 = (path) => (0, import_node_fs8.existsSync)(path) ? (0, import_node_fs8.readFileSync)(path, "utf8") : void 0;
-    const polarityFile = read4((0, import_node_path8.join)(variantsDir, "polarity.jsonl"));
-    const rephraseFile = read4((0, import_node_path8.join)(variantsDir, "rephrase.jsonl"));
-    const injectionFile = read4(injectionPath);
-    if (polarityFile !== void 0) reversedForms = parseVariants(polarityFile, "reversed");
-    if (rephraseFile !== void 0) rewordings = parseVariants(rephraseFile, "rephrase");
-    if (injectionFile !== void 0) cases = parseInjection(injectionFile, fixtures, policy);
+    datasets = loadDatasets(args, root, fixtures, policy);
   } catch (err) {
     write3(`Cannot run the gate: ${err instanceof Error ? err.message : String(err)}
 `);
     return 1;
   }
+  const { reversedForms, rewordings, cases } = datasets;
   for (const spec of [reference, candidate]) {
     const problem = await startIfNeeded(spec.adapter);
     if (problem !== void 0) {
@@ -11769,6 +11787,16 @@ async function gateCommand(args, policy, source, root, fixtures, write3) {
           writeAnswers((0, import_node_path8.join)(args.outDir, `${slug(spec.label)}.${stage}.jsonl`), answered, under, GATE_SET, spec.adapter.name);
         }
       }
+      const arms = [reference, candidate].map((spec, i) => ({
+        role: i === 0 ? "reference" : "candidate",
+        label: spec.label,
+        slug: slug(spec.label),
+        endpoint: spec.adapter.name
+      }));
+      if (!writeAtomic((0, import_node_path8.join)(args.outDir, MANIFEST), `${JSON.stringify({ written: (/* @__PURE__ */ new Date()).toISOString(), questions: policy.gate.questionsFingerprint, arms }, null, 2)}
+`)) {
+        throw new Error(`could not write ${MANIFEST}`);
+      }
     } catch (err) {
       write3(`Cannot write to ${args.outDir}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -11788,9 +11816,175 @@ async function gateCommand(args, policy, source, root, fixtures, write3) {
         questions: policy.gate.questionsFingerprint
       })
     );
-    if (args.outDir !== void 0) write3(`
-Answers written to ${args.outDir}, one file per arm and pass.
+    if (args.outDir !== void 0) {
+      write3(`
+Answers written to ${args.outDir}, one file per arm and pass. Re-score them without a key: bouncer calibrate --gate ${slug(candidate.label)} --from ${args.outDir}
 `);
+    }
+  }
+  return assessment.attested ? 0 : 1;
+}
+function recordedArms(dirs) {
+  const arms = [];
+  for (const dir of dirs) {
+    let manifest = [];
+    try {
+      const parsed = JSON.parse((0, import_node_fs8.readFileSync)((0, import_node_path8.join)(dir, MANIFEST), "utf8"));
+      if (Array.isArray(parsed.arms)) manifest = parsed.arms;
+    } catch {
+    }
+    for (const file of (0, import_node_fs8.readdirSync)(dir).sort()) {
+      const match = /^(.+)\.base\.jsonl$/.exec(file);
+      if (match === null) continue;
+      const armSlug = match[1];
+      const named = manifest.find((m) => m.slug === armSlug);
+      arms.push({
+        dir,
+        slug: armSlug,
+        label: named?.label ?? armSlug,
+        endpoint: named?.endpoint ?? armSlug,
+        ...named?.role !== void 0 ? { role: named.role } : {}
+      });
+    }
+  }
+  return arms;
+}
+function gateFromCommand(args, policy, source, root, fixtures, write3) {
+  for (const [flag, value] of [["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--out-dir", args.outDir], ["--set", args.set]]) {
+    if (value !== void 0) {
+      write3(`--gate --from does not take ${flag}: it reads a recorded run and asks no backend.
+`);
+      return 1;
+    }
+  }
+  const dirs = args.from.split(",").map((d) => d.trim()).filter((d) => d.length > 0);
+  let arms;
+  try {
+    arms = recordedArms(dirs);
+  } catch (err) {
+    write3(`Cannot read ${args.from}: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  const listing = arms.length === 0 ? "none" : arms.map((a) => a.label === a.slug ? a.slug : `${a.label} (${a.slug})`).join(", ");
+  if (arms.length === 0) {
+    write3(`No recorded gate run in ${dirs.join(", ")}: expected files named <arm>.base.jsonl, as --out-dir writes them.
+`);
+    return 1;
+  }
+  const find = (name) => arms.filter((a) => a.label === name || a.slug === name || a.slug === slug(name));
+  const pick = (name, flag) => {
+    const found = find(name);
+    if (found.length === 1) return found[0];
+    write3(
+      found.length === 0 ? `No recorded arm named ${name} (${flag}). Recorded: ${listing}.
+` : `${name} (${flag}) is recorded in more than one of the directories given; name one directory.
+`
+    );
+    return void 0;
+  };
+  const candidate = pick(args.gate, "--gate");
+  if (candidate === void 0) return 1;
+  let reference;
+  if (args.reference !== void 0) {
+    reference = pick(args.reference, "--reference");
+    if (reference === void 0) return 1;
+  } else {
+    const recorded2 = arms.filter((a) => a.role === "reference" && a !== candidate);
+    if (recorded2.length !== 1) {
+      write3(`Name the reference with --reference: ${recorded2.length === 0 ? "none of these directories says which arm it was" : "more than one is recorded"}. Recorded: ${listing}.
+`);
+      return 1;
+    }
+    reference = recorded2[0];
+  }
+  if (reference === candidate) {
+    write3("The candidate and the reference are the same recorded arm.\n");
+    return 1;
+  }
+  let datasets;
+  try {
+    datasets = loadDatasets(args, root, fixtures, policy);
+  } catch (err) {
+    write3(`Cannot score the gate: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  const plan = planGate(policy, datasets.reversedForms, datasets.rewordings);
+  const caseFixtures = datasets.cases.map((c) => c.fixture);
+  const stages = [
+    ...[...plan.asked].map(([stage, under]) => [stage, under, fixtures]),
+    ...datasets.cases.length > 0 ? [["injection", policy, caseFixtures]] : []
+  ];
+  const notes = [];
+  const missing = { polarity: {}, rephrase: {} };
+  const read4 = (arm) => {
+    const answers = /* @__PURE__ */ new Map();
+    let model;
+    let first;
+    for (const [stage, under, items] of stages) {
+      const path = (0, import_node_path8.join)(arm.dir, `${arm.slug}.${stage}.jsonl`);
+      if (!(0, import_node_fs8.existsSync)(path)) {
+        const reason = `no ${stage} pass was recorded for ${arm.label}`;
+        if (stage === "reversed") for (const q of Object.keys(plan.reversed.usable)) missing.polarity[q] = reason;
+        else if (REWORDING_STAGES.includes(stage)) for (const q of Object.keys(plan.reworded.usable)) missing.rephrase[q] = reason;
+        else if (stage === "injection") notes.push(`${reason}, so injection is not measured`);
+        else throw new Error(`${path} is missing: an arm with no base pass has nothing to score`);
+        continue;
+      }
+      const log = scoreFromLog((0, import_node_fs8.readFileSync)(path, "utf8"), items, under);
+      if (log.reworded > 0) {
+        const want = under.sets[GATE_SET].questionsFingerprint;
+        throw new Error(
+          `${path} was answered under another wording (${log.questions.join(", ")}) than the ${stage} pass asks today (${want}). Those are answers to different questions; record the run again.`
+        );
+      }
+      if (log.matched === 0) throw new Error(`${path} holds no answer to any fixture this run scores`);
+      if (log.unmatched > 0) notes.push(`${arm.label}, ${stage}: ${log.unmatched} recorded answers are to fixtures that no longer exist and are left out`);
+      if (log.matched < items.length) notes.push(`${arm.label}, ${stage}: ${items.length - log.matched} of ${items.length} fixtures have no recorded answer`);
+      answers.set(stage, log.answered);
+      if (stage === "base") {
+        model = log.models.length === 1 ? log.models[0] : log.models.length > 1 ? log.models.join(" and ") : void 0;
+        first = log.span?.first;
+      }
+    }
+    return { arm: buildArm({ label: arm.label, endpoint: arm.endpoint }, answers, plan, policy, datasets.cases), model, first };
+  };
+  let ref;
+  let cand;
+  try {
+    ref = read4(reference);
+    cand = read4(candidate);
+  } catch (err) {
+    write3(`Cannot score the gate: ${err instanceof Error ? err.message : String(err)}
+`);
+    return 1;
+  }
+  const assessment = assess({
+    reference: ref.arm,
+    candidate: cand.arm,
+    set: policy.gate,
+    calibration: policy.calibration,
+    unmeasured: {
+      polarity: { ...plan.reversed.unmeasured, ...missing.polarity },
+      rephrase: { ...plan.reworded.unmeasured, ...missing.rephrase }
+    }
+  });
+  const recorded = `recorded: ${reference.label} answered ${ref.first ?? "at an unrecorded time"}, ${candidate.label} ${cand.first ?? "at an unrecorded time"}`;
+  if (args.json === true) {
+    write3(`${JSON.stringify({ policy: source, from: dirs, fixtures: fixtures.length, notes, ...assessment }, null, 2)}
+`);
+  } else {
+    write3(`Policy: ${source}
+`);
+    write3(
+      formatGate(assessment, {
+        endpoints: [reference.endpoint, candidate.endpoint],
+        models: [ref.model, cand.model],
+        questions: policy.gate.questionsFingerprint,
+        notes: [recorded, ...notes, "scored from files, so this can never attest a backend: an attestation says a server answered today"]
+      })
+    );
   }
   return assessment.attested ? 0 : 1;
 }
@@ -11930,6 +12124,7 @@ async function calibrate(args, write3) {
     return 1;
   }
   if (args.gate !== void 0) {
+    if (args.from !== void 0) return gateFromCommand(args, resolved.policy, resolved.source, root, fixtures, write3);
     return gateCommand(args, resolved.policy, resolved.source, root, fixtures, write3);
   }
   for (const [flag, value] of [["--reference", args.reference], ["--variants", args.variants], ["--injection", args.injection], ["--out-dir", args.outDir]]) {
@@ -14081,7 +14276,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.14\n");
+      process.stdout.write("0.2.15\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}
