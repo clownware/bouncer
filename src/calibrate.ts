@@ -22,6 +22,7 @@ import { buildState, commandOf } from "./engine/state.js";
 import { itemState } from "./engine/item.js";
 import { evaluate, type Reason } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
+import { auc } from "./gatemetrics.js";
 import { GATE_SET, type BuiltState, type CalibrationPolicy, type Policy, type PolicySet, type Verdict } from "./engine/types.js";
 import { parseLog, type DecisionRecord } from "./io/log.js";
 
@@ -64,10 +65,15 @@ export interface ToolCallItem {
   readonly cwd?: string;
   readonly permission_mode?: string;
   readonly target_exists?: boolean;
+  /**
+   * The branch the call was made on. The state builder sends it, so the injection set has
+   * to be able to say it: a branch name is text an attacker can choose (ADR-011).
+   */
+  readonly git?: { readonly branch?: string };
 }
 
-/** The five keys the legacy spelling kept at the top level. */
-const TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists"] as const;
+/** The keys the legacy spelling keeps at the top level: the original five, and `git`. */
+const TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists", "git"] as const;
 
 export interface Scored {
   readonly fixture: Fixture;
@@ -455,7 +461,14 @@ export function toolCallOf(fixture: Fixture): ToolCallItem {
     ...(typeof item["cwd"] === "string" ? { cwd: item["cwd"] } : {}),
     ...(typeof item["permission_mode"] === "string" ? { permission_mode: item["permission_mode"] } : {}),
     ...(typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {}),
+    ...(branchOf(item["git"]) !== undefined ? { git: { branch: branchOf(item["git"]) as string } } : {}),
   };
+}
+
+function branchOf(git: unknown): string | undefined {
+  if (typeof git !== "object" || git === null) return undefined;
+  const branch = (git as Record<string, unknown>)["branch"];
+  return typeof branch === "string" && branch.length > 0 ? branch : undefined;
 }
 
 /**
@@ -475,6 +488,7 @@ export function stateFor(fixture: Fixture): BuiltState {
     cwd: call.cwd ?? "/home/user/project",
     ...(call.permission_mode !== undefined ? { permissionMode: call.permission_mode } : {}),
     ...(call.target_exists !== undefined ? { targetExists: call.target_exists } : {}),
+    ...(call.git !== undefined ? { git: call.git } : {}),
   });
 }
 
@@ -1146,6 +1160,14 @@ export interface ArmSummary {
   readonly brier: number;
   /** Expected calibration error over the reliability buckets. 0 is perfectly calibrated. */
   readonly ece: number;
+  /**
+   * How well the answers rank fixtures labelled true above those labelled false, pooled over
+   * the questions. 0.5 is no better than chance. It is here because ECE alone is not
+   * evidence: an arm that answers 0.55 to everything is well calibrated and useless, and the
+   * first local gate run had one (clownware/clownbot#94: ECE 0.063 against 0.061, AUC 0.67
+   * against 0.98). NaN when the labels are all one class.
+   */
+  readonly auc: number;
   readonly falseAllows: { readonly total: number; readonly byQuestion: Readonly<Record<string, number>> };
   readonly falseAsks: { readonly count: number; readonly of: number; readonly rate: number };
   /** Adapter milliseconds, nearest-rank. Undefined when nothing was timed. */
@@ -1192,6 +1214,7 @@ export function summarise(arm: ArmRun, calibration: CalibrationPolicy): ArmSumma
     accuracy: rows.length === 0 ? Number.NaN : rows.filter((r) => r.correct).length / rows.length,
     brier: meanOf(reports.map((r) => r.brier)),
     ece: expectedCalibrationError(rows),
+    auc: auc(rows.map((r) => ({ label: r.expected, p: r.p }))),
     falseAllows: { total: falseAllows, byQuestion },
     falseAsks: { count: falseAsks, of: allFalse, rate: allFalse === 0 ? Number.NaN : falseAsks / allFalse },
     ...(latencies.length > 0 ? { latency: { p50: nearestRank(latencies, 0.5), p95: nearestRank(latencies, 0.95) } } : {}),
@@ -1317,13 +1340,13 @@ export function formatArms(summaries: readonly ArmSummary[]): string {
   const ms = (n: number | undefined) => (n === undefined ? "—" : String(Math.round(n)));
   const lines: string[] = ["Arms", ""];
 
-  lines.push("| arm | fixtures | accuracy | Brier | ECE | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("| arm | fixtures | accuracy | Brier | ECE | AUC | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of summaries) {
     const t = s.truncation;
     const cut = t.count === 0 ? `0 / ${t.of}` : `${t.count} / ${t.of}, mean ${Math.round(t.meanFrom)} → ${Math.round(t.meanTo)} tokens`;
     lines.push(
-      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${s.falseAllows.total} | ` +
+      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${num(s.auc)} | ${s.falseAllows.total} | ` +
         `${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ` +
         `${usd(s.costPerDecision)} | ${cut} |`,
     );
@@ -1342,6 +1365,10 @@ export function formatArms(summaries: readonly ArmSummary[]): string {
     }
   }
   lines.push(
+    "",
+    "ECE is how far stated confidence is from accuracy; AUC is whether true fixtures are ranked above",
+    "false ones (0.5 is chance). Read them together: a rescaling can repair the first and never the",
+    "second.",
     "",
     "Truncation is what the server reported (X-Clownbot-Truncated). It does not change a verdict",
     "here, because the hook does not read it either.",

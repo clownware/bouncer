@@ -17,6 +17,7 @@ import { JevAdapter, serverTruncation } from "../src/adapters/jev.js";
 import {
   compare,
   expectedCalibrationError,
+  formatArms,
   formatGates,
   gates,
   parseFixtures,
@@ -94,6 +95,18 @@ describe("summarise", () => {
 
   it("counts an all-false fixture that was asked about as a false ask, as a share of all-false fixtures", () => {
     expect(s.falseAsks).toEqual({ count: 1, of: 2, rate: 0.5 });
+  });
+
+  it("ranks: the one fixture labelled true scored below a false one, so AUC is under chance", () => {
+    // destructive rows: wipe (true) 0.02, build (false) 0.95, test (false) 0.02.
+    // The true row beats neither false row: a loss and a tie, 0.5 of 2.
+    expect(s.auc).toBeCloseTo(0.25, 10);
+  });
+
+  it("prints AUC beside ECE, because either one alone can pass a useless arm", () => {
+    const table = formatArms([s]);
+    expect(table).toContain("| ECE | AUC |");
+    expect(table).toContain("| 0.250 |");
   });
 
   it("reads latency nearest-rank", () => {

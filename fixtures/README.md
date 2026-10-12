@@ -168,7 +168,7 @@ first against the first in one run, so `--compare jev,jev@<url>,chat@<url>,local
 whole table from a single Jev sample. An arm can be labelled, `name=backend`, so a column
 reads `local-decision` while the header says which endpoint answered. It pairs rows on
 (fixture, question) and drops an answer either side did not produce from both, prints an
-**Arms** table (accuracy, Brier, expected calibration error, false allows by question,
+**Arms** table (accuracy, Brier, expected calibration error, AUC, false allows by question,
 false-ask rate, p50/p95 latency, cost per decision, requests the server truncated), lists
 every differing verdict with what decided each side, and ends each pair with two gates: the
 Brier gate (within `brier_within` of the first arm, every question meeting the bar) and the

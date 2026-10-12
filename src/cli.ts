@@ -63,7 +63,7 @@ async function main(argv: string[]): Promise<number> {
       return OK;
 
     case "--version":
-      process.stdout.write("0.2.11\n");
+      process.stdout.write("0.2.12\n");
       return OK;
 
     default:
