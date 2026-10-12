@@ -23,6 +23,7 @@
 // Exit status is 0 when the gate passes and 1 when it does not. Never 2.
 
 import { existsSync, readFileSync } from "node:fs";
+import { writeAtomic } from "../io/atomic.js";
 import { join } from "node:path";
 import type { Adapter } from "../adapters/types.js";
 import { score, scoreAnswered, type Answered, type Fixture } from "../calibrate.js";
@@ -32,6 +33,7 @@ import {
   checkVariants,
   parseInjection,
   parseVariants,
+  stampVariants,
   withVariants,
   type InjectionCase,
   type Variant,
@@ -310,4 +312,94 @@ export async function gateCommand(
   }
 
   return assessment.attested ? 0 : 1;
+}
+
+/**
+ * `bouncer calibrate --stamp <question[,question…]|all> [--restamp] [--variants dir]`
+ *
+ * Marks the variants of the questions named as written against the wording this policy
+ * ships, which is what lets `--gate` ask them. See `stampVariants` for what it will and will
+ * not touch. Exits 1 when a stale line was left alone, so a script cannot take "nothing
+ * happened" for "done".
+ *
+ * It says which policy file it read before it says anything else. Run with no `--policy`,
+ * the policy is resolved the way every command resolves it, and a personal
+ * `~/.bouncer/bouncer.yaml` wins over the repository's: stamping a repository's variants
+ * against one's own copy of the questions is the mistake this line exists to make visible.
+ */
+export function stampCommand(args: CalibrateArgs, policy: Policy, source: string, root: string, write: (s: string) => void): number {
+  for (const [flag, value] of [["--gate", args.gate], ["--from", args.from], ["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--out-dir", args.outDir]] as const) {
+    if (value !== undefined) {
+      write(`--stamp does not take ${flag}: it edits the variant files and asks no backend.\n`);
+      return 1;
+    }
+  }
+
+  const gate = policy.gate;
+  const asked = Object.keys(gate.questions);
+  const named = (args.stamp as string).split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (named.length === 0) {
+    write(`--stamp needs a question, several separated by commas, or "all". The policy asks: ${asked.join(", ")}.\n`);
+    return 1;
+  }
+  const everything = named.includes("all");
+  if (everything && args.restamp === true) {
+    // Restamping is a statement about one question someone has just reread.
+    write(`--restamp takes questions by name, not "all": it says each stale line was reread against the new wording.\n`);
+    return 1;
+  }
+  const unknown = named.filter((n) => n !== "all" && !asked.includes(n));
+  if (unknown.length > 0) {
+    write(`The policy asks no question named ${unknown.join(", ")}. It asks: ${asked.join(", ")}.\n`);
+    return 1;
+  }
+  const questions = new Set(everything ? asked : named);
+
+  const dir = args.variants ?? join(root, "fixtures", "variants");
+  write(`Policy: ${source}\n`);
+
+  let leftStale = false;
+  let found = false;
+  for (const file of ["polarity.jsonl", "rephrase.jsonl"]) {
+    const path = join(dir, file);
+    if (!existsSync(path)) continue;
+    found = true;
+
+    let result;
+    try {
+      result = stampVariants(readFileSync(path, "utf8"), gate, questions, { restamp: args.restamp === true });
+    } catch (err) {
+      write(`Cannot stamp ${path}: ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+
+    write(`${path}\n`);
+    for (const question of [...questions].sort()) {
+      const parts = [
+        result.stamped[question] !== undefined ? `${result.stamped[question]} stamped` : undefined,
+        result.current[question] !== undefined ? `${result.current[question]} already current` : undefined,
+        result.stale[question] !== undefined ? `${result.stale[question]} stale, left alone` : undefined,
+      ].filter((s): s is string => s !== undefined);
+      write(`  ${question}: ${parts.length > 0 ? parts.join(", ") : "no lines"}\n`);
+      if (result.stale[question] !== undefined) leftStale = true;
+    }
+    // The file someone has just reviewed. Replaced whole or not at all.
+    if (Object.keys(result.stamped).length > 0 && !writeAtomic(path, result.text)) {
+      write(`Cannot write ${path}. Nothing in it was changed.\n`);
+      return 1;
+    }
+  }
+
+  if (!found) {
+    write(`No polarity.jsonl or rephrase.jsonl in ${dir}.\n`);
+    return 1;
+  }
+  if (leftStale) {
+    write(
+      "\nA stale line was written against another wording of its question. Reread it against the\n" +
+        "question as it is now, fix it if it no longer means the same, then stamp that question with --restamp.\n",
+    );
+    return 1;
+  }
+  return 0;
 }

@@ -213,6 +213,85 @@ export function checkVariants(variants: readonly Variant[], set: PolicySet, kind
   return { usable, unmeasured };
 }
 
+export interface Stamped {
+  /** The file's new text. Identical to the input when nothing was stamped. */
+  readonly text: string;
+  /** Lines given a `base`, by question. */
+  readonly stamped: Readonly<Record<string, number>>;
+  /** Lines whose `base` already names the wording that ships, by question. */
+  readonly current: Readonly<Record<string, number>>;
+  /** Lines written against another wording and left alone, by question. */
+  readonly stale: Readonly<Record<string, number>>;
+}
+
+/**
+ * Writes the shipped wording's fingerprint into the variants of the questions named.
+ *
+ * A `base` is a claim: this line was written to mean the same as, or the opposite of, the
+ * question as it reads today, and someone has checked that it does. So stamping is asked
+ * for by question name and is never a side effect of a run, and it does the least it can:
+ *
+ *   - a line with no `base` gets one;
+ *   - a line whose `base` is already current is left byte for byte as it was;
+ *   - a line whose `base` names another wording is **stale** and is not touched, unless
+ *     `restamp` is set. Restamping says "the question changed and I have reread this line
+ *     against the new one". Doing it by default would erase the one signal that a question
+ *     was edited underneath its variants.
+ *
+ * Comments, blank lines and every other line keep their bytes and their order. Throws on a
+ * line that names a question the set does not ask, which is a typo or a deleted question
+ * and in either case not something to stamp around.
+ */
+export function stampVariants(
+  source: string,
+  set: PolicySet,
+  questions: ReadonlySet<string>,
+  options: { readonly restamp?: boolean } = {},
+): Stamped {
+  const count = (into: Record<string, number>, question: string) => {
+    into[question] = (into[question] ?? 0) + 1;
+  };
+  const stamped: Record<string, number> = {};
+  const current: Record<string, number> = {};
+  const stale: Record<string, number> = {};
+
+  const out = source.split("\n").map((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return line;
+
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch (err) {
+      throw new Error(`variant line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const name = raw["question"];
+    if (typeof name !== "string") throw new Error(`variant line ${i + 1} names no "question"`);
+    const question = set.questions[name];
+    if (question === undefined) {
+      throw new Error(`variant line ${i + 1} is for "${name}", which the policy does not ask (it asks: ${Object.keys(set.questions).join(", ")})`);
+    }
+    if (!questions.has(name)) return line;
+
+    const fingerprintNow = questionFingerprint(question);
+    if (raw["base"] === fingerprintNow) {
+      count(current, name);
+      return line;
+    }
+    if (raw["base"] !== undefined && options.restamp !== true) {
+      count(stale, name);
+      return line;
+    }
+
+    count(stamped, name);
+    // `base` directly after `question`, so the two things that identify a line sit together.
+    const { question: _question, base: _base, ...rest } = raw;
+    return JSON.stringify({ question: name, base: fingerprintNow, ...rest });
+  });
+
+  return { text: out.join("\n"), stamped, current, stale };
+}
+
 /** A policy set with every question that has a usable variant replaced by it. Probes are kept. */
 export function withVariants<S extends PolicySet>(set: S, chosen: Readonly<Record<string, Variant>>): S {
   const questions = Object.fromEntries(

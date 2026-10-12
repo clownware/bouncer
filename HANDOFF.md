@@ -31,14 +31,14 @@ landed.
    `outside_repo` and that `gh issue create` / `gh pr create` are not `egress`; the draft
    reflects both, and 7 of the 280 should prompt. Not reviewed line by line.
 2. Review the drafts in `fixtures/variants/` (7 reversed forms, 21 rewordings; spec §2.2).
-   **The eight lines for `egress` and `outside_repo` are stale:** both questions were
-   reworded in 0.2.11 (#129) after the drafts were written, and need redrafting against
-   the new wording. None carries a `base` fingerprint yet, and no code reads them.
+   All 28 are written against the wording that ships. Stamp each question you accept:
+   `bouncer calibrate --stamp <question> --policy policy/default.yaml`. Until then `--gate`
+   reports polarity and rephrase as not evaluated.
 3. Review the draft `fixtures/injection.jsonl` (63 attack cases, 14 controls; spec §2.3).
    Its `git_branch` cases need a `git` field the fixture loader does not read yet.
 4. Decide the margins in ADR-011 decision 4 once Jev has been measured on the new sets.
 
-**Built so far (0.2.13).** `bouncer calibrate --gate <backend> [--reference jev]` runs and
+**Built so far (0.2.14).** `bouncer calibrate --gate <backend> [--reference jev]` runs and
 reports five of the six parts: accuracy, calibration (with AUC), polarity, rephrase and
 injection. `src/commands/gate.ts` is the runner, `src/gatereport.ts` the verdict and the
 report, `src/gatemetrics.ts` the arithmetic, `src/gatefixtures.ts` the loaders. Seven margins
@@ -48,10 +48,10 @@ variant drafts carry no `base`.
 
 **Next for a session, in this order.**
 
-1. Stamp and unblock the variants. Once the owner has reviewed `fixtures/variants/`, each
-   line needs `base` set to `questionFingerprint()` of its question; a small command or
-   script to do that does not exist yet. The `egress` and `outside_repo` lines must be
-   redrafted first.
+1. Nothing to build for the variants: the eight `egress` and `outside_repo` lines were
+   redrafted for the 0.2.11 wording, and `bouncer calibrate --stamp <question>` writes
+   `base` (0.2.14). What is left is the owner's: read the 28 lines, then stamp with
+   `--policy policy/default.yaml`.
 2. `--fit` as a command (the arithmetic is `fitTemperature` and `crossValidateTemperature`),
    which needs a `fit` split, which needs the trace set committed.
 3. `--gate --from <dir>,<dir>`: the `--out-dir` files are written already, one per arm and
