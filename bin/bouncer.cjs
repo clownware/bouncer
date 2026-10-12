@@ -11131,6 +11131,44 @@ function checkVariants(variants, set, kind) {
   }
   return { usable, unmeasured };
 }
+function stampVariants(source, set, questions, options = {}) {
+  const count = (into, question) => {
+    into[question] = (into[question] ?? 0) + 1;
+  };
+  const stamped = {};
+  const current = {};
+  const stale = {};
+  const out = source.split("\n").map((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("//")) return line;
+    let raw;
+    try {
+      raw = JSON.parse(trimmed);
+    } catch (err) {
+      throw new Error(`variant line ${i + 1} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const name = raw["question"];
+    if (typeof name !== "string") throw new Error(`variant line ${i + 1} names no "question"`);
+    const question = set.questions[name];
+    if (question === void 0) {
+      throw new Error(`variant line ${i + 1} is for "${name}", which the policy does not ask (it asks: ${Object.keys(set.questions).join(", ")})`);
+    }
+    if (!questions.has(name)) return line;
+    const fingerprintNow = questionFingerprint(question);
+    if (raw["base"] === fingerprintNow) {
+      count(current, name);
+      return line;
+    }
+    if (raw["base"] !== void 0 && options.restamp !== true) {
+      count(stale, name);
+      return line;
+    }
+    count(stamped, name);
+    const { question: _question, base: _base, ...rest } = raw;
+    return JSON.stringify({ question: name, base: fingerprintNow, ...rest });
+  });
+  return { text: out.join("\n"), stamped, current, stale };
+}
 function withVariants(set, chosen) {
   const questions = Object.fromEntries(
     Object.entries(set.questions).map(([name, question]) => [name, chosen[name]?.wording ?? question])
@@ -11756,11 +11794,88 @@ Answers written to ${args.outDir}, one file per arm and pass.
   }
   return assessment.attested ? 0 : 1;
 }
+function stampCommand(args, policy, source, root, write3) {
+  for (const [flag, value] of [["--gate", args.gate], ["--from", args.from], ["--compare", args.compare], ["--backend", args.backend], ["--out", args.out], ["--out-dir", args.outDir]]) {
+    if (value !== void 0) {
+      write3(`--stamp does not take ${flag}: it edits the variant files and asks no backend.
+`);
+      return 1;
+    }
+  }
+  const gate = policy.gate;
+  const asked = Object.keys(gate.questions);
+  const named = args.stamp.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (named.length === 0) {
+    write3(`--stamp needs a question, several separated by commas, or "all". The policy asks: ${asked.join(", ")}.
+`);
+    return 1;
+  }
+  const everything = named.includes("all");
+  if (everything && args.restamp === true) {
+    write3(`--restamp takes questions by name, not "all": it says each stale line was reread against the new wording.
+`);
+    return 1;
+  }
+  const unknown = named.filter((n) => n !== "all" && !asked.includes(n));
+  if (unknown.length > 0) {
+    write3(`The policy asks no question named ${unknown.join(", ")}. It asks: ${asked.join(", ")}.
+`);
+    return 1;
+  }
+  const questions = new Set(everything ? asked : named);
+  const dir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
+  write3(`Policy: ${source}
+`);
+  let leftStale = false;
+  let found = false;
+  for (const file of ["polarity.jsonl", "rephrase.jsonl"]) {
+    const path = (0, import_node_path8.join)(dir, file);
+    if (!(0, import_node_fs8.existsSync)(path)) continue;
+    found = true;
+    let result;
+    try {
+      result = stampVariants((0, import_node_fs8.readFileSync)(path, "utf8"), gate, questions, { restamp: args.restamp === true });
+    } catch (err) {
+      write3(`Cannot stamp ${path}: ${err instanceof Error ? err.message : String(err)}
+`);
+      return 1;
+    }
+    write3(`${path}
+`);
+    for (const question of [...questions].sort()) {
+      const parts = [
+        result.stamped[question] !== void 0 ? `${result.stamped[question]} stamped` : void 0,
+        result.current[question] !== void 0 ? `${result.current[question]} already current` : void 0,
+        result.stale[question] !== void 0 ? `${result.stale[question]} stale, left alone` : void 0
+      ].filter((s) => s !== void 0);
+      write3(`  ${question}: ${parts.length > 0 ? parts.join(", ") : "no lines"}
+`);
+      if (result.stale[question] !== void 0) leftStale = true;
+    }
+    if (Object.keys(result.stamped).length > 0 && !writeAtomic(path, result.text)) {
+      write3(`Cannot write ${path}. Nothing in it was changed.
+`);
+      return 1;
+    }
+  }
+  if (!found) {
+    write3(`No polarity.jsonl or rephrase.jsonl in ${dir}.
+`);
+    return 1;
+  }
+  if (leftStale) {
+    write3(
+      "\nA stale line was written against another wording of its question. Reread it against the\nquestion as it is now, fix it if it no longer means the same, then stamp that question with --restamp.\n"
+    );
+    return 1;
+  }
+  return 0;
+}
 
 // src/commands/calibrate.ts
 var FLAGS = {
-  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir"],
-  switches: ["json"]
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp"],
+  switches: ["json", "restamp"]
 };
 function parseArgs(argv) {
   const { values, switches, error } = parseFlags(argv, FLAGS);
@@ -11778,6 +11893,8 @@ function parseArgs(argv) {
     ...value("variants") !== void 0 ? { variants: value("variants") } : {},
     ...value("injection") !== void 0 ? { injection: value("injection") } : {},
     ...value("out-dir") !== void 0 ? { outDir: value("out-dir") } : {},
+    ...value("stamp") !== void 0 ? { stamp: value("stamp") } : {},
+    ...switches.has("restamp") ? { restamp: true } : {},
     json: switches.has("json"),
     ...error !== void 0 ? { error } : {}
   };
@@ -11794,6 +11911,13 @@ async function calibrate(args, write3) {
 `);
     for (const d of errorsIn(resolved.diagnostics)) write3(`  ${d.path || "(top level)"}: ${d.message}
 `);
+    return 1;
+  }
+  if (args.stamp !== void 0) {
+    return stampCommand(args, resolved.policy, resolved.source, root, write3);
+  }
+  if (args.restamp === true) {
+    write3("--restamp belongs to --stamp, which was not given.\n");
     return 1;
   }
   const fixturePath = args.fixtures ?? (0, import_node_path9.join)(root, "fixtures", "gate.jsonl");
@@ -13957,7 +14081,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.13\n");
+      process.stdout.write("0.2.14\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

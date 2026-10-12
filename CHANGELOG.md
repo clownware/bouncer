@@ -8,6 +8,29 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.14
+
+**`bouncer calibrate --stamp <question>`** (#127). `--gate` asks a reversed form or a
+rewording only when its line carries the fingerprint of the question it was written against.
+This is the command that writes it:
+
+```bash
+bouncer calibrate --stamp destructive,prod --policy policy/default.yaml
+bouncer calibrate --stamp all
+```
+
+- A line with no `base` gets one. A line that is already current is left exactly as it was.
+- A line whose `base` names another wording is **stale**: its question was edited after it
+  was stamped. It is left alone and the command exits 1, until you reread the line and name
+  its question with `--restamp`. `--restamp` does not take `all`.
+- It prints which policy file it read first. With no `--policy`, a personal
+  `~/.bouncer/bouncer.yaml` wins over a repository's, and stamping against the wrong copy of
+  the questions is the mistake to watch for.
+
+The draft variants for `egress` and `outside_repo` were rewritten for the wording 0.2.11
+shipped. All 28 lines in `fixtures/variants/` are still unreviewed and unstamped, so
+`--gate` reports polarity and rephrase as not evaluated until you stamp them.
+
 ## 0.2.13
 
 **`bouncer calibrate --gate <backend>`** (#127, ADR-011). Holds a candidate backend to the

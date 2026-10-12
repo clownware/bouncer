@@ -6,6 +6,7 @@
 //
 //   bouncer calibrate [--fixtures path] [--set name] [--backend jev|jev@<url>|chat@<url>|local|mock] [--compare [name=]a,[name=]b] [--out run.jsonl] [--json]
 //   bouncer calibrate --gate <[name=]backend> [--reference <[name=]backend>]   (see ./gate.ts)
+//   bouncer calibrate --stamp <question[,question…]|all> [--restamp]              (see ./gate.ts)
 //   bouncer calibrate --from <log.jsonl> [--fixtures path] [--set name] [--json]
 //   bouncer calibrate --from [name=]a.jsonl,[name=]b.jsonl[,...] [--fixtures path] [--set name] [--json]
 //
@@ -72,7 +73,7 @@ import {
   type Scored,
 } from "../calibrate.js";
 import { parseFlags } from "./args.js";
-import { gateCommand } from "./gate.js";
+import { gateCommand, stampCommand } from "./gate.js";
 import { GATE_SET, type Policy } from "../engine/types.js";
 import { apiKey, chatBackend, errorsIn, jevCompatible, keyFromEnv, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
 import type { DecisionRecord } from "../io/log.js";
@@ -101,13 +102,17 @@ export interface CalibrateArgs {
   readonly injection?: string;
   /** `--gate`: where to write each arm's answers, one file per pass. */
   readonly outDir?: string;
+  /** Questions whose variants to mark as written against the shipped wording, or `all`. */
+  readonly stamp?: string;
+  /** `--stamp`: also replace a `base` that names another wording. */
+  readonly restamp?: boolean;
   /** What was wrong with the argv. The command prints it and exits 1 without running. */
   readonly error?: string;
 }
 
 const FLAGS = {
-  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir"],
-  switches: ["json"],
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp"],
+  switches: ["json", "restamp"],
 } as const;
 
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
@@ -126,6 +131,8 @@ export function parseArgs(argv: readonly string[]): CalibrateArgs {
     ...(value("variants") !== undefined ? { variants: value("variants") as string } : {}),
     ...(value("injection") !== undefined ? { injection: value("injection") as string } : {}),
     ...(value("out-dir") !== undefined ? { outDir: value("out-dir") as string } : {}),
+    ...(value("stamp") !== undefined ? { stamp: value("stamp") as string } : {}),
+    ...(switches.has("restamp") ? { restamp: true } : {}),
     json: switches.has("json"),
     ...(error !== undefined ? { error } : {}),
   };
@@ -143,6 +150,15 @@ export async function calibrate(args: CalibrateArgs, write: (s: string) => void)
   if (resolved.policy === undefined) {
     write(`Cannot calibrate: ${resolved.source} did not load.\n`);
     for (const d of errorsIn(resolved.diagnostics)) write(`  ${d.path || "(top level)"}: ${d.message}\n`);
+    return 1;
+  }
+
+  // Before the fixtures are read: stamping edits the variant files and scores nothing.
+  if (args.stamp !== undefined) {
+    return stampCommand(args, resolved.policy, resolved.source, root, write);
+  }
+  if (args.restamp === true) {
+    write("--restamp belongs to --stamp, which was not given.\n");
     return 1;
   }
 

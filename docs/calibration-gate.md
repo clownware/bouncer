@@ -5,9 +5,10 @@ decision. [ADR-011](adr/011-the-local-backend-is-chosen-by-a-gate.md) is the dec
 the reasoning; this is the contract to build against. Where this and the ADR disagree, the
 ADR wins.
 
-**Built as of 0.2.13:** the datasets' loaders (§2), how a run asks (§3), the accuracy,
+**Built as of 0.2.14:** the datasets' loaders (§2), how a run asks (§3), the accuracy,
 calibration, polarity, rephrase and injection parts (§4.1 to §4.5) without strata, the report
-(§6) and the policy keys (§8) except `min_stratum_n` and `cold_idle_s`. **Not built:** the
+(§6), the policy keys (§8) except `min_stratum_n` and `cold_idle_s`, and `--stamp`, which
+writes a variant's `base` (§2.2). **Not built:** the
 trace set and its strata, latency (§4.6), the fit as a command (§5; the arithmetic exists),
 `--gate --from`, and the attestation (§7). So `--gate` reports five parts and cannot pass.
 The paragraph below describes the starting point and is kept for the delta.

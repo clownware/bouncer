@@ -395,6 +395,77 @@ describe("through the built bundle", () => {
     expect(payload.parts.map((p: { name: string }) => p.name)).toEqual(["accuracy", "calibration", "polarity", "rephrase", "injection", "latency"]);
   });
 
+  describe("--stamp", () => {
+    const names = Object.keys(POLICY.gate.questions);
+    function variantsDir(): string {
+      const dir = temp();
+      for (const file of ["polarity.jsonl", "rephrase.jsonl"]) writeFileSync(join(dir, file), readFileSync(join("fixtures/variants", file), "utf8"));
+      return dir;
+    }
+
+    it("stamps the questions named, after which --gate asks them and nothing else", () => {
+      const dir = variantsDir();
+      const stamp = calibrate(["--stamp", "destructive,egress", "--variants", dir], temp());
+      expect(stamp.status).toBe(0);
+      expect(stamp.stdout).toMatch(/^Policy: .*policy\.yaml\n/);
+      expect(stamp.stdout).toContain("  destructive: 1 stamped\n");
+      expect(stamp.stdout).toContain("  destructive: 3 stamped\n");
+
+      const run = calibrate(["--gate", "mock", "--reference", "mock", "--variants", dir], temp());
+      // The reversed pass was made. The keyword mock answers from the command and never reads
+      // the question, so it answers a reversed form like the original and is disqualified for
+      // it, which is the gate working.
+      expect(run.stdout).toMatch(/\| polarity \| flips .* \| DISQUALIFIED \|/);
+      expect(run.stdout).not.toContain("destructive not measured");
+      expect(run.stdout).not.toContain("egress not measured");
+      expect(run.stdout).toContain("prod not measured: a variant carries no base fingerprint");
+    });
+
+    it("stamps every question with `all`, and then polarity and rephrase are measured", () => {
+      const dir = variantsDir();
+      expect(calibrate(["--stamp", "all", "--variants", dir], temp()).status).toBe(0);
+      const again = calibrate(["--stamp", "all", "--variants", dir], temp());
+      expect(again.status).toBe(0);
+      expect(again.stdout).toContain("  egress: 3 already current\n");
+
+      const run = calibrate(["--gate", "mock", "--reference", "mock", "--variants", dir, "--json"], temp());
+      const parts = Object.fromEntries(JSON.parse(run.stdout).parts.map((p: { name: string; result: string; n: string }) => [p.name, p]));
+      // The mock against itself never flips, and the keyword mock cannot rank a reversed
+      // question, so what this pins is that both parts were asked and scored, over every row.
+      expect(parts["rephrase"]).toMatchObject({ result: "pass", n: String(179 * 3) });
+      expect(parts["polarity"].n).toBe("179");
+      expect(names.every((n) => !run.stdout.includes(`${n} not measured`))).toBe(true);
+    });
+
+    it("leaves a stale line alone and exits 1, until the question is named with --restamp", () => {
+      const dir = variantsDir();
+      const path = join(dir, "polarity.jsonl");
+      writeFileSync(path, readFileSync(path, "utf8").replace('{"question": "prod",', '{"question": "prod", "base": "9-00000000",'));
+      const before = readFileSync(path, "utf8");
+
+      const refused = calibrate(["--stamp", "prod", "--variants", dir], temp());
+      expect(refused.status).toBe(1);
+      expect(refused.stdout).toContain("  prod: 1 stale, left alone\n");
+      expect(refused.stdout).toContain("--restamp");
+      expect(readFileSync(path, "utf8")).toBe(before);
+
+      const forced = calibrate(["--stamp", "prod", "--restamp", "--variants", dir], temp());
+      expect(forced.status).toBe(0);
+      expect(readFileSync(path, "utf8")).toContain(`"base":"${questionFingerprint(POLICY.gate.questions["prod"]!)}"`);
+    });
+
+    it.each([
+      [["--stamp", "all", "--restamp"], '--restamp takes questions by name, not "all"'],
+      [["--stamp", "nope"], "The policy asks no question named nope."],
+      [["--stamp", "prod", "--gate", "mock"], "--stamp does not take --gate"],
+      [["--restamp"], "--restamp belongs to --stamp, which was not given."],
+    ])("refuses %j", (args, message) => {
+      const run = calibrate([...args, "--variants", variantsDir()], temp());
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain(message);
+    });
+  });
+
   it.each([
     [["--gate", "mock", "--compare", "jev"], "--gate does not take --compare"],
     [["--gate", "mock", "--out", "x.jsonl"], "--gate does not take --out"],

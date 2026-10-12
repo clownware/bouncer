@@ -20,6 +20,7 @@ import {
   parseTraces,
   parseVariants,
   questionFingerprint,
+  stampVariants,
   withVariants,
 } from "../src/gatefixtures.js";
 
@@ -196,5 +197,62 @@ describe("the drafts in fixtures/", () => {
     expect(rewordings).toHaveLength(Object.keys(GATE.questions).length * REWORDINGS);
     expect(checkVariants(reversedForms, GATE, "reversed").usable).toEqual({});
     expect(checkVariants(rewordings, GATE, "rephrase").usable).toEqual({});
+  });
+});
+
+describe("stampVariants", () => {
+  const fingerprintOf = (name: string) => questionFingerprint(GATE.questions[name]!);
+  const line = (question: string, id: string, base?: string) =>
+    JSON.stringify({ question, ...(base !== undefined ? { base } : {}), id, instructions: `${id} of ${question}`, note: "n" });
+  const SOURCE = ["// a header that must survive", line("destructive", "r1"), "", line("prod", "r1"), line("destructive", "r2"), ""].join("\n");
+
+  it("gives the lines of the questions named a base, and leaves every other byte alone", () => {
+    const result = stampVariants(SOURCE, GATE, new Set(["destructive"]));
+    expect(result.stamped).toEqual({ destructive: 2 });
+    const lines = result.text.split("\n");
+    expect(lines[0]).toBe("// a header that must survive");
+    expect(lines[3]).toBe(line("prod", "r1"));
+    expect(lines).toHaveLength(SOURCE.split("\n").length);
+    expect(JSON.parse(lines[1]!)).toEqual({ question: "destructive", base: fingerprintOf("destructive"), id: "r1", instructions: "r1 of destructive", note: "n" });
+    expect(lines[1]!.startsWith(`{"question":"destructive","base":"${fingerprintOf("destructive")}"`)).toBe(true);
+  });
+
+  it("makes what it stamped usable, and only that", () => {
+    const three = [1, 2, 3].map((i) => line("destructive", `r${i}`)).join("\n");
+    const before = checkVariants(parseVariants(three, "rephrase"), GATE, "rephrase");
+    expect(before.usable).toEqual({});
+    const after = checkVariants(parseVariants(stampVariants(three, GATE, new Set(["destructive"])).text, "rephrase"), GATE, "rephrase");
+    expect(Object.keys(after.usable)).toEqual(["destructive"]);
+  });
+
+  it("is a no-op on a line that is already current, down to the bytes", () => {
+    const once = stampVariants(SOURCE, GATE, new Set(["destructive", "prod"]));
+    const twice = stampVariants(once.text, GATE, new Set(["destructive", "prod"]));
+    expect(twice.text).toBe(once.text);
+    expect(twice.stamped).toEqual({});
+    expect(twice.current).toEqual({ destructive: 2, prod: 1 });
+  });
+
+  it("leaves a stale line alone and says so, because overwriting it would hide that the question changed", () => {
+    const source = [line("destructive", "r1", "9-00000000"), line("prod", "r1", fingerprintOf("prod"))].join("\n");
+    const result = stampVariants(source, GATE, new Set(["destructive", "prod"]));
+    expect(result.text).toBe(source);
+    expect(result.stale).toEqual({ destructive: 1 });
+    expect(result.current).toEqual({ prod: 1 });
+  });
+
+  it("replaces a stale base when told the line was reread", () => {
+    const source = line("destructive", "r1", "9-00000000");
+    const result = stampVariants(source, GATE, new Set(["destructive"]), { restamp: true });
+    expect(result.stamped).toEqual({ destructive: 1 });
+    expect(JSON.parse(result.text).base).toBe(fingerprintOf("destructive"));
+  });
+
+  it.each([
+    ["a question the policy does not ask", line("made_up", "r1"), /which the policy does not ask/],
+    ["a line that is not JSON", "{nope", /line 1 is not valid JSON/],
+    ["a line with no question", '{"id":"r1"}', /names no "question"/],
+  ])("refuses %s, whichever questions were named", (_name, source, message) => {
+    expect(() => stampVariants(source, GATE, new Set(["destructive"]))).toThrow(message);
   });
 });

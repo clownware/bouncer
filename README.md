@@ -359,6 +359,12 @@ reversed forms and rewordings in [`fixtures/variants/`](fixtures/variants) are u
 drafts that `--gate` will not ask until each is stamped with the wording it was written
 against. What it gives you today is the report.
 
+Stamping is `bouncer calibrate --stamp <question>` (or `all`), run once you have read a
+question's lines and agree they mean what they should. If you edit a question afterwards, its
+variants go stale and stop being asked; reread them and stamp again with `--restamp`. A
+policy with questions of its own needs variants of its own: the shipped ones are written
+against the shipped wording and will read as stale against anything else.
+
 ## Modes
 
 Bouncer's mode decides what it is allowed to emit. It is one key in the policy file.
