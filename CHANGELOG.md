@@ -39,8 +39,8 @@ Seven margins join the policy's `calibration` block, all optional and all commen
 `policy/default.yaml`. A part whose margin is unset is not evaluated, which is not a pass.
 The exit status is 0 only when the gate passes, and never 2.
 
-A hook call costs about half a millisecond more, from a larger bundle: eight paired runs
-against the previous build had medians between −0.1 and +0.9 ms on about 37 ms.
+A hook call costs about half a millisecond more, from a larger bundle: twelve paired runs
+against the previous build had medians between −0.1 and +1.0 ms on about 37 ms.
 
 ## 0.2.12
 
