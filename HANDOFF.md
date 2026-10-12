@@ -21,6 +21,13 @@ So the ADR-011 work below is parked, not abandoned, and the order is:
 2. The next consumer: #92, then the skill router (ADR-006, open questions in #58).
 3. Filed and not started: #138, #139, #140, #130, #134, #53.
 
+An open-weights backend was measured for the first time on 2026-10-12 (#139):
+[Qwen3.6-27B through the logit path](docs/calibration/2026-10-12-qwen36-27b-1.md). It ranks
+nearly as well as Jev (AUC 0.966 against 0.986), prompts on 54 of 60 safe fixtures at the
+shipped thresholds, and takes 15.7 s a fixture. Fitting thresholds per question on held-out
+data (#140) is what would say whether it is usable for the batch commands. #149 lists the
+other open-weights models the research corpus records.
+
 The four noisy hard rules are done: #87, #98 and #126 in 0.2.18, #122 in 0.2.19.
 
 **Waiting on the owner.**

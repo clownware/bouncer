@@ -8,6 +8,16 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.21
+
+**`bouncer calibrate --timeout <ms>`**: how long one fixture may take, all of its questions
+together. The default is 30 seconds, as before, which suits a hosted API. A local 27B model
+took 16 to 19 seconds a fixture and a whole run was lost to one that ran longer; a timeout
+still ends the run with nothing written, so give a slow backend room.
+
+The run that found this is the first live one of `backend: local`:
+[Qwen3.6-27B against Jev](docs/calibration/2026-10-12-qwen36-27b-1.md). It does not pass.
+
 ## 0.2.20
 
 **`credential-on-the-command-line` no longer fires on a path to a key file** (#150).

@@ -644,6 +644,9 @@ BOUNCER_TYPESAFE_API_KEY=… node bin/bouncer.cjs calibrate --out docs/calibrati
 node bin/bouncer.cjs calibrate --from docs/calibration/run.jsonl
 ```
 
+A slow backend needs `--timeout <ms>`, the time one fixture may take: the default is 30
+seconds and a timeout ends the run with nothing written.
+
 `--out` writes what the classifier said about every fixture, one line each. The second
 command needs no key, applies the hard rules the live run applied, and prints the same
 table — until you move a threshold, at which point it prints what that threshold would have

@@ -10578,7 +10578,8 @@ function shapeOf(raw, line) {
 function loadFixtures(path) {
   return parseFixtures((0, import_node_fs7.readFileSync)(path, "utf8"));
 }
-async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) {
+var FIXTURE_TIMEOUT_MS = 3e4;
+async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET, timeoutMs = FIXTURE_TIMEOUT_MS) {
   const set = policy.sets[setName];
   if (set === void 0) {
     throw new Error(`the policy defines no set named "${setName}" (it has: ${Object.keys(policy.sets).join(", ")})`);
@@ -10588,7 +10589,7 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
   const results = [];
   for (const [i, fixture] of fixtures.entries()) {
     const state = stateFor(fixture);
-    const response = await adapter.decide({ state: state.text, questions, timeoutMs: 3e4 });
+    const response = await adapter.decide({ state: state.text, questions, timeoutMs });
     const answers = {};
     const probes = {};
     for (const name of Object.keys(questions)) {
@@ -12320,13 +12321,17 @@ function stampCommand(args, policy, source, root, write3) {
 
 // src/commands/calibrate.ts
 var FLAGS = {
-  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp"],
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp", "timeout"],
   switches: ["json", "restamp"]
 };
 function parseArgs(argv) {
-  const { values, switches, error } = parseFlags(argv, FLAGS);
+  const { values, switches, error: flagError } = parseFlags(argv, FLAGS);
   const value = (name) => values.get(name);
+  const timeout = value("timeout") !== void 0 ? Number(value("timeout")) : void 0;
+  const error = flagError ?? (timeout !== void 0 && !(Number.isInteger(timeout) && timeout > 0) ? `--timeout takes a whole number of milliseconds, not "${value("timeout")}".
+` : void 0);
   return {
+    ...timeout !== void 0 && error === void 0 ? { timeoutMs: timeout } : {},
     ...value("fixtures") !== void 0 ? { fixtures: value("fixtures") } : {},
     ...value("set") !== void 0 ? { set: value("set") } : {},
     ...value("from") !== void 0 ? { from: value("from") } : {},
@@ -12762,7 +12767,8 @@ async function run(fixtures, policy, adapter, label, total, args, answered) {
       answered.push(a);
       if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
     },
-    args.set
+    args.set,
+    args.timeoutMs
   );
   if (!args.json) process.stderr.write("\r\x1B[K");
   return scored;
@@ -14814,7 +14820,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.20\n");
+      process.stdout.write("0.2.21\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

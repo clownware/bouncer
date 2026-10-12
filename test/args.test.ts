@@ -71,6 +71,14 @@ describe("the commands' own parsers", () => {
     expect(calibrateArgs(["--policy", "p.yaml"]).error).toBeUndefined();
     expect(calibrateArgs(["fixtures.jsonl"]).error).toContain("Unexpected argument");
     expect(calibrateArgs(["--backned", "mock"]).error).toContain("Unknown flag");
+    // A local 27B model took 18 s a fixture and a whole run was lost to the 30 s default (#139).
+    expect(calibrateArgs(["--timeout", "180000"])).toMatchObject({ timeoutMs: 180000 });
+    expect(calibrateArgs([]).timeoutMs).toBeUndefined();
+    for (const bad of ["0", "-5", "1.5", "soon"]) {
+      const parsed = calibrateArgs(["--timeout", bad]);
+      expect(parsed.error, bad).toContain("whole number of milliseconds");
+      expect(parsed.timeoutMs, bad).toBeUndefined();
+    }
   });
 
   it("judge refuses a concurrency that is not a number", () => {
