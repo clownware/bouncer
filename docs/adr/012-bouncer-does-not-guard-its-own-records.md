@@ -1,7 +1,8 @@
 # ADR-012: Bouncer does not guard this repository's records, and says what does
 
 - **Status:** accepted on 2026-10-12, by the merge of #142; the account of platform
-  enforcement in the context and in decision 3 corrected the same day, in place
+  enforcement in the context and in decision 3 corrected the same day, in place; decision 4's
+  open question settled by ADR-013
 - **Date:** 2026-10-12
 - **Context for:** how this repository is governed; no shipped behaviour changes
 
@@ -99,6 +100,12 @@ changes shipped behaviour, so it needs a fixture, a question or a rule in the sa
 (`CLAUDE.md`: a computed fact is decoration until a question reads it), a bench against the
 base, and an answer to the legitimate case: a user who asks an agent to edit their policy.
 Tracked as #141.
+
+> **Decided on 2026-10-12, by ADR-013.** The file gets a label, `gate_policy`, and three
+> hard-rule entries read it: one for every `Write` and `Edit`, two for the shell verbs that
+> can only be changing it. In `seatbelt` the edit is denied and the answer to the legitimate
+> case is to edit the file yourself. Decision 1 above is untouched, and ADR-013 says why the
+> two files are different questions.
 
 ## Consequences
 

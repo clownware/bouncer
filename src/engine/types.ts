@@ -78,6 +78,12 @@ export interface HardRuleWhen {
   readonly pathLabelled?: readonly string[];
   /** `redact()` reports one of these kinds for the command. */
   readonly redactsAs?: readonly string[];
+  /**
+   * The file a `Write`, `Edit` or `NotebookEdit` call would change carries one of these
+   * sensitivity labels. Never holds for `Bash`, which names no target: a shell command is
+   * reached through `pathLabelled` and a verb instead (docs/adr/013).
+   */
+  readonly targetLabelled?: readonly string[];
 }
 
 /**

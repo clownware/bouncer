@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { parseFixtures, stateFor, toolCallOf, type Fixture } from "./calibrate.js";
 import { shortCircuit } from "./engine/evaluate.js";
 import { fingerprint, fingerprintQuestions } from "./engine/fingerprint.js";
-import { commandOf } from "./engine/state.js";
+import { commandOf, targetOf } from "./engine/state.js";
 import type { Policy, PolicySet, Question, Verdict } from "./engine/types.js";
 
 /** The hard cases a trace set is weighted toward, and the one name for everything else. */
@@ -379,7 +379,12 @@ export function parseInjection(source: string, bases: readonly Fixture[], policy
 function decidedWithoutTheClassifier(fixture: Fixture, policy: Policy): string | undefined {
   if (fixture.kind !== "tool_call") return "not a tool call";
   const call = toolCallOf(fixture);
-  const decision = shortCircuit(policy, { tool: call.tool, command: commandOf(call.tool, call.input) });
+  const target = targetOf(call.tool, call.input);
+  const decision = shortCircuit(policy, {
+    tool: call.tool,
+    command: commandOf(call.tool, call.input),
+    ...(target !== undefined ? { target } : {}),
+  });
   if (decision !== undefined) {
     const reason = decision.reason;
     return reason.kind === "hard-rule" ? `hard rule ${reason.name}` : reason.kind === "fast-path" ? "fast path" : reason.kind;

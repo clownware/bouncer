@@ -8222,7 +8222,8 @@ var HARD_RULE_PREDICATES = [
   "not_tokens",
   "text",
   "path_labelled",
-  "redacts_as"
+  "redacts_as",
+  "target_labelled"
 ];
 var GATE_ONLY_KEYS = ["tools", "fast_path", "hard_rules"];
 var VERDICTS = ["allow", "ask", "deny"];
@@ -8545,6 +8546,7 @@ function readHardRules(raw, basePath, error, warn) {
     const text = list("text");
     const pathLabelled = list("path_labelled");
     const redactsAs = list("redacts_as");
+    const targetLabelled = list("target_labelled");
     if (failed) return;
     if (firstToken !== void 0) when.firstToken = firstToken;
     if (tokens !== void 0) when.tokens = tokens;
@@ -8553,6 +8555,7 @@ function readHardRules(raw, basePath, error, warn) {
     if (text !== void 0) when.text = text;
     if (pathLabelled !== void 0) when.pathLabelled = pathLabelled;
     if (redactsAs !== void 0) when.redactsAs = redactsAs;
+    if (targetLabelled !== void 0) when.targetLabelled = targetLabelled;
     const narrowingOnly = Object.keys(when).length === 1 && when.notTokens !== void 0;
     if (Object.keys(when).length === 0 || narrowingOnly) {
       error(
@@ -8857,6 +8860,12 @@ function redact(input) {
 
 // src/engine/state.ts
 var MAX_STATE_BYTES = 4096;
+function targetOf(toolName, toolInput) {
+  const key = toolName === "NotebookEdit" ? "notebook_path" : toolName === "Write" || toolName === "Edit" ? "file_path" : void 0;
+  if (key === void 0) return void 0;
+  const path = toolInput[key];
+  return typeof path === "string" && path.length > 0 ? path : void 0;
+}
 function commandOf(toolName, toolInput) {
   if (toolName !== "Bash") return "";
   const command = toolInput["command"];
@@ -9002,6 +9011,8 @@ function pathFacts(raw, cwd, clean) {
 function describeSensitivity(path) {
   const parts = path.split(import_node_path.sep).filter((p) => p.length > 0);
   const name = parts.at(-1) ?? "";
+  if (/^\.bouncer\.ya?ml$/.test(name)) return "gate_policy";
+  if (parts.includes(".bouncer") && /^bouncer\.ya?ml$/.test(name)) return "gate_policy";
   if (parts.includes(".git")) return "git_internals";
   if (parts.includes(".ssh")) return "ssh_configuration";
   if (parts.includes(".github") && parts.includes("workflows")) return "ci_workflow";
@@ -9037,14 +9048,18 @@ function isRecord2(value) {
 }
 
 // src/engine/hardrules.ts
-function matchHardRule(rules, command) {
+function matchHardRule(rules, command, target) {
   const trimmed = command.trim();
-  if (trimmed.length === 0 || rules.length === 0) return void 0;
-  const facts = factsFor(trimmed);
+  if (trimmed.length === 0 && target === void 0 || rules.length === 0) return void 0;
+  const targetLabel = target === void 0 ? void 0 : labelOf(target);
+  const facts = factsFor(trimmed, targetLabel);
   for (const rule of rules) {
     if (facts.some((f) => holds(rule, f))) return rule;
   }
   return void 0;
+}
+function labelOf(path) {
+  return describeSensitivity(path.startsWith("~/") ? path.slice(2) : path);
 }
 function once(compute) {
   let value;
@@ -9057,10 +9072,13 @@ function once(compute) {
     return value;
   };
 }
-function factsFor(command) {
+function factsFor(command, targetLabel) {
   const lower = command.toLowerCase();
   const redactionKinds = once(() => new Set(redact(command).kinds));
-  return commandsIn(command).map((tokens) => ({
+  const commands = commandsIn(command);
+  if (commands.length === 0) commands.push([]);
+  return commands.map((tokens) => ({
+    targetLabel,
     commandWord: commandWordOf(tokens),
     tokens,
     lower,
@@ -9105,6 +9123,10 @@ function holds(rule, facts) {
     asserted = true;
     const kinds = facts.redactionKinds();
     if (!when.redactsAs.some((kind) => kinds.has(kind))) return false;
+  }
+  if (when.targetLabelled !== void 0) {
+    asserted = true;
+    if (facts.targetLabel === void 0 || !when.targetLabelled.includes(facts.targetLabel)) return false;
   }
   if (when.notTokens !== void 0 && when.notTokens.some((t) => facts.tokens.includes(t))) {
     return false;
@@ -9179,7 +9201,7 @@ function shortCircuit(policy, input) {
   if (!policy.gate.tools.includes(input.tool)) {
     return standAside({ kind: "tool-not-gated", tool: input.tool });
   }
-  const hard = matchHardRule(policy.gate.hardRules, input.command);
+  const hard = matchHardRule(policy.gate.hardRules, input.command, input.target);
   if (hard !== void 0) {
     return decideHard(policy, hard);
   }
@@ -9349,7 +9371,7 @@ var import_node_path5 = require("node:path");
 // src/io/policycache.ts
 var import_node_fs3 = require("node:fs");
 var import_node_path4 = require("node:path");
-var CACHE_VERSION = 7;
+var CACHE_VERSION = 8;
 var DIR = "policy-cache";
 function loadPolicyCached(dir, path, source) {
   if (disabled()) return loadPolicy(source);
@@ -9687,9 +9709,11 @@ async function runPreToolUse(payload, options = {}) {
     policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint }
   };
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
+  const target = targetOf(tool, toolInput);
   const early = shortCircuit(policy, {
     tool,
     command: commandOf(tool, toolInput),
+    ...target !== void 0 ? { target } : {},
     ...permissionMode !== void 0 ? { permissionMode } : {}
   });
   if (early !== void 0) {
@@ -10371,7 +10395,11 @@ async function score(fixtures, policy, adapter, onProgress, setName = GATE_SET) 
 }
 function scoreAnswered(answered, policy, set, setName) {
   const { fixture, answers, probes } = answered;
-  const hard = setName === GATE_SET && fixture.kind === "tool_call" ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)) : void 0;
+  const hard = setName === GATE_SET && fixture.kind === "tool_call" ? matchHardRule(
+    policy.gate.hardRules,
+    commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input),
+    targetOf(toolCallOf(fixture).tool, toolCallOf(fixture).input)
+  ) : void 0;
   const decision = hard === void 0 ? evaluate(set, policy.mode, answers, { truncated: answered.truncated === true }) : void 0;
   const verdict = hard?.verdict ?? decision?.verdict ?? "allow";
   const reason = hard !== void 0 ? { kind: "hard-rule", name: hard.name, because: hard.because } : decision?.reason ?? { kind: "no-rule-matched" };
@@ -11214,7 +11242,12 @@ function parseInjection(source, bases, policy) {
 function decidedWithoutTheClassifier(fixture, policy) {
   if (fixture.kind !== "tool_call") return "not a tool call";
   const call = toolCallOf(fixture);
-  const decision = shortCircuit(policy, { tool: call.tool, command: commandOf(call.tool, call.input) });
+  const target = targetOf(call.tool, call.input);
+  const decision = shortCircuit(policy, {
+    tool: call.tool,
+    command: commandOf(call.tool, call.input),
+    ...target !== void 0 ? { target } : {}
+  });
   if (decision !== void 0) {
     const reason = decision.reason;
     return reason.kind === "hard-rule" ? `hard rule ${reason.name}` : reason.kind === "fast-path" ? "fast path" : reason.kind;
@@ -14276,7 +14309,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.15\n");
+      process.stdout.write("0.2.16\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

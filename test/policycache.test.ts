@@ -178,6 +178,7 @@ describe("the compiled-policy cache", () => {
       '        text: ["drop table"]',
       "        path_labelled: [credential]",
       "        redacts_as: [api_key]",
+      "        target_labelled: [gate_policy]",
       "  questions:",
       "    only_question:",
       "      instructions: whether the command is the one this shape is pinned against",
@@ -211,7 +212,7 @@ describe("the compiled-policy cache", () => {
         "fingerprint:string," +
         "gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
-        "redactsAs:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
+        "redactsAs:[string],targetLabelled:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
@@ -219,13 +220,13 @@ describe("the compiled-policy cache", () => {
         "mode:string,onError:string," +
         "sets:{gate:{fastPath:[string],hardRules:[{because:string,index:number,name:string," +
         "verdict:string,when:{firstToken:[string],notTokens:[string],pathLabelled:[string]," +
-        "redactsAs:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
+        "redactsAs:[string],targetLabelled:[string],text:[string],tokenPrefix:[string],tokens:[string]}}],probeQuestions:{}," +
         "questions:{only_question:{criteria:{false:string,true:string},instructions:string}}," +
         "questionsFingerprint:string," +
         "rules:[{condition:{comparison:{kind:string,value:number},question:string}," +
         "index:number,verdict:string}],tools:[string]}}," +
         "skipPermissionModes:[string],timeoutMs:number,version:number}",
     );
-    expect(CACHE_VERSION).toBe(7);
+    expect(CACHE_VERSION).toBe(8);
   });
 });

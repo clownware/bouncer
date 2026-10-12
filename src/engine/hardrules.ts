@@ -24,13 +24,14 @@ import type { HardRule } from "./types.js";
  * Order is the policy file's order, and the first match wins, exactly as `gate.rules`
  * works. Entries are not scored against each other.
  */
-export function matchHardRule(rules: readonly HardRule[], command: string): HardRule | undefined {
+export function matchHardRule(rules: readonly HardRule[], command: string, target?: string): HardRule | undefined {
   const trimmed = command.trim();
-  if (trimmed.length === 0 || rules.length === 0) return undefined;
+  if ((trimmed.length === 0 && target === undefined) || rules.length === 0) return undefined;
 
   // Computed once and shared: a policy with a dozen entries would otherwise tokenize and
   // redact the same command a dozen times, in the hook's latency path.
-  const facts = factsFor(trimmed);
+  const targetLabel = target === undefined ? undefined : labelOf(target);
+  const facts = factsFor(trimmed, targetLabel);
 
   // Entries in order, and for each entry every command in the chain: the first entry that
   // any one command satisfies wins, which keeps the policy file's order meaning what it did.
@@ -62,6 +63,13 @@ interface CommandFacts {
   readonly pathLabels: () => ReadonlySet<string>;
   /** Redaction kinds the command's text matches. */
   readonly redactionKinds: () => ReadonlySet<string>;
+  /** The label on the file a `Write` or `Edit` would change. Undefined for a shell command. */
+  readonly targetLabel: string | undefined;
+}
+
+/** A path as a tool was handed it, read the way a token is: `~/` is the shell's, not ours. */
+function labelOf(path: string): string | undefined {
+  return describeSensitivity(path.startsWith("~/") ? path.slice(2) : path);
 }
 
 /** Computed on the first ask and kept. A `??=` would recompute a falsy answer. */
@@ -92,7 +100,7 @@ function once<T>(compute: () => T): () => T {
  * `test/hardrules.test.ts` sweeps the whole fixture file, which is what says so rather than
  * the argument.
  */
-function factsFor(command: string): CommandFacts[] {
+function factsFor(command: string, targetLabel: string | undefined): CommandFacts[] {
   const lower = command.toLowerCase();
   // The redactor is the project's one tested table of credential shapes. Reusing it
   // means `redacts_as` cannot drift from what redaction actually recognises, and a shape
@@ -101,7 +109,14 @@ function factsFor(command: string): CommandFacts[] {
   // Whole-string, so it is memoised across the chain rather than per command.
   const redactionKinds = once(() => new Set(redact(command).kinds) as ReadonlySet<string>);
 
-  return commandsIn(command).map((tokens) => ({
+  // A `Write` or an `Edit` has no command, and still has to be something an entry can
+  // hold of: one empty command, so `target_labelled` has facts to be asked about and every
+  // predicate about a command line fails on it, as it should.
+  const commands = commandsIn(command);
+  if (commands.length === 0) commands.push([]);
+
+  return commands.map((tokens) => ({
+    targetLabel,
     commandWord: commandWordOf(tokens),
     tokens,
     lower,
@@ -165,6 +180,11 @@ function holds(rule: HardRule, facts: CommandFacts): boolean {
     asserted = true;
     const kinds = facts.redactionKinds();
     if (!when.redactsAs.some((kind) => kinds.has(kind))) return false;
+  }
+
+  if (when.targetLabelled !== undefined) {
+    asserted = true;
+    if (facts.targetLabel === undefined || !when.targetLabelled.includes(facts.targetLabel)) return false;
   }
 
   // Checked last and never on its own: an entry that only says what it excludes would

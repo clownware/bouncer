@@ -18,7 +18,7 @@
 import { readFileSync } from "node:fs";
 import type { Adapter, Question } from "./adapters/types.js";
 import { noulProbability } from "./adapters/types.js";
-import { buildState, commandOf } from "./engine/state.js";
+import { buildState, commandOf, targetOf } from "./engine/state.js";
 import { itemState } from "./engine/item.js";
 import { evaluate, type Reason } from "./engine/evaluate.js";
 import { matchHardRule } from "./engine/hardrules.js";
@@ -386,7 +386,11 @@ export function scoreAnswered(
   // change would make two things move at once.
   const hard =
     setName === GATE_SET && fixture.kind === "tool_call"
-      ? matchHardRule(policy.gate.hardRules, commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input))
+      ? matchHardRule(
+          policy.gate.hardRules,
+          commandOf(toolCallOf(fixture).tool, toolCallOf(fixture).input),
+          targetOf(toolCallOf(fixture).tool, toolCallOf(fixture).input),
+        )
       : undefined;
 
   const decision = hard === undefined ? evaluate(set, policy.mode, answers, { truncated: answered.truncated === true }) : undefined;

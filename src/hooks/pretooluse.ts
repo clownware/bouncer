@@ -12,7 +12,7 @@ import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
 import { escalationFor, type EscalationItem } from "../engine/escalation.js";
 import { emitFor, evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
-import { buildState, commandOf } from "../engine/state.js";
+import { buildState, commandOf, targetOf } from "../engine/state.js";
 import type { Policy, Verdict } from "../engine/types.js";
 import * as breaker from "../io/breaker.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
@@ -102,9 +102,11 @@ export async function runPreToolUse(
   // None of these touch the network. The fast path only helps a command run bare, though:
   // an agent chains (`npm test 2>&1 | tail`), a chained command is rightly refused, and on
   // the first real traffic it matched 0 of 88 calls. See docs/adr/010.
+  const target = targetOf(tool, toolInput);
   const early = shortCircuit(policy, {
     tool,
     command: commandOf(tool, toolInput),
+    ...(target !== undefined ? { target } : {}),
     ...(permissionMode !== undefined ? { permissionMode } : {}),
   });
 

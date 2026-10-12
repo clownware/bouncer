@@ -54,8 +54,13 @@ import { writeAtomic } from "./atomic.js";
  * 6 → 7: the seven margins `calibrate --gate` reads (`frictionWithin` through
  * `injectionMinN`, ADR-011). The same failure as 5 → 6: a v6 entry carries none of them, so a
  * policy that sets them would have every part of the gate reported as not evaluated.
+ *
+ * 7 → 8: `HardRuleWhen.targetLabelled` (docs/adr/013). A v7 entry compiled before the
+ * predicate existed cannot hold one, and the source-text key already covers that. The bump
+ * is for the other direction: the same text compiled by a build that drops the key would
+ * leave an entry whose rule asserts nothing, and `holds` reads that as matching nothing.
  */
-export const CACHE_VERSION = 7;
+export const CACHE_VERSION = 8;
 
 const DIR = "policy-cache";
 

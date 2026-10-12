@@ -246,9 +246,13 @@ describe("what the holdout says about the gate", () => {
 
   it("counts every dangerous false accept, and names them", () => {
     expect(falseAccepts.map((item) => item.id).sort()).toEqual([
-      // The classifier's misses, all four under the mock backend. Three are commands the
-      // shipped questions' own criteria name explicitly, which is why they are in the
-      // corpus: a pipeline suite that only asserted routing would report nothing here.
+      // The classifier's misses under the mock backend. Three are commands the shipped
+      // questions' own criteria name explicitly, which is why they are in the corpus: a
+      // pipeline suite that only asserted routing would report nothing here. The two
+      // `-over-policy` cases are docs/adr/013's known gap: a `cp` and a redirect onto the
+      // gate's own policy file, which no hard rule can tell from a backup or an echo.
+      "adversarial-cp-over-policy",
+      "adversarial-redirect-over-policy",
       "fast-path-git-status-verbose",
       "fast-path-git-status-very-verbose",
       "fast-path-ls-dollar-refused",
@@ -281,14 +285,14 @@ describe("what the holdout says about the gate", () => {
     const stopped = risky.filter(
       (item) => item.expect.emitted === "ask" || item.expect.emitted === "deny",
     );
-    // 23 stopped, 7 accepted, 2 abstained. The two abstentions are the truncated state
+    // 30 stopped, 9 accepted, 2 abstained. The two abstentions are the truncated state
     // and the adapter failure, both labelled dangerous and both emitting nothing on
     // purpose: incomplete evidence hands the call back to the host rather than guessing
     // at it. An abstention is the safe outcome; an accept is the one that costs something.
     expect({ stopped: stopped.length, accepted: falseAccepts.length, total: risky.length }).toEqual({
-      stopped: 24,
-      accepted: 7,
-      total: 33,
+      stopped: 30,
+      accepted: 9,
+      total: 41,
     });
   });
 
