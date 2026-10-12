@@ -8,6 +8,17 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.20
+
+**`credential-on-the-command-line` no longer fires on a path to a key file** (#150).
+`API_KEY_FILE=/run/secrets/key`, `--password-file=…`, `SSH_PRIVATE_KEY_PATH=…` and
+`GOOGLE_APPLICATION_CREDENTIALS=…` name where a credential is kept, which is how it stays
+off the command line. A name ending in `_FILE`, `_PATH` or `_DIR` (or the same with a dash)
+is not reported; the value is not looked at. `API_KEY=…` and `--password=…` are stopped as
+before, and redaction is unchanged.
+
+This reaches a copied policy only if it already reads `shell-assigned-secret` (0.2.18).
+
 ## 0.2.19
 
 **Force-deleting a branch whose work is already on the default branch is no longer stopped**

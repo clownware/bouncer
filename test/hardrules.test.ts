@@ -91,6 +91,20 @@ describe("the shipped hard rules", () => {
     ],
     ["credential-on-the-command-line", "docker build --build-arg NPM_TOKEN=swordfish .", "node -e 'let secret = await fetchIt()'"],
     ["credential-on-the-command-line", "DB_PASSWORD=hunter22 ./deploy.sh", "node -e 'const apiKey = process.env.THING;'"],
+    // #150. The name says the value is a location, which is how a key stays off the line.
+    ["credential-on-the-command-line", "API_KEY=opensesame ./run.sh", "API_KEY_FILE=/run/secrets/api-key ./run.sh"],
+    ["credential-on-the-command-line", "mysql --password=hunter22 prod", "mysql --password-file=/run/secrets/db prod"],
+    [
+      "credential-on-the-command-line",
+      "docker run -e DB_PASSWORD=hunter22 ubuntu",
+      "BOUNCER_LOCAL_API_KEY_FILE=deploy/state/api-key node bin/bouncer.cjs calibrate --backend local",
+    ],
+    [
+      "credential-on-the-command-line",
+      "AWS_SECRET_ACCESS_KEY=abcd1234wxyz aws s3 ls",
+      "GOOGLE_APPLICATION_CREDENTIALS=/home/user/sa.json gcloud auth list",
+    ],
+    ["credential-on-the-command-line", "SECRET_FILENAME=opensesame ./run.sh", "SSH_PRIVATE_KEY_PATH=/home/user/.ssh/deploy ./run.sh"],
     // #98. A template holds names or references, and is committed because it does.
     ["reads-a-credential-file", "cat .env.local", "cat deploy/.env.example"],
     ["reads-a-credential-file", "cat .env.example.local", "cat .env.tpl"],
