@@ -1,6 +1,7 @@
 # ADR-012: Bouncer does not guard this repository's records, and says what does
 
-- **Status:** accepted on 2026-10-12, by the merge of the pull request that added it
+- **Status:** accepted on 2026-10-12, by the merge of #142; the account of platform
+  enforcement in the context and in decision 3 corrected the same day, in place
 - **Date:** 2026-10-12
 - **Context for:** how this repository is governed; no shipped behaviour changes
 
@@ -29,6 +30,12 @@ Nothing else blocks either. `main` has no branch protection and no rulesets (#74
 check in `ci.yml` reports and none prevents a merge or a direct push. An agent that read a
 record forbidding a change could make the change, rewrite the record, and rewrite the test
 that pinned it, and each step would be an ordinary edit.
+
+> **Corrected on 2026-10-12.** The first sentence was true for a few hours after this was
+> written. `main` now has a ruleset: a pull request, green `check` and `secrets`, no force
+> push, no deletion, no bypass. The rest of the paragraph stands and is the part that
+> matters. A required check stops a change that fails the suite; it does not stop one that
+> edits the suite to agree with it, and that change arrives green.
 
 ## Decision
 
@@ -70,6 +77,14 @@ make any of the above block. It is #74, it needs the repository owner in Setting
 record does not pretend it exists. Until it does, "fails CI" means "is red", not "cannot
 merge".
 
+> **Corrected on 2026-10-12.** It is on, set the same day through the API by a session the
+> owner asked to; "needs the repository owner in Settings" was wrong about the mechanism and
+> right about whose decision it is. "Fails CI" now means "cannot merge". Requiring a branch
+> to be up to date with `main` was left off for the cost in Actions runs, so two green pull
+> requests can still make a red `main` (`CLAUDE.md`, Conventions). Decisions 1 and 2 are
+> unchanged by this: the ruleset makes a pinned fact binding, and what it binds is still
+> whatever the diff says the pin is.
+
 ### 4. The user's own policy file is a different question, and stays open
 
 ADR-001, as corrected on 2026-09-30, rests on the acting model being unable to "change the
@@ -93,7 +108,7 @@ Tracked as #141.
   fixing when the file is next open, not a sweep.
 - The honest description of this repository's governance is: written rules, checks that
   explain themselves, and one reviewer. That is weaker than it sounds when sessions run in
-  parallel and merge as they go, which is the argument for #74 and not for a rule here.
+  parallel and merge as they go, which was the argument for #74 and not for a rule here.
 
 ## What was considered and rejected
 

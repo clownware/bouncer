@@ -233,12 +233,15 @@ vLLM. The README names which, in those words, and never calls it "frontier".
   shape-pinning test fails on a field someone else added, the version bump is the fix and the
   guard is working; do not relax the pin. Concurrent PRs also conflict in `bin/bouncer.cjs`,
   which is the same remedy: merge `main`, rebuild, commit.
-- **Two repository settings close those classes** and are the owner's to set (issue #74).
-  "Automatically delete head branches" ends the orphaned-stack case and is on. Branch
-  protection requiring branches to be up to date before merging would end the red-`main` case,
-  at the cost of a re-run per merge, and is not: `main` has no protection and no rulesets as
-  of 2026-10-12, so no check blocks a merge or a direct push, and the merge-`main`-first rule
-  above is what stands in for it.
+- **`main` has a ruleset** since 2026-10-12 (#74; `gh api repos/clownware/bouncer/rulesets`):
+  a change reaches it only through a pull request whose `check` and `secrets` jobs are green,
+  and it cannot be force-pushed or deleted. Nobody bypasses it, the owner included, so a
+  direct `git push origin main` is refused; that is the rule working. A job renamed in
+  `ci.yml` stops reporting under the name the ruleset waits for and every merge then blocks:
+  change the ruleset in the same sitting. "Automatically delete head branches" is on too,
+  which ends the orphaned-stack case. What is **not** required is that a branch be up to date
+  with `main`, because that costs a CI run per sibling merge, so two PRs green apart can still
+  leave `main` red and the merge-`main`-first rule above is what stands in for it.
 - A policy file names its sets under `policies:`; a top-level `gate:` is a permanent alias
   and not a deprecated spelling, so never add a warning to it (ADR-009). `policy/default.yaml`
   deliberately stays on the alias: it is the file every user copies.
@@ -267,8 +270,8 @@ vLLM. The README names which, in those words, and never calls it "frontier".
   update, not a commit list. Docs and tests alone need neither.
 - **A test that pins a decision says so in what it prints on failure**, not only in a
   comment: which rule or record it holds, and the edit that satisfies a deliberate change.
-  No check here blocks a merge (#74), so that text is the one place a decision reaches
-  someone who never opened the record. Relaxing a pin is the edit to read twice (ADR-012).
+  A red check blocks the merge and says nothing about why, so that text is the one place a
+  decision reaches someone who never opened the record. Relaxing a pin is the edit to read twice (ADR-012).
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
 - **No real API key in any file, message or command line.** Jev calls are stubbed in tests.
