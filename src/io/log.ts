@@ -79,6 +79,11 @@ export interface DecisionRecord {
    * 2026-09-19 still do, so a reader tallying verdicts leaves out any line with an `error`.
    */
   readonly verdict?: Verdict;
+  /**
+   * A hard rule that matched this call and was passed over because its `unless` held. The
+   * rest of the line is whatever decided instead, usually the judge (docs/adr/014).
+   */
+  readonly hard_rule_waived?: { readonly rule: string; readonly unless: string };
   /** What was actually put on stdout; null when nothing was emitted. */
   readonly emitted: Verdict | null;
   readonly reason: Reason;

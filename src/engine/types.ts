@@ -87,6 +87,13 @@ export interface HardRuleWhen {
 }
 
 /**
+ * What an entry's `unless` may name. One today: every branch the command force-deletes
+ * would change nothing if it were merged into the remote's default branch.
+ */
+export const HARD_RULE_EXEMPTIONS = ["branch_adds_nothing_to_default"] as const;
+export type HardRuleExemption = (typeof HARD_RULE_EXEMPTIONS)[number];
+
+/**
  * A deterministic rule, evaluated before the classifier.
  *
  * Entries ship as `ask`. `seatbelt` promotes that to `deny` rather than the entry doing so,
@@ -98,6 +105,13 @@ export interface HardRule {
   /** The one-line reason the user reads at the prompt. */
   readonly because: string;
   readonly when: HardRuleWhen;
+  /**
+   * A fact that, when the caller has established it, means this entry does not apply and the
+   * call is judged like any other. The engine never establishes one: a predicate is a string
+   * operation, and this is a question for the repository, which the hook asks only after the
+   * entry has matched (docs/adr/014).
+   */
+  readonly unless?: HardRuleExemption;
   /** 1-based position in the policy file's list, for diagnostics. */
   readonly index: number;
 }

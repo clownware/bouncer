@@ -12,10 +12,12 @@ import { MockAdapter } from "../adapters/mock.js";
 import { AdapterError, noulProbability, type Adapter, type Question } from "../adapters/types.js";
 import { escalationFor, type EscalationItem } from "../engine/escalation.js";
 import { emitFor, evaluate, shortCircuit, type Decision } from "../engine/evaluate.js";
+import { forceDeletedBranches } from "../engine/hardrules.js";
 import { buildState, commandOf, targetOf } from "../engine/state.js";
-import type { Policy, Verdict } from "../engine/types.js";
+import type { HardRuleExemption, Policy, Verdict } from "../engine/types.js";
 import * as breaker from "../io/breaker.js";
 import { apiKey, dataDir, errorsIn, localBackend, pluginRoot, resolvePolicy } from "../io/config.js";
+import { branchesAddNothing } from "../io/git.js";
 import { append, type DecisionRecord } from "../io/log.js";
 import type { HookPayload } from "../io/stdin.js";
 
@@ -37,6 +39,8 @@ export interface RunOptions {
   readonly adapter?: Adapter;
   /** Injected in tests so the engine never stats a real path. */
   readonly targetExists?: (path: string) => boolean | undefined;
+  /** Injected in tests so an exemption is decided without a repository. */
+  readonly branchesAddNothing?: (cwd: string, branches: readonly string[], budgetMs: number) => boolean;
   readonly now?: () => number;
 }
 
@@ -80,6 +84,34 @@ export async function runPreToolUse(
   const agentType = typeof payload["agent_type"] === "string" ? payload["agent_type"] : undefined;
   const permissionMode = typeof payload.permission_mode === "string" ? payload.permission_mode : undefined;
 
+  // Cheap outs first: tool not gated, permission mode skipped, command on the fast path.
+  // None of these touch the network. The fast path only helps a command run bare, though:
+  // an agent chains (`npm test 2>&1 | tail`), a chained command is rightly refused, and on
+  // the first real traffic it matched 0 of 88 calls. See docs/adr/010.
+  const target = targetOf(tool, toolInput);
+  const command = commandOf(tool, toolInput);
+  const input = {
+    tool,
+    command,
+    ...(target !== undefined ? { target } : {}),
+    ...(permissionMode !== undefined ? { permissionMode } : {}),
+  };
+  let early = shortCircuit(policy, input);
+
+  // An entry that names an exemption is asked about again once the exemption is known to
+  // hold, and whatever comes back stands: another entry, or nothing, in which case the call
+  // is judged like any other. This is the only place a hard rule costs a subprocess, and it
+  // is reached only by a call an entry with `unless` has already matched (docs/adr/014).
+  let waived: { readonly rule: string; readonly unless: HardRuleExemption } | undefined;
+  if (early?.reason.kind === "hard-rule" && early.reason.unless !== undefined) {
+    const { name, unless } = early.reason;
+    if (established(unless, command, cwd, policy, options)) {
+      waived = { rule: name, unless };
+      early = shortCircuit(policy, { ...input, established: [unless] });
+    }
+  }
+
+
   const base = {
     ts: new Date().toISOString(),
     session_id: sessionId,
@@ -91,24 +123,13 @@ export async function runPreToolUse(
     backend: options.adapter?.name ?? backendName(policy),
     // On every line, not only judged ones: a hard rule and the fast path are the policy too.
     policy: { file: policy.fingerprint, questions: policy.gate.questionsFingerprint },
+    ...(waived !== undefined ? { hard_rule_waived: waived } : {}),
   };
 
   // What an escalation names this item by. The tool_use_id when Claude Code sent one,
   // since that is the id the transcript and the log already agree on; otherwise the
   // timestamp, which is unique within a session and is what `explain` matches on.
   const itemId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : base.ts;
-
-  // Cheap outs first: tool not gated, permission mode skipped, command on the fast path.
-  // None of these touch the network. The fast path only helps a command run bare, though:
-  // an agent chains (`npm test 2>&1 | tail`), a chained command is rightly refused, and on
-  // the first real traffic it matched 0 of 88 calls. See docs/adr/010.
-  const target = targetOf(tool, toolInput);
-  const early = shortCircuit(policy, {
-    tool,
-    command: commandOf(tool, toolInput),
-    ...(target !== undefined ? { target } : {}),
-    ...(permissionMode !== undefined ? { permissionMode } : {}),
-  });
 
   if (early !== undefined) {
     // A hard-rule hit is the highest-signal line the log ever gets — it is a decision that
@@ -339,7 +360,7 @@ function explain(decision: Decision, policy: Policy, escalation?: EscalationItem
     case "fast-path":
       return `bouncer: matched the fast path (${reason.prefix.trim()}).`;
     case "hard-rule":
-      return `bouncer: ${reason.because} (hard rule: ${reason.name})`;
+      return `bouncer: ${reason.because} (hard rule: ${reason.name})${reason.unless !== undefined ? ` ${WHEN_IT_IS_NOT_STOPPED[reason.unless]}` : ""}`;
     case "tool-not-gated":
       return `bouncer: ${reason.tool} is not gated by this policy.`;
     case "permission-mode-skipped":
@@ -350,6 +371,42 @@ function explain(decision: Decision, policy: Policy, escalation?: EscalationItem
       return `bouncer: the classifier did not answer ${reason.missing.join(", ")}.`;
     case "truncated":
       return "bouncer: the call was too long to show the classifier whole, so it was not approved.";
+  }
+}
+
+/**
+ * Said after an entry's reason when its exemption did not hold. The acting model reads a
+ * deny's reason (ADR-001), and an agent chains by habit, so the chained form is the one it
+ * will have been stopped on: this is how it learns the form that can be answered.
+ */
+const WHEN_IT_IS_NOT_STOPPED: Readonly<Record<HardRuleExemption, string>> = {
+  branch_adds_nothing_to_default:
+    "It is not stopped when it is the only command in the call and merging each branch into the remote's default branch would change nothing.",
+};
+
+/**
+ * Whether an entry's exemption holds for this call. False for anything not understood.
+ *
+ * The budget is the policy's `timeout_ms`: it is the time the user already agreed a decision
+ * may take, and the classifier call it would have paid for is the one a hard rule skips.
+ */
+function established(
+  unless: HardRuleExemption,
+  command: string,
+  cwd: string,
+  policy: Policy,
+  options: RunOptions,
+): boolean {
+  switch (unless) {
+    case "branch_adds_nothing_to_default": {
+      const branches = forceDeletedBranches(command);
+      if (branches === undefined) return false;
+      try {
+        return (options.branchesAddNothing ?? branchesAddNothing)(cwd, branches, policy.timeoutMs);
+      } catch {
+        return false;
+      }
+    }
   }
 }
 

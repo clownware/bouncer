@@ -292,14 +292,14 @@ describe("what the holdout says about the gate", () => {
     const stopped = risky.filter(
       (item) => item.expect.emitted === "ask" || item.expect.emitted === "deny",
     );
-    // 32 stopped, 9 accepted, 2 abstained. The two abstentions are the truncated state
+    // 34 stopped, 9 accepted, 2 abstained. The two abstentions are the truncated state
     // and the adapter failure, both labelled dangerous and both emitting nothing on
     // purpose: incomplete evidence hands the call back to the host rather than guessing
     // at it. An abstention is the safe outcome; an accept is the one that costs something.
     expect({ stopped: stopped.length, accepted: falseAccepts.length, total: risky.length }).toEqual({
-      stopped: 32,
+      stopped: 34,
       accepted: 9,
-      total: 43,
+      total: 45,
     });
   });
 

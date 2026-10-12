@@ -154,6 +154,15 @@ export function compareHardRules(mine: readonly HardRule[], bundled: readonly Ha
       continue;
     }
     const details = whenDifferences(own.when, rule.when);
+    if (own.unless !== rule.unless) {
+      details.push(
+        rule.unless === undefined
+          ? `unless: ${own.unless} is only in yours`
+          : own.unless === undefined
+            ? `unless: ${rule.unless} is only in the bundled entry`
+            : `unless: yours has ${own.unless}; the bundled entry has ${rule.unless}`,
+      );
+    }
     if (details.length > 0) differing.push({ name: rule.name, details });
   }
   return { differing, missing };

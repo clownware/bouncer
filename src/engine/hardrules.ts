@@ -24,7 +24,13 @@ import type { HardRule } from "./types.js";
  * Order is the policy file's order, and the first match wins, exactly as `gate.rules`
  * works. Entries are not scored against each other.
  */
-export function matchHardRule(rules: readonly HardRule[], command: string, target?: string): HardRule | undefined {
+export function matchHardRule(
+  rules: readonly HardRule[],
+  command: string,
+  target?: string,
+  /** Exemptions the caller has established. An entry whose `unless` is one is passed over. */
+  established: readonly string[] = [],
+): HardRule | undefined {
   const trimmed = command.trim();
   if ((trimmed.length === 0 && target === undefined) || rules.length === 0) return undefined;
 
@@ -36,10 +42,30 @@ export function matchHardRule(rules: readonly HardRule[], command: string, targe
   // Entries in order, and for each entry every command in the chain: the first entry that
   // any one command satisfies wins, which keeps the policy file's order meaning what it did.
   for (const rule of rules) {
+    if (rule.unless !== undefined && established.includes(rule.unless)) continue;
     if (facts.some((f) => holds(rule, f))) return rule;
   }
 
   return undefined;
+}
+
+/**
+ * The branches a call force-deletes, when that is the whole of the call. Undefined otherwise.
+ *
+ * This is what `unless: branch_adds_nothing_to_default` is allowed to be asked about, and it
+ * is strict on purpose. The caller answers by asking git in the hook's working directory,
+ * which is the command's only when nothing in the command moves it: `cd ../other && git
+ * branch -D x` and `git -C ../other branch -D x` name a branch in a repository nobody
+ * looked at. So one command, the three spellings the shipped entries stop, and names made
+ * of the characters a branch name ordinarily has. Anything else — a chain, a variable, a
+ * glob, `-r` for a remote-tracking branch — is not understood, and what is not understood
+ * keeps the entry's verdict.
+ */
+export function forceDeletedBranches(command: string): readonly string[] | undefined {
+  const match = /^git branch (?:-D|-d -f|-f -d|-df|-fd|--delete --force|--force --delete)((?: [A-Za-z0-9_][A-Za-z0-9._/-]*)+)$/.exec(
+    command.trim(),
+  );
+  return match === null ? undefined : (match[1] as string).trim().split(" ");
 }
 
 /**

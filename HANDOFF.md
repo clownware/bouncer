@@ -18,17 +18,17 @@ So the ADR-011 work below is parked, not abandoned, and the order is:
 1. Compare `readiness.jsonl` with CI results on the same head commits, once a few real
    `bouncer ready` runs exist. None did on 2026-10-12. Its thresholds are provisional and
    its fixtures were written alongside its questions, so this is its first real evidence.
-2. The last noisy hard rule: #122, `git branch -D` after a squash merge. It needs the hook
-   to ask git whether the branch's content is on the default branch, and every hard-rule
-   predicate today is a string operation, so it starts as an amendment to ADR-004. #87, #98
-   and #126 shipped in 0.2.18.
-3. The next consumer: #92, then the skill router (ADR-006, open questions in #58).
-4. Filed and not started: #138, #139, #140, #130, #134, #53.
+2. The next consumer: #92, then the skill router (ADR-006, open questions in #58).
+3. Filed and not started: #138, #139, #140, #130, #134, #53.
+
+The four noisy hard rules are done: #87, #98 and #126 in 0.2.18, #122 in 0.2.19.
 
 **Waiting on the owner.**
 
 - `~/.bouncer/bouncer.yaml` is a copy, and no agent may edit it (0.2.16). Run
   `/bouncer:status`: from 0.2.18 it lists each hard rule that differs from the bundled one.
+  Two do after 0.2.19: `credential-on-the-command-line` (0.2.18) and the three
+  `git-branch-force-delete` entries, which lack `unless` (0.2.19).
   The `egress` and `outside_repo` questions in the copy also predate 0.2.11's wording, and
   `status` does not compare questions.
 - A working Anthropic API key, to rerun the triage measurement with one call per row and
@@ -111,6 +111,8 @@ variant drafts carry no `base`.
 - 0.2.17 (#146): `bouncer ready`, the push-readiness check (#93).
 - 0.2.18 (#147): `credential-on-the-command-line` and `reads-a-credential-file` stop firing
   on source code and on env templates, and `status` names hard rules a copy has left behind.
+- 0.2.19 (ADR-014, #122): a force delete of a branch that adds nothing to the remote's
+  default branch is passed over. The first hard rule that asks anything but the command.
 
 ## In flight: judgment-model consumers
 

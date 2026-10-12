@@ -12,10 +12,12 @@ import {
   ANY_QUESTION,
   EMPTY_GATE,
   GATE_SET,
+  HARD_RULE_EXEMPTIONS,
   type Comparison,
   type Condition,
   type Diagnostic,
   type HardRule,
+  type HardRuleExemption,
   type HardRuleWhen,
   type Mode,
   type OnError,
@@ -562,7 +564,22 @@ function readHardRules(
       return;
     }
 
-    rules.push({ name, verdict: then, because, when: when as HardRuleWhen, index: i + 1 });
+    // Checked against the list rather than passed through: a misspelt exemption would
+    // otherwise be one that never holds, and the entry would deny with nothing saying why.
+    const unless = entry["unless"];
+    if (unless !== undefined && !(HARD_RULE_EXEMPTIONS as readonly unknown[]).includes(unless)) {
+      error(`${path}.unless`, `must be one of ${HARD_RULE_EXEMPTIONS.join(", ")}`);
+      return;
+    }
+
+    rules.push({
+      name,
+      verdict: then,
+      because,
+      when: when as HardRuleWhen,
+      ...(unless !== undefined ? { unless: unless as HardRuleExemption } : {}),
+      index: i + 1,
+    });
   });
 
   return rules;

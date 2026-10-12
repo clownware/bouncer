@@ -68,7 +68,8 @@ describe("the bench script", () => {
     copyFileSync("bin/bouncer.cjs", other);
     const source = readFileSync(other, "utf8");
     expect(source).toMatch(/CACHE_VERSION = \d+/);
-    writeFileSync(other, source.replace(/CACHE_VERSION = \d+/, "CACHE_VERSION = 9"), "utf8");
+    // Any version this build does not carry. A literal here became this build's own once.
+    writeFileSync(other, source.replace(/CACHE_VERSION = \d+/, "CACHE_VERSION = 0"), "utf8");
 
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
     delete env["CLAUDE_PLUGIN_DATA"];
@@ -79,7 +80,7 @@ describe("the bench script", () => {
     });
 
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/policy cache version: before=9\s+after=\d+/);
+    expect(r.stdout).toMatch(/policy cache version: before=0\s+after=\d+/);
     expect(r.stdout).toContain("one data directory per arm");
     expect(r.stdout).toContain("different cache entries");
     expect(r.stdout).toMatch(/paired median diff/);
