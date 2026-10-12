@@ -19,6 +19,7 @@ these win. Every date below is 2026.
 | [009](009-the-batch-judge.md) | `bouncer judge` and `bouncer measure`; `policies:` sets; fixtures as items; `consumer` and `set` on the log line | accepted | corrected 09-19 (decisions 4 and 5) |
 | [010](010-a-fast-path-entry-is-a-whole-command.md) | a fast-path entry is a whole command unless it ends in a space | accepted | `git status` corrected 09-19; what a whole command still trusts said 09-30 |
 | [011](011-the-local-backend-is-chosen-by-a-gate.md) | no local model is named; a backend other than `jev` gates only with an attestation from a six-part gate; polarity and injection disqualify | accepted, **not built** | spec in [`../calibration-gate.md`](../calibration-gate.md); work tracked in #127 |
+| [012](012-bouncer-does-not-guard-its-own-records.md) | bouncer does not label or gate this repository's records, tests or policy; a check that names its decision, a visible second edit and the pull request stand in | accepted | the user's own policy file is left open as #141; platform enforcement is #74 |
 
 [`../adr-review-2026-09-18.md`](../adr-review-2026-09-18.md) is the outside review that
 produced most of the corrections above; its header says what was done about each finding.

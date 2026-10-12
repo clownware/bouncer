@@ -221,9 +221,12 @@ it "frontier".
   PR's branch rather than on `main` can merge, report `merged: true` with `merged_by` and
   `merged_at` set, and put its commit on a branch that has already been merged and never
   will be again. GitHub retargets an open stacked PR to the grandparent base only when the
-  base branch is **deleted** on merge, and this repository does not delete branches, so the
-  base stays alive and leads nowhere. Nothing warns you; the only tell is `base.ref`. PR #64
-  went this way on 2026-09-19 and was re-landed as #68. So: prefer not to stack, say so in
+  base branch is **deleted** on merge. This repository did not delete branches then, so the
+  base stayed alive and led nowhere; nothing warned, and the only tell was `base.ref`. PR #64
+  went this way on 2026-09-19 and was re-landed as #68. "Automatically delete head branches"
+  is on as of 2026-10-12 (`gh api repos/clownware/bouncer --jq .delete_branch_on_merge`), which
+  retargets a stacked PR when its parent merges through GitHub; a parent merged any other way,
+  or a setting someone turns off, puts the case back. So: prefer not to stack, say so in
   the body when you do and retarget to `main` yourself once the parent merges, and after any
   PR of yours reports merged run
   `git fetch origin main && git merge-base --is-ancestor <head-sha> origin/main` before
@@ -238,11 +241,12 @@ it "frontier".
   shape-pinning test fails on a field someone else added, the version bump is the fix and the
   guard is working; do not relax the pin. Concurrent PRs also conflict in `bin/bouncer.cjs`,
   which is the same remedy: merge `main`, rebuild, commit.
-- **Two repository settings would close both of those classes** and are the owner's to set
-  (issue #74): "Automatically delete head branches" ends the orphaned-stack case outright,
-  and branch protection requiring branches to be up to date before merging ends the red-`main`
-  case, at the cost of a re-run per merge. Neither is on today, so the two rules above are
-  what stands in for them.
+- **Two repository settings close those classes** and are the owner's to set (issue #74).
+  "Automatically delete head branches" ends the orphaned-stack case and is on. Branch
+  protection requiring branches to be up to date before merging would end the red-`main` case,
+  at the cost of a re-run per merge, and is not: `main` has no protection and no rulesets as
+  of 2026-10-12, so no check blocks a merge or a direct push, and the merge-`main`-first rule
+  above is what stands in for it.
 - A policy file names its sets under `policies:`; a top-level `gate:` is a permanent alias
   and not a deprecated spelling, so never add a warning to it (ADR-009). `policy/default.yaml`
   deliberately stays on the alias: it is the file every user copies.
@@ -271,8 +275,10 @@ it "frontier".
   update, not a commit list. Docs and tests alone need neither.
 - Tests are table-driven where the logic is (policy, redaction, rules). The engine is pure
   functions and should stay that way — no I/O below `src/cli.ts` and `src/io/`.
-- **No real API key in any thread.** Jev calls are stubbed in tests; live calibration runs
-  are done by Chris locally.
+- **No real API key in any file, message or command line.** Jev calls are stubbed in tests.
+  A live calibration run happens on Chris's machine, by him or by a local session he has
+  allowed, with the key read through `op` into the process's environment at the moment of the
+  call (allowed 2026-09-19). A remote or CI session never has one and never asks for one.
 - A synthetic credential in a test or fixture is the real prefix followed by the alphabet
   (`abcdefghijkl…`), or is a plain word where the pattern keys on the variable's name.
   `.gitleaks.toml` allows a finding only when it is under `test/` or `fixtures/` AND looks
