@@ -10156,8 +10156,27 @@ function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// src/gatemetrics.ts
+function auc(rows) {
+  const positives = rows.filter((r) => r.label).length;
+  const negatives = rows.length - positives;
+  if (positives === 0 || negatives === 0) return Number.NaN;
+  const sorted = [...rows].sort((a, b) => a.p - b.p);
+  let rankSum = 0;
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j < sorted.length && sorted[j].p === sorted[i].p) j += 1;
+    const rank = (i + 1 + j) / 2;
+    for (let k = i; k < j; k += 1) {
+      if (sorted[k].label) rankSum += rank;
+    }
+    i = j;
+  }
+  return (rankSum - positives * (positives + 1) / 2) / (positives * negatives);
+}
+
 // src/calibrate.ts
-var TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists"];
+var TOOL_CALL_KEYS = ["tool", "input", "cwd", "permission_mode", "target_exists", "git"];
 var BUCKETS = [
   [0.5, 0.6],
   [0.6, 0.7],
@@ -10308,8 +10327,14 @@ function toolCallOf(fixture) {
     input: item["input"] ?? {},
     ...typeof item["cwd"] === "string" ? { cwd: item["cwd"] } : {},
     ...typeof item["permission_mode"] === "string" ? { permission_mode: item["permission_mode"] } : {},
-    ...typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {}
+    ...typeof item["target_exists"] === "boolean" ? { target_exists: item["target_exists"] } : {},
+    ...branchOf(item["git"]) !== void 0 ? { git: { branch: branchOf(item["git"]) } } : {}
   };
+}
+function branchOf(git) {
+  if (typeof git !== "object" || git === null) return void 0;
+  const branch = git["branch"];
+  return typeof branch === "string" && branch.length > 0 ? branch : void 0;
 }
 function stateFor(fixture) {
   if (fixture.kind === "item") return itemState.build(fixture.item);
@@ -10319,7 +10344,8 @@ function stateFor(fixture) {
     toolInput: call.input,
     cwd: call.cwd ?? "/home/user/project",
     ...call.permission_mode !== void 0 ? { permissionMode: call.permission_mode } : {},
-    ...call.target_exists !== void 0 ? { targetExists: call.target_exists } : {}
+    ...call.target_exists !== void 0 ? { targetExists: call.target_exists } : {},
+    ...call.git !== void 0 ? { git: call.git } : {}
   });
 }
 function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
@@ -10737,6 +10763,7 @@ function summarise(arm, calibration) {
     accuracy: rows.length === 0 ? Number.NaN : rows.filter((r) => r.correct).length / rows.length,
     brier: meanOf(reports.map((r) => r.brier)),
     ece: expectedCalibrationError(rows),
+    auc: auc(rows.map((r) => ({ label: r.expected, p: r.p }))),
     falseAllows: { total: falseAllows, byQuestion },
     falseAsks: { count: falseAsks, of: allFalse, rate: allFalse === 0 ? Number.NaN : falseAsks / allFalse },
     ...latencies.length > 0 ? { latency: { p50: nearestRank(latencies, 0.5), p95: nearestRank(latencies, 0.95) } } : {},
@@ -10810,13 +10837,13 @@ function formatArms(summaries) {
   const usd = (n) => n === void 0 ? "unpriced" : n === 0 ? "$0 (local)" : `$${n.toPrecision(2)}`;
   const ms = (n) => n === void 0 ? "\u2014" : String(Math.round(n));
   const lines = ["Arms", ""];
-  lines.push("| arm | fixtures | accuracy | Brier | ECE | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("| arm | fixtures | accuracy | Brier | ECE | AUC | false allows | false asks | p50 ms | p95 ms | per decision | truncated |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of summaries) {
     const t = s.truncation;
     const cut = t.count === 0 ? `0 / ${t.of}` : `${t.count} / ${t.of}, mean ${Math.round(t.meanFrom)} \u2192 ${Math.round(t.meanTo)} tokens`;
     lines.push(
-      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${s.falseAllows.total} | ${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ${usd(s.costPerDecision)} | ${cut} |`
+      `| ${s.backend} | ${s.fixtures} | ${pct(s.accuracy)} | ${num(s.brier)} | ${num(s.ece)} | ${num(s.auc)} | ${s.falseAllows.total} | ${s.falseAsks.count} / ${s.falseAsks.of} (${pct(s.falseAsks.rate)}) | ${ms(s.latency?.p50)} | ${ms(s.latency?.p95)} | ${usd(s.costPerDecision)} | ${cut} |`
     );
   }
   const questions = [...new Set(summaries.flatMap((s) => Object.keys(s.falseAllows.byQuestion)))].sort();
@@ -10832,6 +10859,10 @@ function formatArms(summaries) {
     }
   }
   lines.push(
+    "",
+    "ECE is how far stated confidence is from accuracy; AUC is whether true fixtures are ranked above",
+    "false ones (0.5 is chance). Read them together: a rescaling can repair the first and never the",
+    "second.",
     "",
     "Truncation is what the server reported (X-Clownbot-Truncated). It does not change a verdict",
     "here, because the hook does not read it either."
@@ -13100,7 +13131,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.11\n");
+      process.stdout.write("0.2.12\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

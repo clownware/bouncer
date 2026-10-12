@@ -293,7 +293,7 @@ BOUNCER_JEV_COMPAT_API_KEY_FILE=<decision key file> BOUNCER_TYPESAFE_API_KEY=…
 ```
 
 `--compare` takes any number of arms and compares each one after the first against the
-first. It prints an **Arms** table with accuracy, Brier, expected calibration error, false
+first. It prints an **Arms** table with accuracy, Brier, expected calibration error, AUC, false
 allows by question, the false-ask rate, p50/p95 latency, cost per decision and server
 truncation. Then, for each arm, it prints every fixture whose verdict differs from the
 first arm's, with what decided each side, and two gates read from the policy's

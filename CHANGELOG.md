@@ -8,6 +8,20 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.12
+
+**`calibrate --compare` and `--from a,b` print AUC beside ECE.** The **Arms** table gains a
+column: how well an arm ranks fixtures labelled true above those labelled false, pooled over
+the questions, where 0.5 is chance. Expected calibration error alone can pass an arm that
+answers 0.55 to everything, and the first local gate run had one (ECE 0.063 against Jev's
+0.061, AUC 0.67 against 0.98). Anything that parses the table by column position needs the
+extra column; nothing else an install does has changed.
+
+This is the first piece of ADR-011's calibration gate (#127). The rest of what landed with it
+is not reachable from a command yet: the flip-rate, attack-success and temperature-fit
+arithmetic, and loaders for trace, variant and injection fixtures. A fixture may now carry
+`"git": {"branch": "…"}`, which the state builder already sent and no fixture could say.
+
 ## 0.2.11
 
 **Two questions reworded, so the gate prompts less on ordinary agent work** (#129). If you
