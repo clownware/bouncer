@@ -266,12 +266,16 @@ export function loadFixtures(path: string): Fixture[] {
   return parseFixtures(readFileSync(path, "utf8"));
 }
 
+/** What one fixture may take unless `calibrate --timeout` says otherwise. */
+const FIXTURE_TIMEOUT_MS = 30_000;
+
 export async function score(
   fixtures: readonly Fixture[],
   policy: Policy,
   adapter: Adapter,
   onProgress?: (done: number, total: number, answered: Answered) => void,
   setName: string = GATE_SET,
+  timeoutMs: number = FIXTURE_TIMEOUT_MS,
 ): Promise<Scored[]> {
   const set = policy.sets[setName];
   if (set === undefined) {
@@ -288,7 +292,7 @@ export async function score(
   for (const [i, fixture] of fixtures.entries()) {
     const state = stateFor(fixture);
 
-    const response = await adapter.decide({ state: state.text, questions, timeoutMs: 30_000 });
+    const response = await adapter.decide({ state: state.text, questions, timeoutMs });
 
     // Every question's answer, not just the labelled ones: the `any` uncertainty rule
     // reads all of them, so a verdict computed from a subset would not be the real one.

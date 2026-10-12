@@ -107,19 +107,32 @@ export interface CalibrateArgs {
   readonly stamp?: string;
   /** `--stamp`: also replace a `base` that names another wording. */
   readonly restamp?: boolean;
+  /**
+   * Milliseconds one fixture may take, all of its questions together. The default suits a
+   * hosted API. A 27B model on a laptop took 18 s a fixture and lost a 35-minute run to
+   * one that took longer than 30 (#139).
+   */
+  readonly timeoutMs?: number;
   /** What was wrong with the argv. The command prints it and exits 1 without running. */
   readonly error?: string;
 }
 
 const FLAGS = {
-  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp"],
+  values: ["fixtures", "set", "from", "backend", "compare", "out", "policy", "gate", "reference", "variants", "injection", "out-dir", "stamp", "timeout"],
   switches: ["json", "restamp"],
 } as const;
 
 export function parseArgs(argv: readonly string[]): CalibrateArgs {
-  const { values, switches, error } = parseFlags(argv, FLAGS);
+  const { values, switches, error: flagError } = parseFlags(argv, FLAGS);
   const value = (name: string): string | undefined => values.get(name);
+  const timeout = value("timeout") !== undefined ? Number(value("timeout")) : undefined;
+  const error =
+    flagError ??
+    (timeout !== undefined && !(Number.isInteger(timeout) && timeout > 0)
+      ? `--timeout takes a whole number of milliseconds, not "${value("timeout")}".\n`
+      : undefined);
   return {
+    ...(timeout !== undefined && error === undefined ? { timeoutMs: timeout } : {}),
     ...(value("fixtures") !== undefined ? { fixtures: value("fixtures") as string } : {}),
     ...(value("set") !== undefined ? { set: value("set") as string } : {}),
     ...(value("from") !== undefined ? { from: value("from") as string } : {}),
@@ -659,6 +672,7 @@ async function run(
       if (!args.json) process.stderr.write(`\r  ${prefix}${done}/${n} fixtures`);
     },
     args.set,
+    args.timeoutMs,
   );
   if (!args.json) process.stderr.write("\r\x1b[K");
   return scored;
