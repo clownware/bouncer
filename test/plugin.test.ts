@@ -57,14 +57,33 @@ function frontmatterField(path: string, field: string): string {
 describe("the version", () => {
   const manifest = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")) as { version: string };
 
+  // Printed on failure, because the failure is usually met mid-bump by someone who has
+  // changed one of the four and not yet found the others (docs/adr/012, decision 2).
+  const FOUR_PLACES =
+    "The version is written in four places that must agree: .claude-plugin/plugin.json, " +
+    "package.json, package-lock.json (`npm install --package-lock-only` rewrites it) and the " +
+    "literal `--version` prints in src/cli.ts, which needs `npm run build` to reach " +
+    "bin/bouncer.cjs. Claude Code offers an update only when plugin.json's string moves, so a " +
+    "change to what an installed bouncer does bumps all four and adds a CHANGELOG.md entry " +
+    "(CLAUDE.md, Conventions).";
+
   it("matches between the plugin manifest and the package", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
-    expect(manifest.version).toBe(pkg.version);
+    expect(manifest.version, FOUR_PLACES).toBe(pkg.version);
+  });
+
+  it("matches the lockfile, in both places it is written there", () => {
+    const lock = JSON.parse(readFileSync("package-lock.json", "utf8")) as {
+      version: string;
+      packages: Record<string, { version?: string }>;
+    };
+    expect(lock.version, FOUR_PLACES).toBe(manifest.version);
+    expect(lock.packages[""]?.version, FOUR_PLACES).toBe(manifest.version);
   });
 
   it("is what the built bundle reports", () => {
     const printed = spawnSync(process.execPath, ["bin/bouncer.cjs", "--version"], { encoding: "utf8" });
-    expect(printed.stdout.trim()).toBe(manifest.version);
+    expect(printed.stdout.trim(), FOUR_PLACES).toBe(manifest.version);
   });
 
   it("is not the one the marketplace entry carries, because it carries none", () => {
@@ -73,6 +92,12 @@ describe("the version", () => {
     const market = JSON.parse(readFileSync(".claude-plugin/marketplace.json", "utf8")) as {
       plugins: readonly Record<string, unknown>[];
     };
-    for (const entry of market.plugins) expect(entry["version"]).toBeUndefined();
+    for (const entry of market.plugins) {
+      expect(
+        entry["version"],
+        ".claude-plugin/marketplace.json must carry no version: plugin.json wins over it, so a " +
+          "copy there is a fifth place to forget (CLAUDE.md, Conventions). Remove it.",
+      ).toBeUndefined();
+    }
   });
 });
