@@ -97,9 +97,21 @@ const SHELL_ASSIGNED = "shell-assigned-secret";
  * (`?api_key=…`, `&token=…`) or the start of a quoted value (`-d 'token=…'`).
  * `login(password=value)` is none of those. A lowercase assignment this lets go is not
  * approved by that; it reaches the classifier, as it would have with no rule at all.
+ *
+ * And never a name that says its value is a location: `API_KEY_FILE=/run/secrets/key`,
+ * `--password-file=…`, `SSH_PRIVATE_KEY_PATH=…`. Pointing at a file is how a key is kept
+ * off the command line, and bouncer's own `BOUNCER_LOCAL_API_KEY_FILE` was stopped as a
+ * credential (#150). Read from the name and not the value: a secret can begin with a slash.
  */
+/**
+ * `GOOGLE_APPLICATION_CREDENTIALS` is the one widely used name with no such suffix whose
+ * value is a path by definition.
+ */
+const NAMES_A_LOCATION = /(?:[_-](?:FILE|PATH|DIR)|^GOOGLE_APPLICATION_CREDENTIALS)$/i;
+
 function shellAssigned(name: string, equals: string, before: string): boolean {
   if (equals !== "=") return false;
+  if (NAMES_A_LOCATION.test(name)) return false;
   if (!/[a-z]/.test(name)) return true;
   return before === "--" || /[?&'"]$/.test(before);
 }

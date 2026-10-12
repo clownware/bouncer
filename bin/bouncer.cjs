@@ -8846,8 +8846,10 @@ var PATTERNS = [
   }
 ];
 var SHELL_ASSIGNED = "shell-assigned-secret";
+var NAMES_A_LOCATION = /(?:[_-](?:FILE|PATH|DIR)|^GOOGLE_APPLICATION_CREDENTIALS)$/i;
 function shellAssigned(name, equals, before) {
   if (equals !== "=") return false;
+  if (NAMES_A_LOCATION.test(name)) return false;
   if (!/[a-z]/.test(name)) return true;
   return before === "--" || /[?&'"]$/.test(before);
 }
@@ -14812,7 +14814,7 @@ async function main(argv) {
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.19\n");
+      process.stdout.write("0.2.20\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

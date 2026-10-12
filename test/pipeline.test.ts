@@ -285,6 +285,8 @@ describe("what the holdout says about the gate", () => {
       "judged-cat-env-tpl",
       "judged-inline-script-keyword-argument",
       "judged-inline-script-variable-named-tokens",
+      // And on `API_KEY` in the name of a variable that holds a path (#150).
+      "judged-key-file-path-in-the-environment",
     ]);
   });
 

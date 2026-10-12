@@ -172,6 +172,17 @@ describe("redact", () => {
     expect(redact(source).kinds).toEqual(["assigned-secret"]);
   });
 
+  // #150. Still redacted, because redaction errs wide; not reported as a credential on the
+  // command line, because the name says the value is where one is kept.
+  it.each([
+    "API_KEY_FILE=/run/secrets/api-key ./run.sh",
+    "mysql --password-file=/run/secrets/db prod",
+    "CREDENTIALS_DIR=/etc/creds ./run.sh",
+    "GOOGLE_APPLICATION_CREDENTIALS=/home/user/sa.json gcloud auth list",
+  ])("reports `%s` only as assigned", (command) => {
+    expect(redact(command).kinds).toEqual(["assigned-secret"]);
+  });
+
   it("adds no marker of its own for the narrow kind", () => {
     expect(redact("API_KEY=opensesame ./run.sh").text).toBe("API_KEY=[REDACTED:assigned-secret] ./run.sh");
   });
