@@ -118,6 +118,10 @@ describe("kindOf", () => {
     ["package-lock.json", "lockfile"],
     ["services/api/uv.lock", "lockfile"],
     ["dist/app.js", "generated"],
+    ["fixtures/push-file.jsonl", "test data"],
+    ["test/fixtures/payloads/bash.json", "test data"],
+    ["internal/store/testdata/rows.sql", "test data"],
+    ["src/__snapshots__/cart.test.ts.snap", "generated"],
     ["public/app.min.js", "generated"],
     ["package.json", "source"],
   ])("%s is %s", (path, kind) => {
@@ -174,6 +178,7 @@ describe("pushItems", () => {
     ["a binary file", file("assets/logo.png", { binary: true, diff: "" }), /binary/],
     ["a lockfile", file("pnpm-lock.yaml"), /lockfile/],
     ["a generated file", file("dist/bundle.js"), /generated/],
+    ["test data", file("fixtures/push-file.jsonl"), /test data/],
     ["documentation", file("docs/guide.md"), /documentation/],
     ["a file whose diff could not be read", file("src/huge.ts", { diff: "" }), /could not be read/],
     ["a diff longer than one item", file("src/long.ts", { diff: `+${"x".repeat(MAX_ITEM_STATE_BYTES)}` }), /longer than one item can carry/],

@@ -42,11 +42,17 @@ const DOC_PATH = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(docs?|documentation)\/|(^|\/)(
 const LOCKFILE = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock|flake\.lock)$/;
 const GENERATED = /(^|\/)(dist|build|out|vendor|node_modules|\.next|coverage)\/|\.min\.(js|css)$|\.(map|snap)$|\.generated\.|_pb2?\.py$|\.pb\.go$/;
 
-export type FileKind = "test" | "docs" | "lockfile" | "generated" | "source";
+// Recorded inputs and expected outputs. Found by running this on its own change: the
+// fixtures for `debug_leftover` are lines of `console.log`, and the question fired on them at
+// 0.96. Data that looks like code is not code somebody left unfinished.
+const TEST_DATA = /(^|\/)(fixtures?|__fixtures__|testdata|test-data|__snapshots__|golden|cassettes)\//;
+
+export type FileKind = "test" | "test data" | "docs" | "lockfile" | "generated" | "source";
 
 export function kindOf(path: string): FileKind {
   if (LOCKFILE.test(path)) return "lockfile";
   if (GENERATED.test(path)) return "generated";
+  if (TEST_DATA.test(path)) return "test data";
   if (TEST_PATH.test(path)) return "test";
   if (DOC_PATH.test(path)) return "docs";
   return "source";
@@ -86,6 +92,7 @@ function whyUnchecked(file: ChangedFile, kind: FileKind): string | undefined {
   if (file.binary) return "binary";
   if (kind === "lockfile") return "a lockfile";
   if (kind === "generated") return "generated or vendored";
+  if (kind === "test data") return "test data";
   if (kind === "docs") return "documentation";
   if (file.diff.length === 0) return "its diff could not be read";
   // A diff the state builder would cut is not judged on its head: an allow from the first

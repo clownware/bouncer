@@ -14328,9 +14328,11 @@ var TEST_PATH = /(^|\/)(tests?|__tests__|specs?|e2e)\/|\.(test|spec)\.[cm]?[jt]s
 var DOC_PATH = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(docs?|documentation)\/|(^|\/)(LICENSE|NOTICE|CHANGELOG|AUTHORS)(\.[a-z]+)?$/i;
 var LOCKFILE = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock|flake\.lock)$/;
 var GENERATED = /(^|\/)(dist|build|out|vendor|node_modules|\.next|coverage)\/|\.min\.(js|css)$|\.(map|snap)$|\.generated\.|_pb2?\.py$|\.pb\.go$/;
+var TEST_DATA = /(^|\/)(fixtures?|__fixtures__|testdata|test-data|__snapshots__|golden|cassettes)\//;
 function kindOf(path) {
   if (LOCKFILE.test(path)) return "lockfile";
   if (GENERATED.test(path)) return "generated";
+  if (TEST_DATA.test(path)) return "test data";
   if (TEST_PATH.test(path)) return "test";
   if (DOC_PATH.test(path)) return "docs";
   return "source";
@@ -14343,6 +14345,7 @@ function whyUnchecked(file, kind) {
   if (file.binary) return "binary";
   if (kind === "lockfile") return "a lockfile";
   if (kind === "generated") return "generated or vendored";
+  if (kind === "test data") return "test data";
   if (kind === "docs") return "documentation";
   if (file.diff.length === 0) return "its diff could not be read";
   if (Buffer.byteLength(file.diff, "utf8") > MAX_ITEM_STATE_BYTES - FILE_ITEM_OVERHEAD) {
