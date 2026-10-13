@@ -74,6 +74,14 @@ the fallback, not the location. A unit test on the resolver cannot see this, whi
 `test/datadir.test.ts` runs the built bundle twice, once with a hook's environment and once
 with a bare one, and asserts they meet on one file.
 
+**The Stop hook never speaks.** `bouncer stop` judges the agent's closing message and
+writes a line to `stops.jsonl`; it prints nothing and exits 0, always. A `Stop` hook's
+stdout can keep an agent working after it chose to stop, which is the one thing here that
+removes a checkpoint instead of adding one, so `runStop` returns nothing for the entrypoint
+to print and `test/stop.test.ts` runs the built bundle to hold it. It is also off until a
+stop policy exists outside the plugin, because it sends the end of that message. ADR-015
+says what would have to be true before either changes.
+
 **No thresholds in code.** Questions are plain English and thresholds are numbers, both
 living in the user's YAML. If you find yourself writing `if (p > 0.8)` in `src/`, the
 number belongs in `policy/default.yaml` instead.
@@ -190,6 +198,9 @@ easily got wrong, all confirmed against captured payloads in `test/fixtures/payl
 - Subagent calls add `agent_id` and `agent_type` as top-level keys.
 - `Bash` input carries `description` alongside `command`.
 - `permissionDecision: "defer"` is documented but untested here. Nothing emits it.
+- `Stop` carries `last_assistant_message`, `stop_hook_active`, `background_tasks` and
+  `session_crons` (`stop-main.json`, captured 2026-10-12). No transcript read is needed
+  to see what the agent last said.
 
 When a payload question comes up, read a fixture rather than the docs. The fixtures are
 recorded reality; the docs are a description of it.

@@ -690,6 +690,30 @@ contents come out as filler of the logged size, because the log never held them,
 outside the project comes out as its file name under a representative directory with the
 same labels.
 
+## When the agent stops: `bouncer stops`
+
+An agent stops, you read its last message, decide the next step was already covered, and
+type "proceed". A `Stop` hook asks a judgment model that question at the same moment, and
+writes down the answer. **It only watches.** It never tells Claude Code to continue, in any
+mode, and it prints nothing ([ADR-015](docs/adr/015-the-stop-hook-watches-and-never-speaks.md)).
+
+It is off until you turn it on, because it sends content: the last 6,000 characters of the
+agent's closing message go to the backend after redaction. Redaction catches credential
+shapes, not names or prose.
+
+Copy the plugin's `policy/stop.yaml` to `~/.bouncer/stop.yaml` to turn it on for every
+project, or to `.bouncer.stop.yaml` in one repository to turn it on there only. A
+repository's file wins over yours. `bouncer stops` prints the exact `cp` command, with the
+plugin's own path, while nothing is logged.
+
+```bash
+node bin/bouncer.cjs stops
+```
+
+`bouncer stops` pairs each logged stop with the next prompt you typed in that session and
+prints what it would have saved you and, the number that matters, how often it would have
+run ahead of you. It sends nothing.
+
 ## Before a push: `bouncer ready`
 
 The gate asks whether a command is dangerous. This asks a different question, which nothing

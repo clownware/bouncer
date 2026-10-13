@@ -13,6 +13,14 @@ to remove, and most of the denies he saw were hard-rule false positives. The use
 evidence is taking classification and verification off a reasoning model; the first real
 `bouncer measure` run is written up on #75, with its caveats.
 
+**The Stop hook (0.2.22, ADR-015) is the consumer in flight.** It watches each stop and
+logs whether the agent was only waiting for a go-ahead; `bouncer stops` scores that against
+the next typed prompt. It is off until the owner copies `policy/stop.yaml` to
+`~/.bouncer/stop.yaml` or to a repository's `.bouncer.stop.yaml`. Next: once a few dozen
+stops are logged, read `bouncer stops`. ADR-015 lists what would have to be true before the
+hook is allowed to continue anything, and none of it is decided. #156 holds the wider
+proposals (stop calling the classifier from the gate in `seatbelt`; move the skill router up).
+
 So the ADR-011 work below is parked, not abandoned, and the order is:
 
 1. Compare `readiness.jsonl` with CI results on the same head commits, once a few real

@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/bouncer.cjs\" stop",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

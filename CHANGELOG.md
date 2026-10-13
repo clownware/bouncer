@@ -8,6 +8,24 @@ Earlier releases have no entries: 0.2.0 is described in
 [the v0.2 announcement](https://github.com/clownware/bouncer/blob/fc08c9c/docs/announcement-v0.2.md),
 and this file starts where the convention does.
 
+## 0.2.22
+
+**A `Stop` hook that watches, and `bouncer stops` to read what it saw** (#156, ADR-015).
+When the agent stops, a judgment model is asked whether it was only waiting for a go-ahead,
+and the answer is logged. Later, `bouncer stops` compares each one with what you typed next.
+
+- **It changes nothing about any session.** The hook prints nothing and never tells Claude
+  Code to continue, in any mode.
+- **It is off after this update.** Nothing is sent and nothing is logged until you copy
+  `policy/stop.yaml` to `~/.bouncer/stop.yaml` (every project) or to `.bouncer.stop.yaml`
+  in a repository (that project only).
+- **Once on, it sends content:** the last 6,000 characters of the agent's closing message,
+  after redaction, each time a session stops. Nothing is sent while a background task is
+  still running.
+- The plugin now registers a second hook. Where it is off, that is one short process at
+  each stop. Tool calls are not affected.
+- `stops.jsonl` in the data directory holds the answers and the redacted text.
+
 ## 0.2.21
 
 **`bouncer calibrate --timeout <ms>`**: how long one fixture may take, all of its questions
