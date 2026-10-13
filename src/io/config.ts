@@ -77,6 +77,27 @@ function policyCandidates(cwd: string, pluginRoot?: string): string[] {
   return candidates;
 }
 
+/**
+ * The stop policy for a session in `cwd`, or undefined when there is none.
+ *
+ * Undefined is the ordinary answer and means the Stop hook does nothing. It is not the
+ * policy precedence above with a different file name, because the bundled default is
+ * deliberately not on the list: the stop set sends the end of the agent's closing message,
+ * so it runs only where somebody put a file that says to (docs/adr/015). A repository's
+ * own file wins over the user's, which is how a project is taken out of bounds or put in.
+ */
+export function stopPolicyPath(cwd: string): string | undefined {
+  const override = process.env["BOUNCER_STOP_POLICY"];
+  if (override !== undefined && override.length > 0) return resolve(override);
+
+  const repoRoot = findRepoRoot(cwd);
+  const candidates = [
+    ...(repoRoot !== undefined ? [join(repoRoot, ".bouncer.stop.yaml")] : []),
+    join(homedir(), ".bouncer", "stop.yaml"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 /** Walks up looking for a `.git` entry. Returns undefined outside a repository. */
 function findRepoRoot(from: string): string | undefined {
   let current = resolve(from);

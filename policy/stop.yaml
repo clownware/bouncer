@@ -1,0 +1,60 @@
+# The stop set: when the agent stops, was it asking for a go-ahead it did not need?
+#
+# This file does nothing where it sits. The Stop hook reads a stop policy from one of three
+# places and is off when none exists (docs/adr/015):
+#
+#   $BOUNCER_STOP_POLICY           a path, for one session or a test
+#   <repo>/.bouncer.stop.yaml      this repository only
+#   ~/.bouncer/stop.yaml           every project on this machine
+#
+# To turn it on, copy this file to one of the last two. It is off by default because it
+# sends content: the end of the agent's closing message goes to the backend, after
+# redaction, every time a session stops. Redaction catches credential shapes. It does not
+# catch names, paths or prose. Choose the projects accordingly.
+#
+# It only watches. The hook emits nothing in any mode, and `mode` below is read by nothing.
+# Each stop is written to `stops.jsonl` in the data directory with the answers, and
+# `bouncer stops` compares them with what you typed next. `allow` in the rules below means
+# "this stop looks like one a go-ahead would have followed"; `ask` means "leave it".
+version: 1
+
+backend: jev
+mode: observe
+
+# A stop is not on anyone's keystroke path, so this is generous. The hook itself is given
+# ten seconds by hooks.json.
+timeout_ms: 5000
+
+policies:
+  stop:
+    questions:
+      asks_go_ahead:
+        instructions: "`closing_message` ends by asking the user to approve a next step that the message itself describes."
+        criteria:
+          "true": "shall I proceed, want me to merge it, say go and I will start, should I continue with the next step, ready to push when you confirm, I can do that now if you like"
+          "false": "a report that the work is finished with nothing further proposed, a question asking the user to choose between options, a question asking for information, a summary that ends without a question, a note that it is waiting on a running task"
+
+      needs_a_decision:
+        instructions: "`closing_message` asks the user to make a choice or to supply information that the message does not already contain."
+        criteria:
+          "true": "which of these options do you prefer, what should it be called, a credential or an access the agent says it lacks, a product decision the message says is the user's, a question with more than one reasonable answer"
+          "false": "a request for a plain yes to one step already described, a finished report, a recommendation the message says it will act on, a rhetorical question"
+
+      irreversible_step:
+        instructions: "The next step that `closing_message` proposes is hard to undo or reaches outside the working copy."
+        criteria:
+          "true": "merging or closing a pull request, pushing or force pushing, deleting files or branches or data, deploying or publishing, sending a message or an email, spending money, running a migration against a shared database"
+          "false": "editing files in the working copy, running tests or a build, reading files, writing a draft, creating a local branch or a commit, the message proposes no next step"
+
+    # First match wins. The two reasons to leave a stop alone come first, then the
+    # uncertainty band, and only then the one answer that reads as a go-ahead.
+    rules:
+      - when: { needs_a_decision: { p: ">=0.60" } }
+        then: ask
+      - when: { irreversible_step: { p: ">=0.60" } }
+        then: ask
+      - when: { any: { p: "0.40..0.60" } }
+        then: ask
+      - when: { asks_go_ahead: { p: ">=0.70" } }
+        then: allow
+      - default: ask

@@ -594,8 +594,8 @@ var require_Node = __commonJS({
         };
         const res = toJS.toJS(this, "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
     };
@@ -703,13 +703,13 @@ var require_Alias = __commonJS({
         const anchor = anchors2 && source && anchors2.get(source);
         return anchor ? anchor.count * anchor.aliasCount : 0;
       } else if (identity.isCollection(node)) {
-        let count = 0;
+        let count2 = 0;
         for (const item of node.items) {
           const c = getAliasCount(doc, item, anchors2);
-          if (c > count)
-            count = c;
+          if (c > count2)
+            count2 = c;
         }
-        return count;
+        return count2;
       } else if (identity.isPair(node)) {
         const kc = getAliasCount(doc, node.key, anchors2);
         const vc = getAliasCount(doc, node.value, anchors2);
@@ -3662,8 +3662,8 @@ var require_Document = __commonJS({
         };
         const res = toJS.toJS(this.contents, jsonArg ?? "", ctx);
         if (typeof onAnchor === "function")
-          for (const { count, res: res2 } of ctx.anchors.values())
-            onAnchor(res2, count);
+          for (const { count: count2, res: res2 } of ctx.anchors.values())
+            onAnchor(res2, count2);
         return typeof reviver === "function" ? applyReviver.applyReviver(reviver, { "": res }, "", res) : res;
       }
       /**
@@ -3740,12 +3740,12 @@ var require_errors = __commonJS({
         lineStr = prev + lineStr;
       }
       if (/[^ ]/.test(lineStr)) {
-        let count = 1;
+        let count2 = 1;
         const end = error.linePos[1];
         if (end?.line === line && end.col > col) {
-          count = Math.max(1, Math.min(end.col - col, 80 - ci));
+          count2 = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
-        const pointer = " ".repeat(ci) + "^".repeat(count);
+        const pointer = " ".repeat(ci) + "^".repeat(count2);
         error.message += `:
 
 ${lineStr}
@@ -7577,8 +7577,8 @@ function parseResponse(payload, latencyMs) {
   if (typeof payload !== "object" || payload === null) {
     throw new AdapterError("malformed_response", "response was not an object");
   }
-  const record3 = payload;
-  const rawAnswers = record3["answers"];
+  const record4 = payload;
+  const rawAnswers = record4["answers"];
   if (typeof rawAnswers !== "object" || rawAnswers === null) {
     throw new AdapterError("malformed_response", "response had no answers object");
   }
@@ -7590,44 +7590,44 @@ function parseResponse(payload, latencyMs) {
   if (Object.keys(answers).length === 0) {
     throw new AdapterError("malformed_response", "no readable answers in the response");
   }
-  const usage = record3["usage"];
+  const usage = record4["usage"];
   const inputTokens = typeof usage === "object" && usage !== null && typeof usage["input_tokens"] === "number" ? usage["input_tokens"] : void 0;
   return {
     answers,
-    ...typeof record3["model"] === "string" ? { model: record3["model"] } : {},
+    ...typeof record4["model"] === "string" ? { model: record4["model"] } : {},
     ...inputTokens !== void 0 ? { inputTokens } : {},
     latencyMs
   };
 }
 function parseAnswer(value) {
   if (typeof value !== "object" || value === null) return void 0;
-  const record3 = value;
-  switch (record3["type"]) {
+  const record4 = value;
+  switch (record4["type"]) {
     case "noul": {
-      const noul = record3["noul"];
+      const noul = record4["noul"];
       if (typeof noul !== "number" || !Number.isFinite(noul) || noul < 0 || noul > 1) return void 0;
       return { type: "noul", noul };
     }
     case "choice": {
-      const choice = record3["choice"];
-      const probabilities = record3["probabilities"];
+      const choice = record4["choice"];
+      const probabilities = record4["probabilities"];
       if (typeof choice !== "string" || !isNumberRecord(probabilities)) return void 0;
       return {
         type: "choice",
         choice,
         probabilities,
-        confidence: typeof record3["confidence"] === "number" ? record3["confidence"] : Number.NaN
+        confidence: typeof record4["confidence"] === "number" ? record4["confidence"] : Number.NaN
       };
     }
     case "score": {
-      const score2 = record3["score"];
-      const probabilities = record3["probabilities"];
+      const score2 = record4["score"];
+      const probabilities = record4["probabilities"];
       if (typeof score2 !== "number" || !isNumberRecord(probabilities)) return void 0;
       return {
         type: "score",
         score: score2,
         probabilities,
-        confidence: typeof record3["confidence"] === "number" ? record3["confidence"] : Number.NaN
+        confidence: typeof record4["confidence"] === "number" ? record4["confidence"] : Number.NaN
       };
     }
     default:
@@ -8084,11 +8084,11 @@ function topLogprobs(payload) {
 }
 function readUsage(payload) {
   if (typeof payload !== "object" || payload === null) return {};
-  const record3 = payload;
-  const usage = record3["usage"];
+  const record4 = payload;
+  const usage = record4["usage"];
   const prompt = typeof usage === "object" && usage !== null ? usage["prompt_tokens"] : void 0;
   return {
-    ...typeof record3["model"] === "string" ? { model: record3["model"] } : {},
+    ...typeof record4["model"] === "string" ? { model: record4["model"] } : {},
     ...typeof prompt === "number" ? { inputTokens: prompt } : {}
   };
 }
@@ -8180,7 +8180,7 @@ var import_yaml = __toESM(require_dist(), 1);
 
 // src/engine/fingerprint.ts
 function fingerprintQuestions(questions, probeQuestions) {
-  const sorted = (record3) => Object.keys(record3).sort().map((name) => [name, record3[name]]);
+  const sorted = (record4) => Object.keys(record4).sort().map((name) => [name, record4[name]]);
   return fingerprint(JSON.stringify([sorted(questions), sorted(probeQuestions)]));
 }
 function fingerprint(text) {
@@ -9063,9 +9063,9 @@ function describeOutside(absolute) {
   if (/^\/(home|Users)\//.test(absolute)) return "elsewhere_in_home";
   return "elsewhere_on_machine";
 }
-function truncateStrings(record3, limit) {
+function truncateStrings(record4, limit) {
   return Object.fromEntries(
-    Object.entries(record3).map(
+    Object.entries(record4).map(
       ([key, value]) => typeof value === "string" && value.length > limit ? [key, `${value.slice(0, limit)}\u2026 [truncated]`] : [key, value]
     )
   );
@@ -9490,6 +9490,16 @@ function policyCandidates(cwd, pluginRoot2) {
   if (pluginRoot2 !== void 0) candidates.push((0, import_node_path5.join)(pluginRoot2, "policy", "default.yaml"));
   return candidates;
 }
+function stopPolicyPath(cwd) {
+  const override = process.env["BOUNCER_STOP_POLICY"];
+  if (override !== void 0 && override.length > 0) return (0, import_node_path5.resolve)(override);
+  const repoRoot = findRepoRoot(cwd);
+  const candidates = [
+    ...repoRoot !== void 0 ? [(0, import_node_path5.join)(repoRoot, ".bouncer.stop.yaml")] : [],
+    (0, import_node_path5.join)((0, import_node_os.homedir)(), ".bouncer", "stop.yaml")
+  ];
+  return candidates.find((candidate) => (0, import_node_fs4.existsSync)(candidate));
+}
 function findRepoRoot(from) {
   let current = (0, import_node_path5.resolve)(from);
   for (; ; ) {
@@ -9725,10 +9735,10 @@ var import_node_path6 = require("node:path");
 var LOG_FILE = "decisions.jsonl";
 var JUDGMENTS_FILE = "judgments.jsonl";
 var MAX_LOG_BYTES = 8 * 1024 * 1024;
-function append(dir, record3, name = LOG_FILE) {
+function append(dir, record4, name = LOG_FILE) {
   try {
     (0, import_node_fs5.mkdirSync)(dir, { recursive: true });
-    const safe = record3.state !== void 0 ? { ...record3, state: redactState(record3.state) } : record3;
+    const safe = record4.state !== void 0 ? { ...record4, state: redactState(record4.state) } : record4;
     const file = (0, import_node_path6.join)(dir, name);
     rotateIfOversized(file);
     (0, import_node_fs5.appendFileSync)(file, `${JSON.stringify(safe)}
@@ -9774,7 +9784,7 @@ function parseLog(source) {
   }
   return records;
 }
-function tail(dir, count, name = LOG_FILE) {
+function tail(dir, count2, name = LOG_FILE) {
   let raw;
   try {
     raw = (0, import_node_fs5.readFileSync)((0, import_node_path6.join)(dir, name), "utf8");
@@ -9783,7 +9793,7 @@ function tail(dir, count, name = LOG_FILE) {
   }
   const records = [];
   const lines2 = raw.split("\n");
-  for (let i = lines2.length - 1; i >= 0 && records.length < count; i--) {
+  for (let i = lines2.length - 1; i >= 0 && records.length < count2; i--) {
     const line = lines2[i];
     if (line === void 0 || line.trim().length === 0) continue;
     try {
@@ -10084,284 +10094,12 @@ function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// src/commands/status.ts
-var import_node_path7 = require("node:path");
-var SAMPLE = 200;
-function status() {
-  const cwd = process.cwd();
-  const resolved = resolvePolicy(cwd, pluginRoot());
-  const dir = dataDir();
-  const lines2 = [];
-  if (resolved.policy === void 0) {
-    lines2.push("bouncer is NOT running.", "");
-    lines2.push(`Policy: ${resolved.source}`);
-    for (const d of errorsIn(resolved.diagnostics)) {
-      lines2.push(`  error at ${d.path || "the top level"}: ${d.message}`);
-    }
-    lines2.push("", "Claude Code's own permission prompts are unaffected.");
-    return `${lines2.join("\n")}
-`;
-  }
-  const policy = resolved.policy;
-  const sampled = tail(dir, SAMPLE);
-  const setAside = policy.backend === "mock" ? [] : sampled.filter((r) => r.backend === "mock");
-  const records = setAside.length === 0 ? sampled : sampled.filter((r) => r.backend !== "mock");
-  lines2.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
-  lines2.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
-  lines2.push(`Policy:  ${resolved.source}`);
-  lines2.push(`Log:     ${(0, import_node_path7.join)(dir, LOG_FILE)}`);
-  const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
-  for (const w of warnings) lines2.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
-  lines2.push(...hardRuleDrift(policy.gate.hardRules, resolved.source, cwd));
-  const standingDown = readAll(dir).filter((s) => s.tripped !== void 0);
-  if (standingDown.length > 0) lines2.push("");
-  for (const s of standingDown) {
-    lines2.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
-  }
-  lines2.push("");
-  if (records.length === 0) {
-    lines2.push("No decisions logged yet.");
-    if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
-    return `${lines2.join("\n")}
-`;
-  }
-  lines2.push(`Last ${records.length} decisions:`);
-  lines2.push(...summarize(records));
-  if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
-  if (policy.mode === "observe") {
-    const wouldPrompt = records.filter(
-      (r) => r.error === void 0 && r.reason.kind !== "truncated" && (r.verdict === "ask" || r.verdict === "deny")
-    ).length;
-    lines2.push(
-      "",
-      `In observe mode nothing was emitted. Switching to guard would have added ${wouldPrompt} prompt${wouldPrompt === 1 ? "" : "s"} across these ${records.length} calls.`,
-      "Run `bouncer calibrate` before trusting that number."
-    );
-  }
-  return `${lines2.join("\n")}
-`;
-}
-function hardRuleDrift(mine, source, cwd) {
-  const root = pluginRoot();
-  if (root === void 0) return [];
-  const bundledPath = (0, import_node_path7.join)(root, "policy", "default.yaml");
-  if ((0, import_node_path7.resolve)(source) === (0, import_node_path7.resolve)(bundledPath)) return [];
-  const bundled = resolvePolicy(cwd, root, bundledPath).policy?.gate.hardRules;
-  if (bundled === void 0) return [];
-  const { differing, missing } = compareHardRules(mine, bundled);
-  if (differing.length === 0 && missing.length === 0) return [];
-  const lines2 = ["", "Hard rules that are not the bundled ones:"];
-  for (const d of differing) lines2.push(`  ${d.name} differs`, ...d.details.map((detail) => `    ${detail}`));
-  if (missing.length > 0) lines2.push(`  not in your policy: ${missing.join(", ")}`);
-  lines2.push(
-    `A copied policy keeps the rules it was copied with. If you did not change these on purpose, take them from ${bundledPath}.`
-  );
-  return lines2;
-}
-function compareHardRules(mine, bundled) {
-  const byName = new Map(mine.map((r) => [r.name, r]));
-  const differing = [];
-  const missing = [];
-  for (const rule of bundled) {
-    const own = byName.get(rule.name);
-    if (own === void 0) {
-      missing.push(rule.name);
-      continue;
-    }
-    const details = whenDifferences(own.when, rule.when);
-    if (own.unless !== rule.unless) {
-      details.push(
-        rule.unless === void 0 ? `unless: ${own.unless} is only in yours` : own.unless === void 0 ? `unless: ${rule.unless} is only in the bundled entry` : `unless: yours has ${own.unless}; the bundled entry has ${rule.unless}`
-      );
-    }
-    if (details.length > 0) differing.push({ name: rule.name, details });
-  }
-  return { differing, missing };
-}
-function whenDifferences(mine, bundled) {
-  const keys = [
-    ["first_token", "firstToken"],
-    ["tokens", "tokens"],
-    ["token_prefix", "tokenPrefix"],
-    ["not_tokens", "notTokens"],
-    ["text", "text"],
-    ["path_labelled", "pathLabelled"],
-    ["redacts_as", "redactsAs"],
-    ["target_labelled", "targetLabelled"]
-  ];
-  const show = (values) => values.map((v) => JSON.stringify(v)).join(", ");
-  const details = [];
-  for (const [key, field] of keys) {
-    const own = mine[field];
-    const theirs = bundled[field];
-    if (own === void 0 && theirs === void 0) continue;
-    if (theirs === void 0) details.push(`${key}: [${show(own ?? [])}] is only in yours`);
-    else if (own === void 0) details.push(`${key}: [${show(theirs)}] is only in the bundled entry`);
-    else {
-      const onlyMine = own.filter((v) => !theirs.includes(v));
-      const onlyTheirs = theirs.filter((v) => !own.includes(v));
-      if (onlyMine.length === 0 && onlyTheirs.length === 0) continue;
-      const sides = [
-        ...onlyMine.length > 0 ? [`yours has ${show(onlyMine)}`] : [],
-        ...onlyTheirs.length > 0 ? [`the bundled entry has ${show(onlyTheirs)}`] : []
-      ];
-      details.push(`${key}: ${sides.join("; ")}`);
-    }
-  }
-  return details;
-}
-function summarize(records) {
-  const counts = /* @__PURE__ */ new Map();
-  for (const r of records) {
-    if (r.error !== void 0 || r.verdict === void 0) continue;
-    counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
-  }
-  const lines2 = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
-  const undecided = records.filter((r) => r.error !== void 0 || r.verdict === void 0).length;
-  if (undecided > 0) {
-    lines2.push(`  (${undecided} more concluded nothing \u2014 the classifier could not answer \u2014 and are not counted above)`);
-  }
-  const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
-  if (fastPath > 0) {
-    lines2.push(`  (${fastPath} of these never reached the classifier \u2014 fast path)`);
-  }
-  const judged = records.filter((r) => r.source === "judge");
-  if (judged.length > 0) {
-    const escalated = judged.map((r) => r.escalation).filter((e) => e !== void 0);
-    const manifest = manifestOf(escalated, judged.length);
-    const pct2 = (manifest.escalationRate * 100).toFixed(1);
-    lines2.push(
-      "",
-      `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct2}%) \u2014 the calls a rule could not settle on the classifier's answer alone.`
-    );
-  }
-  const adapterCalls = records.filter((r) => typeof r.latency_ms.adapter === "number").map((r) => r.latency_ms.adapter).sort((a, b) => a - b);
-  if (adapterCalls.length > 0) {
-    const p = (q) => adapterCalls[Math.min(adapterCalls.length - 1, Math.floor(adapterCalls.length * q))];
-    lines2.push("", `Classifier latency over ${adapterCalls.length} calls: p50 ${p(0.5)}ms, p95 ${p(0.95)}ms`);
-  }
-  const errors = records.filter((r) => r.error !== void 0);
-  if (errors.length > 0) {
-    const last = errors[0];
-    lines2.push("", `${errors.length} error${errors.length === 1 ? "" : "s"}; most recent: ${last?.error?.kind} \u2014 ${last?.error?.message}`);
-  }
-  return lines2;
-}
-function mockNote(count, backend) {
-  const s = count === 1 ? "" : "s";
-  return `Ignoring ${count} record${s} answered by the mock backend \u2014 the mock scores from fixed keyword heuristics, so ${count === 1 ? "it is" : "they are"} test or benchmark traffic rather than evidence about ${backend}.`;
-}
-function modeNote(mode) {
-  switch (mode) {
-    case "observe":
-      return "  (logging only \u2014 Claude Code behaves exactly as it would without bouncer)";
-    case "guard":
-      return "  (adds prompts where policy says so; never removes one)";
-    case "full":
-      return "  (also suppresses prompts on calls judged safe)";
-    default:
-      return "";
-  }
-}
-function backendNote(backend) {
-  if (backend === "jev") return apiKey() === void 0 ? "  (no API key in the environment)" : "";
-  if (backend === "local") {
-    const { baseUrl } = localBackend();
-    return `  (${baseUrl ?? "http://127.0.0.1:8080/v1"})`;
-  }
-  return "";
-}
-
-// src/commands/explain.ts
-var SEARCH_DEPTH = 500;
-function explain2(toolUseId) {
-  const records = tail(dataDir(), SEARCH_DEPTH);
-  if (records.length === 0) {
-    return "No decisions logged yet.\n";
-  }
-  const record3 = toolUseId === void 0 || toolUseId.length === 0 ? records.find((r) => r.reason.kind !== "fast-path") ?? records[0] : records.find((r) => r.tool_use_id === toolUseId);
-  if (record3 === void 0) {
-    return `No decision logged for ${toolUseId}. It may have scrolled out of the last ${SEARCH_DEPTH} entries.
-`;
-  }
-  return render(record3);
-}
-function render(record3) {
-  const lines2 = [];
-  lines2.push(`${record3.tool ?? `${record3.set ?? "?"}: ${record3.item ?? "(item)"}`} at ${record3.ts}`);
-  const concluded = record3.error === void 0 && record3.verdict !== void 0;
-  const emitted = record3.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record3.mode} mode` : ""})` : `  (emitted ${record3.emitted})`;
-  lines2.push(`Verdict: ${concluded ? record3.verdict : "none"}${emitted}`);
-  lines2.push(
-    `Because: ${record3.error !== void 0 ? `the classifier could not answer (${record3.error.kind}: ${record3.error.message})` : describe(record3)}`
-  );
-  if (record3.permission_mode !== void 0) {
-    lines2.push(`Permission mode: ${record3.permission_mode}`);
-  }
-  if (record3.agent_type !== void 0) {
-    lines2.push(`Called by subagent: ${record3.agent_type}`);
-  }
-  if (record3.answers !== void 0 && Object.keys(record3.answers).length > 0) {
-    lines2.push("", "Judgments:");
-    const entries = Object.entries(record3.answers).sort((a, b) => b[1] - a[1]);
-    const width = Math.max(...entries.map(([name]) => name.length));
-    for (const [name, p] of entries) {
-      lines2.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
-    }
-  }
-  if (record3.escalation !== void 0 && record3.escalation.signals.length > 0) {
-    lines2.push("", `Escalated as ${record3.escalation.verdict}, on:`);
-    for (const signal of record3.escalation.signals) {
-      const mark = signal.decided ? "\u2192" : " ";
-      lines2.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
-      lines2.push(`      ${signal.asks}`);
-    }
-    if (record3.escalation.signals.length > 1) {
-      lines2.push("  \u2192 marks the one that decided; first match wins.");
-    }
-  }
-  if (record3.error !== void 0) {
-    lines2.push("", `Error: ${record3.error.kind} \u2014 ${record3.error.message}`);
-  }
-  if (record3.state !== void 0) {
-    lines2.push("", "What was sent to the classifier:", `  ${record3.state}`);
-  }
-  if (record3.redacted_kinds !== void 0 && record3.redacted_kinds.length > 0) {
-    lines2.push("", `Redacted before sending: ${record3.redacted_kinds.join(", ")}`);
-  }
-  const adapter = record3.latency_ms.adapter;
-  lines2.push("", `Latency: ${record3.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record3.warmup === true ? "  (first call of the session)" : ""}`);
-  return `${lines2.join("\n")}
-`;
-}
-function describe(record3) {
-  const reason = record3.reason;
-  switch (reason.kind) {
-    case "rule":
-      return reason.question === "default" ? "no rule matched, so the policy's default applied" : `rule ${reason.ruleIndex} matched: ${reason.question} was ${reason.p.toFixed(2)}`;
-    case "fast-path":
-      return `the command matched the fast path (${reason.prefix.trim()}), so the classifier was never called`;
-    case "hard-rule":
-      return `the command matched the hard rule "${reason.name}", so the classifier was never called: ${reason.because}`;
-    case "tool-not-gated":
-      return `${reason.tool} is not in this policy's gate.tools`;
-    case "permission-mode-skipped":
-      return `bouncer skips ${reason.permissionMode} mode`;
-    case "no-rule-matched":
-      return "no rule matched and the policy has no default";
-    case "unanswered":
-      return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
-    case "truncated":
-      return "the rules reached an allow, but the call was too long to show the classifier whole, so nothing was approved";
-  }
-}
-function bar(p) {
-  const filled = Math.round(p * 20);
-  return `${"\u2588".repeat(filled)}${"\xB7".repeat(20 - filled)}`;
-}
+// src/hooks/stop.ts
+var import_node_fs10 = require("node:fs");
+var import_node_path9 = require("node:path");
 
 // src/commands/calibrate.ts
-var import_node_path9 = require("node:path");
+var import_node_path8 = require("node:path");
 var import_node_fs9 = require("node:fs");
 
 // src/calibrate.ts
@@ -10705,12 +10443,12 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
   let unscorable = 0;
   let otherSet = 0;
   let reworded = 0;
-  for (const record3 of parseLog(source)) {
-    if ((record3.set ?? GATE_SET) !== setName) {
+  for (const record4 of parseLog(source)) {
+    if ((record4.set ?? GATE_SET) !== setName) {
       otherSet += 1;
       continue;
     }
-    const key = record3.item ?? record3.tool_use_id;
+    const key = record4.item ?? record4.tool_use_id;
     if (key === void 0) {
       unscorable += 1;
       continue;
@@ -10720,25 +10458,25 @@ function scoreFromLog(source, fixtures, policy, setName = GATE_SET) {
       unmatched += 1;
       continue;
     }
-    const answers = { ...record3.answers ?? {} };
-    const probes = record3.probes ?? {};
+    const answers = { ...record4.answers ?? {} };
+    const probes = record4.probes ?? {};
     if (Object.keys(answers).length === 0) {
       unscorable += 1;
       continue;
     }
     matched += 1;
-    if (record3.policy !== void 0 && record3.policy.questions !== set.questionsFingerprint) reworded += 1;
-    if (record3.policy !== void 0) questions.add(record3.policy.questions);
-    if (record3.model !== void 0) models.add(record3.model);
-    if (typeof record3.backend === "string") backends.add(record3.backend);
-    if (typeof record3.ts === "string") {
-      if (first === void 0 || record3.ts < first) first = record3.ts;
-      if (last === void 0 || record3.ts > last) last = record3.ts;
+    if (record4.policy !== void 0 && record4.policy.questions !== set.questionsFingerprint) reworded += 1;
+    if (record4.policy !== void 0) questions.add(record4.policy.questions);
+    if (record4.model !== void 0) models.add(record4.model);
+    if (typeof record4.backend === "string") backends.add(record4.backend);
+    if (typeof record4.ts === "string") {
+      if (first === void 0 || record4.ts < first) first = record4.ts;
+      if (last === void 0 || record4.ts > last) last = record4.ts;
     }
-    const truncated = record3.truncated === true ? { truncated: true } : {};
-    const cut = record3.server_truncated;
+    const truncated = record4.truncated === true ? { truncated: true } : {};
+    const cut = record4.server_truncated;
     const serverTruncation2 = cut !== void 0 && Number.isFinite(cut.from) && Number.isFinite(cut.to) ? { serverTruncation: { from: cut.from, to: cut.to } } : {};
-    const latencyMs = record3.latency_ms?.adapter ?? record3.latency_ms?.total ?? Number.NaN;
+    const latencyMs = record4.latency_ms?.adapter ?? record4.latency_ms?.total ?? Number.NaN;
     const one = { fixture, answers, probes, latencyMs, ...truncated, ...serverTruncation2 };
     answered.push(one);
     scored.push(...scoreAnswered(one, policy, set, setName).rows);
@@ -11290,7 +11028,7 @@ function accepted(spec) {
 
 // src/commands/gate.ts
 var import_node_fs8 = require("node:fs");
-var import_node_path8 = require("node:path");
+var import_node_path7 = require("node:path");
 
 // src/gatefixtures.ts
 function lines(source, what) {
@@ -11313,10 +11051,10 @@ function questionFingerprint(question) {
 }
 function wordingOf(raw, where) {
   if (typeof raw !== "object" || raw === null) throw new Error(`${where} has no wording`);
-  const record3 = raw;
-  const instructions = record3["instructions"];
+  const record4 = raw;
+  const instructions = record4["instructions"];
   if (typeof instructions !== "string" || instructions.length === 0) throw new Error(`${where} has no "instructions"`);
-  const criteria = record3["criteria"];
+  const criteria = record4["criteria"];
   if (criteria !== void 0 && (typeof criteria !== "object" || criteria === null)) {
     throw new Error(`${where} has "criteria" that is not a mapping`);
   }
@@ -11380,7 +11118,7 @@ function checkVariants(variants, set, kind) {
   return { usable, unmeasured };
 }
 function stampVariants(source, set, questions, options = {}) {
-  const count = (into, question) => {
+  const count2 = (into, question) => {
     into[question] = (into[question] ?? 0) + 1;
   };
   const stamped = {};
@@ -11404,14 +11142,14 @@ function stampVariants(source, set, questions, options = {}) {
     if (!questions.has(name)) return line;
     const fingerprintNow = questionFingerprint(question);
     if (raw["base"] === fingerprintNow) {
-      count(current, name);
+      count2(current, name);
       return line;
     }
     if (raw["base"] !== void 0 && options.restamp !== true) {
-      count(stale, name);
+      count2(stale, name);
       return line;
     }
-    count(stamped, name);
+    count2(stamped, name);
     const { question: _question, base: _base, ...rest } = raw;
     return JSON.stringify({ question: name, base: fingerprintNow, ...rest });
   });
@@ -11955,11 +11693,11 @@ async function runGate(options) {
 }
 var slug = (label) => label.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "arm";
 function loadDatasets(args, root, fixtures, policy) {
-  const variantsDir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
-  const injectionPath = args.injection ?? (0, import_node_path8.join)(root, "fixtures", "injection.jsonl");
+  const variantsDir = args.variants ?? (0, import_node_path7.join)(root, "fixtures", "variants");
+  const injectionPath = args.injection ?? (0, import_node_path7.join)(root, "fixtures", "injection.jsonl");
   const read4 = (path) => (0, import_node_fs8.existsSync)(path) ? (0, import_node_fs8.readFileSync)(path, "utf8") : void 0;
-  const polarityFile = read4((0, import_node_path8.join)(variantsDir, "polarity.jsonl"));
-  const rephraseFile = read4((0, import_node_path8.join)(variantsDir, "rephrase.jsonl"));
+  const polarityFile = read4((0, import_node_path7.join)(variantsDir, "polarity.jsonl"));
+  const rephraseFile = read4((0, import_node_path7.join)(variantsDir, "rephrase.jsonl"));
   const injectionFile = read4(injectionPath);
   return {
     reversedForms: polarityFile !== void 0 ? parseVariants(polarityFile, "reversed") : [],
@@ -12037,7 +11775,7 @@ async function gateCommand(args, policy, source, root, fixtures, write3) {
       for (const [i, spec] of [reference, candidate].entries()) {
         for (const [stage, answered] of run2.answers[i].entries()) {
           const under = run2.asked.get(stage) ?? policy;
-          writeAnswers((0, import_node_path8.join)(args.outDir, `${slug(spec.label)}.${stage}.jsonl`), answered, under, GATE_SET, spec.adapter.name);
+          writeAnswers((0, import_node_path7.join)(args.outDir, `${slug(spec.label)}.${stage}.jsonl`), answered, under, GATE_SET, spec.adapter.name);
         }
       }
       const arms = [reference, candidate].map((spec, i) => ({
@@ -12046,7 +11784,7 @@ async function gateCommand(args, policy, source, root, fixtures, write3) {
         slug: slug(spec.label),
         endpoint: spec.adapter.name
       }));
-      if (!writeAtomic((0, import_node_path8.join)(args.outDir, MANIFEST), `${JSON.stringify({ written: (/* @__PURE__ */ new Date()).toISOString(), questions: policy.gate.questionsFingerprint, arms }, null, 2)}
+      if (!writeAtomic((0, import_node_path7.join)(args.outDir, MANIFEST), `${JSON.stringify({ written: (/* @__PURE__ */ new Date()).toISOString(), questions: policy.gate.questionsFingerprint, arms }, null, 2)}
 `)) {
         throw new Error(`could not write ${MANIFEST}`);
       }
@@ -12082,7 +11820,7 @@ function recordedArms(dirs) {
   for (const dir of dirs) {
     let manifest = [];
     try {
-      const parsed = JSON.parse((0, import_node_fs8.readFileSync)((0, import_node_path8.join)(dir, MANIFEST), "utf8"));
+      const parsed = JSON.parse((0, import_node_fs8.readFileSync)((0, import_node_path7.join)(dir, MANIFEST), "utf8"));
       if (Array.isArray(parsed.arms)) manifest = parsed.arms;
     } catch {
     }
@@ -12176,7 +11914,7 @@ function gateFromCommand(args, policy, source, root, fixtures, write3) {
     let model;
     let first;
     for (const [stage, under, items] of stages) {
-      const path = (0, import_node_path8.join)(arm.dir, `${arm.slug}.${stage}.jsonl`);
+      const path = (0, import_node_path7.join)(arm.dir, `${arm.slug}.${stage}.jsonl`);
       if (!(0, import_node_fs8.existsSync)(path)) {
         const reason = `no ${stage} pass was recorded for ${arm.label}`;
         if (stage === "reversed") for (const q of Object.keys(plan.reversed.usable)) missing.polarity[q] = reason;
@@ -12270,13 +12008,13 @@ function stampCommand(args, policy, source, root, write3) {
     return 1;
   }
   const questions = new Set(everything ? asked : named);
-  const dir = args.variants ?? (0, import_node_path8.join)(root, "fixtures", "variants");
+  const dir = args.variants ?? (0, import_node_path7.join)(root, "fixtures", "variants");
   write3(`Policy: ${source}
 `);
   let leftStale = false;
   let found = false;
   for (const file of ["polarity.jsonl", "rephrase.jsonl"]) {
-    const path = (0, import_node_path8.join)(dir, file);
+    const path = (0, import_node_path7.join)(dir, file);
     if (!(0, import_node_fs8.existsSync)(path)) continue;
     found = true;
     let result;
@@ -12371,7 +12109,7 @@ async function calibrate(args, write3) {
     write3("--restamp belongs to --stamp, which was not given.\n");
     return 1;
   }
-  const fixturePath = args.fixtures ?? (0, import_node_path9.join)(root, "fixtures", "gate.jsonl");
+  const fixturePath = args.fixtures ?? (0, import_node_path8.join)(root, "fixtures", "gate.jsonl");
   let fixtures;
   try {
     fixtures = loadFixtures(fixturePath);
@@ -12543,7 +12281,7 @@ function writeAnswers(path, answered, policy, setName, backend) {
       latency_ms: { total: a.latencyMs, adapter: a.latencyMs }
     };
   });
-  (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path), { recursive: true });
+  (0, import_node_fs9.mkdirSync)((0, import_node_path8.dirname)(path), { recursive: true });
   (0, import_node_fs9.writeFileSync)(path, `${lines2.map((l) => JSON.stringify(l)).join("\n")}
 `, "utf8");
 }
@@ -12821,10 +12559,6 @@ async function startIfNeeded(adapter) {
   }
 }
 
-// src/commands/judge.ts
-var import_node_fs11 = require("node:fs");
-var import_node_path11 = require("node:path");
-
 // src/judge.ts
 var DEFAULT_CONCURRENCY2 = 4;
 async function judge(items, options) {
@@ -12964,16 +12698,413 @@ function formatRun(run2) {
 `;
 }
 
-// src/io/items.ts
-var import_node_fs10 = require("node:fs");
+// src/stop.ts
+var STOP_SET = "stop";
+var CLOSING_TAIL_CHARS = 6e3;
+function stopItem(lastAssistantMessage) {
+  const message2 = lastAssistantMessage.trim();
+  const cut = message2.length > CLOSING_TAIL_CHARS;
+  return {
+    closing_message: cut ? message2.slice(message2.length - CLOSING_TAIL_CHARS) : message2,
+    closing_message_cut: cut
+  };
+}
+function wouldFor(verdict) {
+  return verdict === "allow" ? "continue" : "leave";
+}
+var GO_AHEAD = /^(?:ok(?:ay)?[,.]? +|yes[,.]? +|yep[,.]? +|sure[,.]? +|great[,.]? +)?(?:y|yes|yep|yeah|ok|okay|sure|go|go ahead|go for it|proceed|continue|carry on|keep going|do it|do that|do both|do all of (?:it|them|that)|ship it|merge(?: it| them| both| the prs?| that)?|push(?: it)?|commit(?: it)?|run it|sounds good|lgtm|approved?|please do|yes please)(?: please| now| then)?[.! ]*$/i;
+function isGoAhead(prompt) {
+  return GO_AHEAD.test(prompt.trim());
+}
+function scoreStops(stops2) {
+  const missed = {};
+  let saved = 0;
+  let ranAhead = 0;
+  let rightlyLeft = 0;
+  let unlabelled = 0;
+  for (const stop of stops2) {
+    if (stop.next === "none") unlabelled += 1;
+    else if (stop.would === "continue") {
+      if (stop.next === "go-ahead") saved += 1;
+      else ranAhead += 1;
+    } else if (stop.next === "go-ahead") missed[stop.decidedBy] = (missed[stop.decidedBy] ?? 0) + 1;
+    else rightlyLeft += 1;
+  }
+  return {
+    judged: stops2.length,
+    labelled: stops2.length - unlabelled,
+    saved,
+    ranAhead,
+    missed,
+    rightlyLeft,
+    unlabelled
+  };
+}
+
+// src/hooks/stop.ts
+var STOPS_FILE = "stops.jsonl";
+async function runStop(payload, options = {}) {
+  try {
+    await observe(payload, options);
+  } catch {
+  }
+}
+async function observe(payload, options) {
+  if (payload.hook_event_name !== "Stop") return;
+  const message2 = payload["last_assistant_message"];
+  if (typeof message2 !== "string" || message2.trim().length === 0) return;
+  const now = options.now ?? Date.now;
+  const started = now();
+  const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
+  const path = options.policyPath ?? stopPolicyPath(cwd);
+  if (path === void 0) return;
+  const policy = resolvePolicy(cwd, pluginRoot(), path).policy;
+  const set = policy?.sets[STOP_SET];
+  if (policy === void 0 || set === void 0) return;
+  const override = process.env["BOUNCER_BACKEND"];
+  const backend = options.adapter?.name ?? (override !== void 0 && override.length > 0 ? override : policy.backend);
+  const dir = dataDir();
+  const base = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    session_id: typeof payload.session_id === "string" ? payload.session_id : "unknown",
+    ...typeof payload["prompt_id"] === "string" ? { prompt_id: payload["prompt_id"] } : {},
+    ...typeof payload["transcript_path"] === "string" ? { transcript_path: payload["transcript_path"] } : {},
+    cwd,
+    ...typeof payload.permission_mode === "string" ? { permission_mode: payload.permission_mode } : {},
+    stop_hook_active: payload["stop_hook_active"] === true,
+    backend,
+    policy: { file: policy.fingerprint, questions: set.questionsFingerprint }
+  };
+  if (count(payload["background_tasks"]) + count(payload["session_crons"]) > 0) {
+    record2(dir, { ...base, skipped: "work-still-running", latency_ms: now() - started });
+    return;
+  }
+  const adapter = options.adapter ?? adapterFor2(backend);
+  if (typeof adapter === "string") {
+    record2(dir, { ...base, error: { kind: "no-backend", message: adapter }, latency_ms: now() - started });
+    return;
+  }
+  const run2 = await judge([{ id: "stop", state: buildItemState(stopItem(message2)) }], {
+    setName: STOP_SET,
+    set,
+    mode: policy.mode,
+    adapter,
+    timeoutMs: policy.timeoutMs,
+    concurrency: 1
+  });
+  const item = run2.items[0];
+  if (item === void 0) return;
+  const seen = { state: item.state, redacted_kinds: item.redactedKinds };
+  const model = item.model !== void 0 ? { model: item.model } : {};
+  if (item.outcome === "unjudged") {
+    record2(dir, { ...base, ...seen, error: item.error, latency_ms: now() - started });
+    return;
+  }
+  const decided = item.outcome === "judged" ? { would: wouldFor(item.verdict), decided_by: item.reason.kind === "rule" ? item.reason.question : item.reason.kind } : { would: "leave", decided_by: "truncated" };
+  record2(dir, { ...base, ...model, ...decided, answers: item.answers, ...seen, latency_ms: now() - started });
+}
+function count(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+function record2(dir, line) {
+  try {
+    (0, import_node_fs10.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs10.appendFileSync)((0, import_node_path9.join)(dir, STOPS_FILE), `${JSON.stringify(line)}
+`, "utf8");
+  } catch {
+  }
+}
+
+// src/commands/status.ts
 var import_node_path10 = require("node:path");
+var SAMPLE = 200;
+function status() {
+  const cwd = process.cwd();
+  const resolved = resolvePolicy(cwd, pluginRoot());
+  const dir = dataDir();
+  const lines2 = [];
+  if (resolved.policy === void 0) {
+    lines2.push("bouncer is NOT running.", "");
+    lines2.push(`Policy: ${resolved.source}`);
+    for (const d of errorsIn(resolved.diagnostics)) {
+      lines2.push(`  error at ${d.path || "the top level"}: ${d.message}`);
+    }
+    lines2.push("", "Claude Code's own permission prompts are unaffected.");
+    return `${lines2.join("\n")}
+`;
+  }
+  const policy = resolved.policy;
+  const sampled = tail(dir, SAMPLE);
+  const setAside = policy.backend === "mock" ? [] : sampled.filter((r) => r.backend === "mock");
+  const records = setAside.length === 0 ? sampled : sampled.filter((r) => r.backend !== "mock");
+  lines2.push(`Mode:    ${policy.mode}${modeNote(policy.mode)}`);
+  lines2.push(`Backend: ${policy.backend}${backendNote(policy.backend)}`);
+  lines2.push(`Policy:  ${resolved.source}`);
+  lines2.push(`Log:     ${(0, import_node_path10.join)(dir, LOG_FILE)}`);
+  const warnings = resolved.diagnostics.filter((d) => d.severity === "warning");
+  for (const w of warnings) lines2.push(`  warning at ${w.path || "the top level"}: ${w.message}`);
+  lines2.push(...hardRuleDrift(policy.gate.hardRules, resolved.source, cwd));
+  const standingDown = readAll(dir).filter((s) => s.tripped !== void 0);
+  if (standingDown.length > 0) lines2.push("");
+  for (const s of standingDown) {
+    lines2.push(`STANDING DOWN in session ${s.session_id.slice(0, 8)} (${s.tripped?.reason} since ${s.tripped?.at}).`);
+  }
+  lines2.push("");
+  if (records.length === 0) {
+    lines2.push("No decisions logged yet.");
+    if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
+    return `${lines2.join("\n")}
+`;
+  }
+  lines2.push(`Last ${records.length} decisions:`);
+  lines2.push(...summarize(records));
+  if (setAside.length > 0) lines2.push("", mockNote(setAside.length, policy.backend));
+  if (policy.mode === "observe") {
+    const wouldPrompt = records.filter(
+      (r) => r.error === void 0 && r.reason.kind !== "truncated" && (r.verdict === "ask" || r.verdict === "deny")
+    ).length;
+    lines2.push(
+      "",
+      `In observe mode nothing was emitted. Switching to guard would have added ${wouldPrompt} prompt${wouldPrompt === 1 ? "" : "s"} across these ${records.length} calls.`,
+      "Run `bouncer calibrate` before trusting that number."
+    );
+  }
+  return `${lines2.join("\n")}
+`;
+}
+function hardRuleDrift(mine, source, cwd) {
+  const root = pluginRoot();
+  if (root === void 0) return [];
+  const bundledPath = (0, import_node_path10.join)(root, "policy", "default.yaml");
+  if ((0, import_node_path10.resolve)(source) === (0, import_node_path10.resolve)(bundledPath)) return [];
+  const bundled = resolvePolicy(cwd, root, bundledPath).policy?.gate.hardRules;
+  if (bundled === void 0) return [];
+  const { differing, missing } = compareHardRules(mine, bundled);
+  if (differing.length === 0 && missing.length === 0) return [];
+  const lines2 = ["", "Hard rules that are not the bundled ones:"];
+  for (const d of differing) lines2.push(`  ${d.name} differs`, ...d.details.map((detail) => `    ${detail}`));
+  if (missing.length > 0) lines2.push(`  not in your policy: ${missing.join(", ")}`);
+  lines2.push(
+    `A copied policy keeps the rules it was copied with. If you did not change these on purpose, take them from ${bundledPath}.`
+  );
+  return lines2;
+}
+function compareHardRules(mine, bundled) {
+  const byName = new Map(mine.map((r) => [r.name, r]));
+  const differing = [];
+  const missing = [];
+  for (const rule of bundled) {
+    const own = byName.get(rule.name);
+    if (own === void 0) {
+      missing.push(rule.name);
+      continue;
+    }
+    const details = whenDifferences(own.when, rule.when);
+    if (own.unless !== rule.unless) {
+      details.push(
+        rule.unless === void 0 ? `unless: ${own.unless} is only in yours` : own.unless === void 0 ? `unless: ${rule.unless} is only in the bundled entry` : `unless: yours has ${own.unless}; the bundled entry has ${rule.unless}`
+      );
+    }
+    if (details.length > 0) differing.push({ name: rule.name, details });
+  }
+  return { differing, missing };
+}
+function whenDifferences(mine, bundled) {
+  const keys = [
+    ["first_token", "firstToken"],
+    ["tokens", "tokens"],
+    ["token_prefix", "tokenPrefix"],
+    ["not_tokens", "notTokens"],
+    ["text", "text"],
+    ["path_labelled", "pathLabelled"],
+    ["redacts_as", "redactsAs"],
+    ["target_labelled", "targetLabelled"]
+  ];
+  const show = (values) => values.map((v) => JSON.stringify(v)).join(", ");
+  const details = [];
+  for (const [key, field] of keys) {
+    const own = mine[field];
+    const theirs = bundled[field];
+    if (own === void 0 && theirs === void 0) continue;
+    if (theirs === void 0) details.push(`${key}: [${show(own ?? [])}] is only in yours`);
+    else if (own === void 0) details.push(`${key}: [${show(theirs)}] is only in the bundled entry`);
+    else {
+      const onlyMine = own.filter((v) => !theirs.includes(v));
+      const onlyTheirs = theirs.filter((v) => !own.includes(v));
+      if (onlyMine.length === 0 && onlyTheirs.length === 0) continue;
+      const sides = [
+        ...onlyMine.length > 0 ? [`yours has ${show(onlyMine)}`] : [],
+        ...onlyTheirs.length > 0 ? [`the bundled entry has ${show(onlyTheirs)}`] : []
+      ];
+      details.push(`${key}: ${sides.join("; ")}`);
+    }
+  }
+  return details;
+}
+function summarize(records) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const r of records) {
+    if (r.error !== void 0 || r.verdict === void 0) continue;
+    counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
+  }
+  const lines2 = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `  ${verdict.padEnd(6)} ${n}`);
+  const undecided = records.filter((r) => r.error !== void 0 || r.verdict === void 0).length;
+  if (undecided > 0) {
+    lines2.push(`  (${undecided} more concluded nothing \u2014 the classifier could not answer \u2014 and are not counted above)`);
+  }
+  const fastPath = records.filter((r) => r.reason.kind === "fast-path").length;
+  if (fastPath > 0) {
+    lines2.push(`  (${fastPath} of these never reached the classifier \u2014 fast path)`);
+  }
+  const judged = records.filter((r) => r.source === "judge");
+  if (judged.length > 0) {
+    const escalated = judged.map((r) => r.escalation).filter((e) => e !== void 0);
+    const manifest = manifestOf(escalated, judged.length);
+    const pct2 = (manifest.escalationRate * 100).toFixed(1);
+    lines2.push(
+      "",
+      `Escalated ${manifest.items.length} of ${manifest.itemsJudged} judged calls (${pct2}%) \u2014 the calls a rule could not settle on the classifier's answer alone.`
+    );
+  }
+  const adapterCalls = records.filter((r) => typeof r.latency_ms.adapter === "number").map((r) => r.latency_ms.adapter).sort((a, b) => a - b);
+  if (adapterCalls.length > 0) {
+    const p = (q) => adapterCalls[Math.min(adapterCalls.length - 1, Math.floor(adapterCalls.length * q))];
+    lines2.push("", `Classifier latency over ${adapterCalls.length} calls: p50 ${p(0.5)}ms, p95 ${p(0.95)}ms`);
+  }
+  const errors = records.filter((r) => r.error !== void 0);
+  if (errors.length > 0) {
+    const last = errors[0];
+    lines2.push("", `${errors.length} error${errors.length === 1 ? "" : "s"}; most recent: ${last?.error?.kind} \u2014 ${last?.error?.message}`);
+  }
+  return lines2;
+}
+function mockNote(count2, backend) {
+  const s = count2 === 1 ? "" : "s";
+  return `Ignoring ${count2} record${s} answered by the mock backend \u2014 the mock scores from fixed keyword heuristics, so ${count2 === 1 ? "it is" : "they are"} test or benchmark traffic rather than evidence about ${backend}.`;
+}
+function modeNote(mode) {
+  switch (mode) {
+    case "observe":
+      return "  (logging only \u2014 Claude Code behaves exactly as it would without bouncer)";
+    case "guard":
+      return "  (adds prompts where policy says so; never removes one)";
+    case "full":
+      return "  (also suppresses prompts on calls judged safe)";
+    default:
+      return "";
+  }
+}
+function backendNote(backend) {
+  if (backend === "jev") return apiKey() === void 0 ? "  (no API key in the environment)" : "";
+  if (backend === "local") {
+    const { baseUrl } = localBackend();
+    return `  (${baseUrl ?? "http://127.0.0.1:8080/v1"})`;
+  }
+  return "";
+}
+
+// src/commands/explain.ts
+var SEARCH_DEPTH = 500;
+function explain2(toolUseId) {
+  const records = tail(dataDir(), SEARCH_DEPTH);
+  if (records.length === 0) {
+    return "No decisions logged yet.\n";
+  }
+  const record4 = toolUseId === void 0 || toolUseId.length === 0 ? records.find((r) => r.reason.kind !== "fast-path") ?? records[0] : records.find((r) => r.tool_use_id === toolUseId);
+  if (record4 === void 0) {
+    return `No decision logged for ${toolUseId}. It may have scrolled out of the last ${SEARCH_DEPTH} entries.
+`;
+  }
+  return render(record4);
+}
+function render(record4) {
+  const lines2 = [];
+  lines2.push(`${record4.tool ?? `${record4.set ?? "?"}: ${record4.item ?? "(item)"}`} at ${record4.ts}`);
+  const concluded = record4.error === void 0 && record4.verdict !== void 0;
+  const emitted = record4.emitted === null ? `  (nothing emitted${concluded ? ` \u2014 ${record4.mode} mode` : ""})` : `  (emitted ${record4.emitted})`;
+  lines2.push(`Verdict: ${concluded ? record4.verdict : "none"}${emitted}`);
+  lines2.push(
+    `Because: ${record4.error !== void 0 ? `the classifier could not answer (${record4.error.kind}: ${record4.error.message})` : describe(record4)}`
+  );
+  if (record4.permission_mode !== void 0) {
+    lines2.push(`Permission mode: ${record4.permission_mode}`);
+  }
+  if (record4.agent_type !== void 0) {
+    lines2.push(`Called by subagent: ${record4.agent_type}`);
+  }
+  if (record4.answers !== void 0 && Object.keys(record4.answers).length > 0) {
+    lines2.push("", "Judgments:");
+    const entries = Object.entries(record4.answers).sort((a, b) => b[1] - a[1]);
+    const width = Math.max(...entries.map(([name]) => name.length));
+    for (const [name, p] of entries) {
+      lines2.push(`  ${name.padEnd(width)}  ${p.toFixed(2)}  ${bar(p)}`);
+    }
+  }
+  if (record4.escalation !== void 0 && record4.escalation.signals.length > 0) {
+    lines2.push("", `Escalated as ${record4.escalation.verdict}, on:`);
+    for (const signal of record4.escalation.signals) {
+      const mark = signal.decided ? "\u2192" : " ";
+      lines2.push(`  ${mark} ${signal.question} ${signal.p.toFixed(2)} ${signal.criterion} (rule ${signal.ruleIndex} \u2192 ${signal.verdict})`);
+      lines2.push(`      ${signal.asks}`);
+    }
+    if (record4.escalation.signals.length > 1) {
+      lines2.push("  \u2192 marks the one that decided; first match wins.");
+    }
+  }
+  if (record4.error !== void 0) {
+    lines2.push("", `Error: ${record4.error.kind} \u2014 ${record4.error.message}`);
+  }
+  if (record4.state !== void 0) {
+    lines2.push("", "What was sent to the classifier:", `  ${record4.state}`);
+  }
+  if (record4.redacted_kinds !== void 0 && record4.redacted_kinds.length > 0) {
+    lines2.push("", `Redacted before sending: ${record4.redacted_kinds.join(", ")}`);
+  }
+  const adapter = record4.latency_ms.adapter;
+  lines2.push("", `Latency: ${record4.latency_ms.total}ms total${adapter !== void 0 ? `, ${adapter}ms in the classifier` : ""}${record4.warmup === true ? "  (first call of the session)" : ""}`);
+  return `${lines2.join("\n")}
+`;
+}
+function describe(record4) {
+  const reason = record4.reason;
+  switch (reason.kind) {
+    case "rule":
+      return reason.question === "default" ? "no rule matched, so the policy's default applied" : `rule ${reason.ruleIndex} matched: ${reason.question} was ${reason.p.toFixed(2)}`;
+    case "fast-path":
+      return `the command matched the fast path (${reason.prefix.trim()}), so the classifier was never called`;
+    case "hard-rule":
+      return `the command matched the hard rule "${reason.name}", so the classifier was never called: ${reason.because}`;
+    case "tool-not-gated":
+      return `${reason.tool} is not in this policy's gate.tools`;
+    case "permission-mode-skipped":
+      return `bouncer skips ${reason.permissionMode} mode`;
+    case "no-rule-matched":
+      return "no rule matched and the policy has no default";
+    case "unanswered":
+      return `the rules reached an allow, but the classifier never answered ${reason.missing.join(", ")}, so nothing was approved`;
+    case "truncated":
+      return "the rules reached an allow, but the call was too long to show the classifier whole, so nothing was approved";
+  }
+}
+function bar(p) {
+  const filled = Math.round(p * 20);
+  return `${"\u2588".repeat(filled)}${"\xB7".repeat(20 - filled)}`;
+}
+
+// src/commands/judge.ts
+var import_node_fs12 = require("node:fs");
+var import_node_path12 = require("node:path");
+
+// src/io/items.ts
+var import_node_fs11 = require("node:fs");
+var import_node_path11 = require("node:path");
 var MAX_FILE_BYTES = 1024 * 1024;
 var MAX_DEPTH2 = 8;
 function loadItems(path) {
-  const stats = (0, import_node_fs10.statSync)(path);
+  const stats = (0, import_node_fs11.statSync)(path);
   if (stats.isDirectory()) return loadDirectory(path);
-  const source = (0, import_node_fs10.readFileSync)(path, "utf8");
-  return (0, import_node_path10.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
+  const source = (0, import_node_fs11.readFileSync)(path, "utf8");
+  return (0, import_node_path11.extname)(path).toLowerCase() === ".json" ? loadJsonArray(source, path) : loadJsonl(source, path);
 }
 function loadJsonl(source, path) {
   const items = [];
@@ -13028,21 +13159,21 @@ function loadDirectory(root) {
   const skipped = [];
   const walk = (dir, depth) => {
     if (depth > MAX_DEPTH2) {
-      skipped.push({ path: (0, import_node_path10.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
+      skipped.push({ path: (0, import_node_path11.relative)(root, dir) || ".", why: `nested more than ${MAX_DEPTH2} deep` });
       return;
     }
-    for (const entry of (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (0, import_node_fs11.readdirSync)(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      const full = (0, import_node_path10.join)(dir, entry.name);
+      const full = (0, import_node_path11.join)(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full, depth + 1);
         continue;
       }
       if (!entry.isFile()) continue;
-      const id = (0, import_node_path10.relative)(root, full).split(import_node_path10.sep).join("/");
+      const id = (0, import_node_path11.relative)(root, full).split(import_node_path11.sep).join("/");
       let size;
       try {
-        size = (0, import_node_fs10.statSync)(full).size;
+        size = (0, import_node_fs11.statSync)(full).size;
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -13053,7 +13184,7 @@ function loadDirectory(root) {
       }
       let buffer;
       try {
-        buffer = (0, import_node_fs10.readFileSync)(full);
+        buffer = (0, import_node_fs11.readFileSync)(full);
       } catch (err) {
         skipped.push({ path: id, why: message(err) });
         continue;
@@ -13131,7 +13262,7 @@ async function judge2(args, write3) {
   }
   let batch;
   try {
-    batch = loadItems((0, import_node_path11.resolve)(args.path));
+    batch = loadItems((0, import_node_path12.resolve)(args.path));
   } catch (err) {
     write3(`Cannot read ${args.path}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -13175,8 +13306,8 @@ async function judge2(args, write3) {
     }
   );
   if (!args.json) process.stderr.write("\r\x1B[K");
-  const logPath = args.out ?? (0, import_node_path11.join)(dataDir(), JUDGMENTS_FILE);
-  const manifestPath = args.manifest ?? (0, import_node_path11.join)(dataDir(), "escalations.json");
+  const logPath = args.out ?? (0, import_node_path12.join)(dataDir(), JUDGMENTS_FILE);
+  const manifestPath = args.manifest ?? (0, import_node_path12.join)(dataDir(), "escalations.json");
   writeLog(logPath, run2, policy);
   const manifestWritten = writeManifest(manifestPath, run2, policy);
   const status2 = run2.judged === 0 || run2.failed > 0 || run2.incomplete > 0 || !manifestWritten ? 1 : 0;
@@ -13201,10 +13332,10 @@ ${run2.failed + run2.incomplete} item${run2.failed + run2.incomplete === 1 ? "" 
   return status2;
 }
 function writeLog(path, run2, policy) {
-  (0, import_node_fs11.mkdirSync)((0, import_node_path11.dirname)(path), { recursive: true });
+  (0, import_node_fs12.mkdirSync)((0, import_node_path12.dirname)(path), { recursive: true });
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   for (const item of run2.items) {
-    append((0, import_node_path11.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
+    append((0, import_node_path12.dirname)(path), recordFor(item, run2, policy, ts), basenameOf(path));
   }
 }
 function recordFor(item, run2, policy, ts) {
@@ -13915,9 +14046,9 @@ function isRecord7(value) {
 }
 
 // src/io/skills.ts
-var import_node_fs12 = require("node:fs");
+var import_node_fs13 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path12 = require("node:path");
+var import_node_path13 = require("node:path");
 var SYNCED_SKILL_NAMESPACE = "anthropic-skills";
 var NOT_A_SKILL = /* @__PURE__ */ new Set(["synced"]);
 var MAX_SESSION_DIRS = 64;
@@ -13926,7 +14057,7 @@ function discoverSkills(cwd) {
   const sources = [];
   const roots = [];
   const collect = (path, gather) => {
-    if (!(0, import_node_fs12.existsSync)(path)) return;
+    if (!(0, import_node_fs13.existsSync)(path)) return;
     const before = raw.length;
     try {
       raw.push(...gather());
@@ -13940,17 +14071,17 @@ function discoverSkills(cwd) {
   if (projectSkills !== void 0) {
     collect(projectSkills, () => plainSkillDir(projectSkills, "project"));
   }
-  const userSkills = (0, import_node_path12.join)(home, ".claude", "skills");
+  const userSkills = (0, import_node_path13.join)(home, ".claude", "skills");
   collect(userSkills, () => plainSkillDir(userSkills, "user"));
-  for (const bucket of bucketsIn((0, import_node_path12.join)(home, ".claude", "skills", "synced"))) {
-    const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
+  for (const bucket of bucketsIn((0, import_node_path13.join)(home, ".claude", "skills", "synced"))) {
+    const manifest = (0, import_node_path13.join)(bucket, "manifest.json");
     collect(manifest, () => syncedSkills(manifest));
   }
-  for (const bucket of bucketsIn((0, import_node_path12.join)(home, ".claude", "plugins", "synced"))) {
-    const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
-    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path12.join)(bucket, name, "skills")));
+  for (const bucket of bucketsIn((0, import_node_path13.join)(home, ".claude", "plugins", "synced"))) {
+    const manifest = (0, import_node_path13.join)(bucket, "manifest.json");
+    collect(manifest, () => pluginSkills(manifest, bucket, (name) => (0, import_node_path13.join)(bucket, name, "skills")));
   }
-  const installed = (0, import_node_path12.join)(home, ".claude", "plugins", "installed_plugins.json");
+  const installed = (0, import_node_path13.join)(home, ".claude", "plugins", "installed_plugins.json");
   collect(installed, () => installedPluginSkills(installed));
   for (const manifest of desktopManifests(home)) {
     collect(manifest.path, manifest.gather);
@@ -13961,7 +14092,7 @@ function plainSkillDir(dir, origin) {
   const skills2 = [];
   for (const name of directoriesIn(dir)) {
     if (NOT_A_SKILL.has(name)) continue;
-    const frontmatter = read3((0, import_node_path12.join)(dir, name, "SKILL.md"));
+    const frontmatter = read3((0, import_node_path13.join)(dir, name, "SKILL.md"));
     if (frontmatter === void 0) continue;
     skills2.push({ dirName: name, origin, frontmatter });
   }
@@ -13985,7 +14116,7 @@ function pluginSkills(manifest, _bucket, skillsDirFor) {
     if (!pluginIsActive(plugin)) continue;
     const dir = skillsDirFor(plugin.name);
     for (const name of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path12.join)(dir, name, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path13.join)(dir, name, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: plugin.name, dirName: name, origin: "plugin", frontmatter });
     }
@@ -14006,14 +14137,14 @@ function installedPluginSkills(file) {
   const entries = Array.isArray(parsed["plugins"]) ? parsed["plugins"] : Object.values(parsed);
   for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) continue;
-    const record3 = entry;
-    const name = record3["name"];
-    const installPath = record3["installPath"];
+    const record4 = entry;
+    const name = record4["name"];
+    const installPath = record4["installPath"];
     if (typeof name !== "string" || typeof installPath !== "string") continue;
-    if (!pluginIsActive({ name, ...preferenceOf(record3) })) continue;
-    const dir = (0, import_node_path12.join)(installPath, "skills");
+    if (!pluginIsActive({ name, ...preferenceOf(record4) })) continue;
+    const dir = (0, import_node_path13.join)(installPath, "skills");
     for (const skillName of directoriesIn(dir)) {
-      const frontmatter = read3((0, import_node_path12.join)(dir, skillName, "SKILL.md"));
+      const frontmatter = read3((0, import_node_path13.join)(dir, skillName, "SKILL.md"));
       if (frontmatter === void 0) continue;
       skills2.push({ namespace: name, dirName: skillName, origin: "plugin", frontmatter });
     }
@@ -14021,64 +14152,64 @@ function installedPluginSkills(file) {
   return skills2;
 }
 function desktopManifests(home) {
-  const root = (0, import_node_path12.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
-  if (!(0, import_node_fs12.existsSync)(root)) return [];
+  const root = (0, import_node_path13.join)(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions");
+  if (!(0, import_node_fs13.existsSync)(root)) return [];
   const found = [];
   let visited = 0;
   for (const outer of directoriesIn(root)) {
-    for (const inner of directoriesIn((0, import_node_path12.join)(root, outer))) {
+    for (const inner of directoriesIn((0, import_node_path13.join)(root, outer))) {
       if (++visited > MAX_SESSION_DIRS) return found;
-      const session = (0, import_node_path12.join)(root, outer, inner);
-      const rpm = (0, import_node_path12.join)(session, "rpm", "manifest.json");
-      if ((0, import_node_fs12.existsSync)(rpm)) {
+      const session = (0, import_node_path13.join)(root, outer, inner);
+      const rpm = (0, import_node_path13.join)(session, "rpm", "manifest.json");
+      if ((0, import_node_fs13.existsSync)(rpm)) {
         found.push({
           path: rpm,
-          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path12.join)(session, "rpm", `plugin_${name}`, "skills"))
+          gather: () => pluginSkills(rpm, session, (name) => (0, import_node_path13.join)(session, "rpm", `plugin_${name}`, "skills"))
         });
       }
-      for (const bucket of nestedBuckets((0, import_node_path12.join)(session, "skills-plugin"))) {
-        const manifest = (0, import_node_path12.join)(bucket, "manifest.json");
-        if ((0, import_node_fs12.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
+      for (const bucket of nestedBuckets((0, import_node_path13.join)(session, "skills-plugin"))) {
+        const manifest = (0, import_node_path13.join)(bucket, "manifest.json");
+        if ((0, import_node_fs13.existsSync)(manifest)) found.push({ path: manifest, gather: () => syncedSkills(manifest) });
       }
     }
   }
   return found;
 }
 function bucketsIn(dir) {
-  return directoriesIn(dir).map((name) => (0, import_node_path12.join)(dir, name));
+  return directoriesIn(dir).map((name) => (0, import_node_path13.join)(dir, name));
 }
 function nestedBuckets(dir) {
   const buckets = [];
   for (const outer of directoriesIn(dir)) {
-    for (const inner of directoriesIn((0, import_node_path12.join)(dir, outer))) {
-      buckets.push((0, import_node_path12.join)(dir, outer, inner));
+    for (const inner of directoriesIn((0, import_node_path13.join)(dir, outer))) {
+      buckets.push((0, import_node_path13.join)(dir, outer, inner));
     }
   }
   return buckets;
 }
 function directoriesIn(dir) {
   try {
-    return (0, import_node_fs12.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+    return (0, import_node_fs13.readdirSync)(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch {
     return [];
   }
 }
 function read3(file) {
   try {
-    return (0, import_node_fs12.readFileSync)(file, "utf8");
+    return (0, import_node_fs13.readFileSync)(file, "utf8");
   } catch {
     return void 0;
   }
 }
-function preferenceOf(record3) {
-  const preference = record3["installationPreference"] ?? record3["installation_preference"];
+function preferenceOf(record4) {
+  const preference = record4["installationPreference"] ?? record4["installation_preference"];
   return typeof preference === "string" ? { installationPreference: preference } : {};
 }
 function signatureOf(sources) {
   const parts = [];
   for (const source of sources) {
     try {
-      const stat = (0, import_node_fs12.statSync)(source);
+      const stat = (0, import_node_fs13.statSync)(source);
       parts.push(`${source}:${stat.mtimeMs}:${stat.size}`);
     } catch {
       parts.push(`${source}:absent`);
@@ -14088,13 +14219,13 @@ function signatureOf(sources) {
 }
 function projectSkillsDir(cwd) {
   const root = findRepoRoot2(cwd);
-  return root === void 0 ? void 0 : (0, import_node_path12.join)(root, ".claude", "skills");
+  return root === void 0 ? void 0 : (0, import_node_path13.join)(root, ".claude", "skills");
 }
 function findRepoRoot2(from) {
   let current = from;
   for (let depth = 0; depth < 32; depth++) {
-    if ((0, import_node_fs12.existsSync)((0, import_node_path12.join)(current, ".git"))) return current;
-    const parent = (0, import_node_path12.dirname)(current);
+    if ((0, import_node_fs13.existsSync)((0, import_node_path13.join)(current, ".git"))) return current;
+    const parent = (0, import_node_path13.dirname)(current);
     if (parent === current) return void 0;
     current = parent;
   }
@@ -14173,8 +14304,8 @@ function shorten(signature) {
 }
 
 // src/commands/export.ts
-var import_node_fs13 = require("node:fs");
-var import_node_path13 = require("node:path");
+var import_node_fs14 = require("node:fs");
+var import_node_path14 = require("node:path");
 
 // src/export.ts
 var UNCARRIED = ["running_as_subagent", "recent_tools", "git_branch", "git_dirty"];
@@ -14199,28 +14330,28 @@ function exportCandidates(records, options = {}) {
     (options.known ?? []).filter((f) => f.kind === "tool_call").map((f) => actionKey(stateFor(f).text))
   );
   const byState = /* @__PURE__ */ new Map();
-  for (const record3 of records) {
-    if ((record3.consumer ?? "gate") !== "gate" || typeof record3.tool !== "string") {
+  for (const record4 of records) {
+    if ((record4.consumer ?? "gate") !== "gate" || typeof record4.tool !== "string") {
       skipped.notGate += 1;
       continue;
     }
-    if (record3.state === void 0) {
+    if (record4.state === void 0) {
       skipped.noState += 1;
       continue;
     }
-    if (record3.backend === "mock" && options.keepMock !== true) {
+    if (record4.backend === "mock" && options.keepMock !== true) {
       skipped.mock += 1;
       continue;
     }
-    if (record3.tool_use_id === void 0) {
+    if (record4.tool_use_id === void 0) {
       skipped.noId += 1;
       continue;
     }
-    if (record3.truncated === true) {
+    if (record4.truncated === true) {
       skipped.truncated += 1;
       continue;
     }
-    const rebuilt = rebuild(record3, record3.tool);
+    const rebuilt = rebuild(record4, record4.tool);
     if (rebuilt === void 0) {
       skipped.unrebuildable += 1;
       continue;
@@ -14229,7 +14360,7 @@ function exportCandidates(records, options = {}) {
     if (existing !== void 0) {
       skipped.duplicate += 1;
       existing.seen += 1;
-      if (record3.ts > existing.last) existing.last = record3.ts;
+      if (record4.ts > existing.last) existing.last = record4.ts;
       continue;
     }
     if (knownActions.has(actionKey(rebuilt.state))) {
@@ -14237,7 +14368,7 @@ function exportCandidates(records, options = {}) {
       continue;
     }
     if (rebuilt.redacted) redactedOnExport += 1;
-    byState.set(rebuilt.state, { ...rebuilt.item, id: record3.tool_use_id, seen: 1, first: record3.ts, last: record3.ts });
+    byState.set(rebuilt.state, { ...rebuilt.item, id: record4.tool_use_id, seen: 1, first: record4.ts, last: record4.ts });
   }
   return { candidates: [...byState.values()], read: records.length, skipped, redactedOnExport };
 }
@@ -14273,10 +14404,10 @@ var HEADER = `// Candidate fixtures exported from a bouncer decision log by \`bo
 //
 //   bouncer calibrate --fixtures <this file> --from <the decision log>
 `;
-function rebuild(record3, tool) {
+function rebuild(record4, tool) {
   let state;
   try {
-    state = JSON.parse(record3.state);
+    state = JSON.parse(record4.state);
   } catch {
     return void 0;
   }
@@ -14289,7 +14420,7 @@ function rebuild(record3, tool) {
   const cwd = project !== void 0 ? `/home/user/${project}` : void 0;
   const context = {
     ...cwd !== void 0 ? { cwd } : {},
-    ...typeof record3.permission_mode === "string" ? { permission_mode: record3.permission_mode } : {}
+    ...typeof record4.permission_mode === "string" ? { permission_mode: record4.permission_mode } : {}
   };
   for (const shape of shapesFor(tool, expected["action"], cwd)) {
     const item = { tool, ...shape, ...context };
@@ -14305,7 +14436,7 @@ function shapesFor(tool, action, cwd) {
   const str = (key) => typeof action[key] === "string" ? action[key] : void 0;
   const num2 = (key) => typeof action[key] === "number" ? action[key] : void 0;
   const filler = (bytes, char) => bytes === void 0 ? void 0 : char.repeat(bytes);
-  const defined = (record3) => Object.fromEntries(Object.entries(record3).filter(([, v]) => v !== void 0));
+  const defined = (record4) => Object.fromEntries(Object.entries(record4).filter(([, v]) => v !== void 0));
   switch (tool) {
     case "Bash":
       return [{ input: defined({ command: str("command"), description: str("stated_intent") }) }];
@@ -14388,29 +14519,29 @@ function exportFixtures(args, write3, report2) {
     return 1;
   }
   if (args.out !== void 0) {
-    const out = (0, import_node_path13.resolve)(args.out);
-    if (`${out}${import_node_path13.sep}`.includes(`${import_node_path13.sep}test${import_node_path13.sep}holdout${import_node_path13.sep}`)) {
+    const out = (0, import_node_path14.resolve)(args.out);
+    if (`${out}${import_node_path14.sep}`.includes(`${import_node_path14.sep}test${import_node_path14.sep}holdout${import_node_path14.sep}`)) {
       write3(`Refusing to write under test/holdout: that corpus is frozen, and a case is added by hand.
 `);
       return 1;
     }
-    if ((0, import_node_fs13.existsSync)(out)) {
+    if ((0, import_node_fs14.existsSync)(out)) {
       write3(`Refusing to overwrite ${args.out}: it may already hold labels. Name a new file.
 `);
       return 1;
     }
   }
-  const sources = args.from !== void 0 ? [args.from] : [`${(0, import_node_path13.join)(dataDir(), LOG_FILE)}.1`, (0, import_node_path13.join)(dataDir(), LOG_FILE)];
-  const present = sources.filter((path) => args.from !== void 0 || (0, import_node_fs13.existsSync)(path));
+  const sources = args.from !== void 0 ? [args.from] : [`${(0, import_node_path14.join)(dataDir(), LOG_FILE)}.1`, (0, import_node_path14.join)(dataDir(), LOG_FILE)];
+  const present = sources.filter((path) => args.from !== void 0 || (0, import_node_fs14.existsSync)(path));
   if (present.length === 0) {
-    write3(`No decision log at ${(0, import_node_path13.join)(dataDir(), LOG_FILE)}. Name one with --from; bouncer status prints where the hook writes.
+    write3(`No decision log at ${(0, import_node_path14.join)(dataDir(), LOG_FILE)}. Name one with --from; bouncer status prints where the hook writes.
 `);
     return 1;
   }
   let text = "";
   for (const path of present) {
     try {
-      text += `${(0, import_node_fs13.readFileSync)(path, "utf8")}
+      text += `${(0, import_node_fs14.readFileSync)(path, "utf8")}
 `;
     } catch (err) {
       write3(`Cannot read the log at ${path}: ${err instanceof Error ? err.message : String(err)}
@@ -14419,9 +14550,9 @@ function exportFixtures(args, write3, report2) {
     }
   }
   const root = pluginRoot() ?? process.cwd();
-  const knownPath = args.fixtures ?? (0, import_node_path13.join)(root, "fixtures", "gate.jsonl");
+  const knownPath = args.fixtures ?? (0, import_node_path14.join)(root, "fixtures", "gate.jsonl");
   let known = [];
-  if (args.fixtures !== void 0 || (0, import_node_fs13.existsSync)(knownPath)) {
+  if (args.fixtures !== void 0 || (0, import_node_fs14.existsSync)(knownPath)) {
     try {
       known = loadFixtures(knownPath);
     } catch (err) {
@@ -14440,8 +14571,8 @@ ${result.candidates.map(candidateLine).join("\n")}${result.candidates.length > 0
     return 0;
   }
   try {
-    (0, import_node_fs13.mkdirSync)((0, import_node_path13.dirname)((0, import_node_path13.resolve)(args.out)), { recursive: true });
-    (0, import_node_fs13.writeFileSync)(args.out, file, { encoding: "utf8", flag: "wx" });
+    (0, import_node_fs14.mkdirSync)((0, import_node_path14.dirname)((0, import_node_path14.resolve)(args.out)), { recursive: true });
+    (0, import_node_fs14.writeFileSync)(args.out, file, { encoding: "utf8", flag: "wx" });
   } catch (err) {
     write3(`Cannot write ${args.out}: ${err instanceof Error ? err.message : String(err)}
 `);
@@ -14480,8 +14611,8 @@ function summary(result, sources, knownPath) {
 }
 
 // src/commands/ready.ts
-var import_node_fs14 = require("node:fs");
-var import_node_path14 = require("node:path");
+var import_node_fs15 = require("node:fs");
+var import_node_path15 = require("node:path");
 
 // src/push.ts
 var PUSH_SET = "push";
@@ -14555,7 +14686,7 @@ function pushItems(change) {
 ${text}`);
     budget -= text.length;
   }
-  const count = (k) => live.filter((f) => kind(f) === k).length;
+  const count2 = (k) => live.filter((f) => kind(f) === k).length;
   const summary2 = {
     kind: "push",
     branch: change.branch,
@@ -14566,9 +14697,9 @@ ${text}`);
     lines_removed: change.files.reduce((sum, f) => sum + f.removed, 0),
     // Computed, never asked: "is there a test for this" needs a count across files, and
     // counting is on the classifier's own list of things it does badly.
-    source_files_changed: count("source"),
-    test_files_changed: count("test"),
-    tests_changed: count("test") > 0,
+    source_files_changed: count2("source"),
+    test_files_changed: count2("test"),
+    tests_changed: count2("test") > 0,
     docs_only: live.length > 0 && live.every((f) => kind(f) === "docs"),
     added_excerpt: excerpt.join("\n")
   };
@@ -14678,15 +14809,15 @@ function formatReadiness(change, result, context) {
   return `${lines2.join("\n")}
 `;
 }
-function record2(dir, change, result, policy, enforce) {
+function record3(dir, change, result, policy, enforce) {
   if (result.backend === "mock") return;
   try {
-    (0, import_node_fs14.mkdirSync)(dir, { recursive: true });
-    (0, import_node_fs14.appendFileSync)(
-      (0, import_node_path14.join)(dir, READINESS_FILE),
+    (0, import_node_fs15.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs15.appendFileSync)(
+      (0, import_node_path15.join)(dir, READINESS_FILE),
       `${JSON.stringify({
         ts: (/* @__PURE__ */ new Date()).toISOString(),
-        repo: (0, import_node_path14.basename)(change.root),
+        repo: (0, import_node_path15.basename)(change.root),
         branch: change.branch,
         base: change.base,
         head: change.head,
@@ -14720,7 +14851,7 @@ async function ready(args, write3, cwd = process.cwd()) {
     return 1;
   }
   const root = pluginRoot() ?? process.cwd();
-  const explicit = args.policy ?? process.env[PUSH_POLICY_ENV] ?? (0, import_node_path14.join)(root, "policy", "push.yaml");
+  const explicit = args.policy ?? process.env[PUSH_POLICY_ENV] ?? (0, import_node_path15.join)(root, "policy", "push.yaml");
   const resolved = resolvePolicy(cwd, root, explicit);
   if (resolved.policy === void 0) {
     return skip(`${resolved.source} did not load. ${errorsIn(resolved.diagnostics).map((d) => `${d.path || "(top level)"}: ${d.message}`).join("; ")}`);
@@ -14753,7 +14884,7 @@ async function ready(args, write3, cwd = process.cwd()) {
     return skip(err instanceof Error ? err.message : String(err));
   }
   const enforce = args.enforce === true;
-  record2(dataDir(), change, result, policy, enforce);
+  record3(dataDir(), change, result, policy, enforce);
   if (args.json === true) {
     write3(`${JSON.stringify({ branch: change.branch, base: change.baseRef, head: change.head, policy: resolved.source, enforce, ...result }, null, 2)}
 `);
@@ -14761,6 +14892,160 @@ async function ready(args, write3, cwd = process.cwd()) {
     write3(formatReadiness(change, result, { policy: resolved.source, enforce }));
   }
   return enforce && result.verdict === "hold" ? 1 : 0;
+}
+
+// src/commands/stops.ts
+var import_node_fs17 = require("node:fs");
+var import_node_path16 = require("node:path");
+
+// src/io/transcript.ts
+var import_node_fs16 = require("node:fs");
+function typedPrompts(path) {
+  let raw;
+  try {
+    raw = (0, import_node_fs16.readFileSync)(path, "utf8");
+  } catch {
+    return [];
+  }
+  const prompts = [];
+  for (const line of raw.split("\n")) {
+    if (line.length === 0) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord9(entry) || entry["type"] !== "user" || entry["isSidechain"] === true || entry["isMeta"] === true) continue;
+    const ts = entry["timestamp"];
+    const message2 = entry["message"];
+    if (typeof ts !== "string" || !isRecord9(message2)) continue;
+    const text = textOf(message2["content"]);
+    if (text === void 0 || text.length === 0 || text.startsWith("<") || text.startsWith("[")) continue;
+    prompts.push({ ts, text });
+  }
+  return prompts;
+}
+function nextTypedPrompt(prompts, after) {
+  const t = Date.parse(after);
+  if (Number.isNaN(t)) return void 0;
+  return prompts.find((p) => Date.parse(p.ts) > t);
+}
+function textOf(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return void 0;
+  if (content.some((part) => isRecord9(part) && part["type"] === "tool_result")) return void 0;
+  return content.flatMap((part) => isRecord9(part) && part["type"] === "text" && typeof part["text"] === "string" ? [part["text"]] : []).join(" ").trim();
+}
+function isRecord9(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/commands/stops.ts
+var FLAGS6 = { values: [], switches: ["json"] };
+function parseArgs7(argv) {
+  const { switches, error } = parseFlags(argv, FLAGS6);
+  return { json: switches.has("json"), ...error !== void 0 ? { error } : {} };
+}
+function readStops(dir) {
+  let raw;
+  try {
+    raw = (0, import_node_fs17.readFileSync)((0, import_node_path16.join)(dir, STOPS_FILE), "utf8");
+  } catch {
+    return [];
+  }
+  const records = [];
+  for (const line of raw.split("\n")) {
+    if (line.length === 0) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return records;
+}
+function reportStops(dir, promptsFor = typedPrompts) {
+  const all = readStops(dir);
+  const real = all.filter((r) => r.backend !== "mock");
+  const cache = /* @__PURE__ */ new Map();
+  const prompts = (path) => {
+    let found = cache.get(path);
+    if (found === void 0) {
+      found = promptsFor(path);
+      cache.set(path, found);
+    }
+    return found;
+  };
+  const scored = [];
+  for (const r of real) {
+    if (r.would === void 0) continue;
+    const next = r.transcript_path === void 0 ? void 0 : nextTypedPrompt(prompts(r.transcript_path), r.ts);
+    scored.push({
+      would: r.would,
+      decidedBy: r.decided_by ?? "default",
+      next: next === void 0 ? "none" : isGoAhead(next.text) ? "go-ahead" : "other"
+    });
+  }
+  const root = pluginRoot();
+  return {
+    file: (0, import_node_path16.join)(dir, STOPS_FILE),
+    ...root !== void 0 ? { template: (0, import_node_path16.join)(root, "policy", "stop.yaml") } : {},
+    lines: all.length,
+    skipped: real.filter((r) => r.skipped !== void 0).length,
+    failed: real.filter((r) => r.error !== void 0).length,
+    mock: all.length - real.length,
+    ...scoreStops(scored)
+  };
+}
+function formatStops(report2) {
+  const lines2 = [`Stops: ${report2.file}`, ""];
+  if (report2.lines === 0) {
+    lines2.push(
+      "Nothing logged. The Stop hook is off until a stop policy exists. It sends the end of the",
+      "agent's closing message to the backend, which is why it does not turn itself on.",
+      "",
+      "For every project on this machine:",
+      `  cp "${report2.template ?? "policy/stop.yaml"}" ~/.bouncer/stop.yaml`,
+      "For one repository, from its root:",
+      `  cp "${report2.template ?? "policy/stop.yaml"}" .bouncer.stop.yaml`
+    );
+    return `${lines2.join("\n")}
+`;
+  }
+  lines2.push(`  ${report2.judged} judged, ${report2.labelled} with a later prompt to score against`);
+  if (report2.skipped > 0) lines2.push(`  ${report2.skipped} not judged: a task was still running, so the agent was not waiting on you`);
+  if (report2.failed > 0) lines2.push(`  ${report2.failed} not judged: the backend did not answer`);
+  if (report2.mock > 0) lines2.push(`  ${report2.mock} answered by the mock backend and set aside`);
+  lines2.push("");
+  const missed = Object.entries(report2.missed).sort((a, b) => b[1] - a[1]);
+  const missedTotal = missed.reduce((sum, [, n]) => sum + n, 0);
+  lines2.push(
+    "                        you typed a go-ahead   you said something else",
+    `  would have continued  ${String(report2.saved).padStart(20)}   ${String(report2.ranAhead).padStart(23)}`,
+    `  left alone            ${String(missedTotal).padStart(20)}   ${String(report2.rightlyLeft).padStart(23)}`,
+    "",
+    `  ${report2.saved} prompt${report2.saved === 1 ? "" : "s"} you would not have had to type.`,
+    `  ${report2.ranAhead} time${report2.ranAhead === 1 ? "" : "s"} it would have run ahead of you. This is the number that matters.`
+  );
+  if (missed.length > 0) {
+    lines2.push(`  Go-aheads it left alone, by the question that held them: ${missed.map(([q, n]) => `${q} ${n}`).join(", ")}.`);
+  }
+  if (report2.unlabelled > 0) {
+    lines2.push(`  ${report2.unlabelled} stop${report2.unlabelled === 1 ? " has" : "s have"} no later prompt in the session and ${report2.unlabelled === 1 ? "is" : "are"} not scored.`);
+  }
+  lines2.push(
+    "",
+    "A go-ahead is read off your own words by a fixed pattern (proceed, merge it, go ahead, yes),",
+    "so this is agreement with a heuristic label. Nothing here changed what any session did."
+  );
+  return `${lines2.join("\n")}
+`;
+}
+function stops(args) {
+  if (args.error !== void 0) return args.error;
+  const report2 = reportStops(dataDir());
+  return args.json === true ? `${JSON.stringify(report2, null, 2)}
+` : formatStops(report2);
 }
 
 // src/io/stdin.ts
@@ -14796,6 +15081,11 @@ async function main(argv) {
       if (output !== void 0) process.stdout.write(JSON.stringify(output));
       return OK;
     }
+    case "stop": {
+      const payload = await readPayload();
+      if (payload !== void 0) await runStop(payload);
+      return OK;
+    }
     case "status":
       process.stdout.write(status());
       return OK;
@@ -14816,11 +15106,14 @@ async function main(argv) {
       );
     case "ready":
       return ready(parseArgs6(argv.slice(3)), (text) => process.stdout.write(text));
+    case "stops":
+      process.stdout.write(stops(parseArgs7(argv.slice(3))));
+      return OK;
     case "skills":
       process.stdout.write(skills(parseArgs4(argv.slice(3))));
       return OK;
     case "--version":
-      process.stdout.write("0.2.21\n");
+      process.stdout.write("0.2.22\n");
       return OK;
     default:
       process.stderr.write(`bouncer: unknown command ${command ?? "(none)"}

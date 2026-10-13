@@ -7,6 +7,7 @@
 // and test/cli.test.ts feeds it deliberately hostile input to prove it.
 
 import { runPreToolUse } from "./hooks/pretooluse.js";
+import { runStop } from "./hooks/stop.js";
 import { status } from "./commands/status.js";
 import { explain } from "./commands/explain.js";
 import { calibrate, parseArgs } from "./commands/calibrate.js";
@@ -15,6 +16,7 @@ import { measure, parseArgs as parseMeasureArgs } from "./commands/measure.js";
 import { skills, parseArgs as parseSkillsArgs } from "./commands/skills.js";
 import { exportFixtures, parseArgs as parseExportArgs } from "./commands/export.js";
 import { ready, parseArgs as parseReadyArgs } from "./commands/ready.js";
+import { stops, parseArgs as parseStopsArgs } from "./commands/stops.js";
 import { readPayload } from "./io/stdin.js";
 
 const OK = 0;
@@ -32,6 +34,14 @@ async function main(argv: string[]): Promise<number> {
 
       const output = await runPreToolUse(payload);
       if (output !== undefined) process.stdout.write(JSON.stringify(output));
+      return OK;
+    }
+
+    case "stop": {
+      // Nothing is ever written for this event. A Stop hook's stdout can tell Claude Code
+      // to keep the agent working, and this one only watches (docs/adr/015).
+      const payload = await readPayload();
+      if (payload !== undefined) await runStop(payload);
       return OK;
     }
 
@@ -62,12 +72,16 @@ async function main(argv: string[]): Promise<number> {
     case "ready":
       return ready(parseReadyArgs(argv.slice(3)), (text) => process.stdout.write(text));
 
+    case "stops":
+      process.stdout.write(stops(parseStopsArgs(argv.slice(3))));
+      return OK;
+
     case "skills":
       process.stdout.write(skills(parseSkillsArgs(argv.slice(3))));
       return OK;
 
     case "--version":
-      process.stdout.write("0.2.21\n");
+      process.stdout.write("0.2.22\n");
       return OK;
 
     default:
